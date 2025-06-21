@@ -1,446 +1,212 @@
-// content.js - Optimized lightweight content script
+// content.js - Fixed with proper page context injection
+console.log('🔍 GTM Consent Inspector: Content script loading...');
 
-console.log('🔍 GTM Consent Inspector: Loading optimized version...');
+let isInjected = false;
+let messageId = 0;
+let pendingMessages = new Map();
 
-// Performance controls
-let isInitialized = false;
-let messageHandlers = new Map();
-let eventBuffer = [];
-let lastBufferFlush = 0;
-
-// Initialize only when needed
-function initializeInspector() {
-  if (isInitialized) return;
+// Inject the script into page context
+function injectPageScript() {
+  if (isInjected) {
+    console.log('🔧 Page script already injected, skipping...');
+    return;
+  }
   
-  console.log('🔍 GTM Consent Inspector: Initializing...');
+  console.log('🔧 Injecting page context script...');
   
-  // Set up lightweight event monitoring
-  setupEventMonitoring();
+  const script = document.createElement('script');
+  script.src = chrome.runtime.getURL('injected-script.js');
+  script.onload = function() {
+    console.log('✅ Page context script injected successfully');
+    script.remove();
+    isInjected = true;
+    
+    // Run initial GTM detection
+    setTimeout(() => {
+      checkGTMStatus();
+    }, 500);
+  };
+  script.onerror = function() {
+    console.error('❌ Failed to inject page context script');
+  };
   
-  // Set up message handlers
-  setupMessageHandlers();
-  
-  // Mark as initialized
-  isInitialized = true;
-  
-  console.log('✅ GTM Consent Inspector: Ready');
+  (document.head || document.documentElement).appendChild(script);
 }
 
-// Add this to your content.js after line 26 (after "Ready" log)
-
-// Enhanced GTM detection with logging
-function enhancedGTMDetection() {
-  console.log('🔍 Running enhanced GTM detection...');
-  
-  // Method 1: Check google_tag_manager object
-  if (window.google_tag_manager) {
-    const gtmIds = Object.keys(window.google_tag_manager).filter(key => key.startsWith('GTM-'));
-    if (gtmIds.length > 0) {
-      console.log('✅ GTM detected via google_tag_manager:', gtmIds[0]);
-      return { found: true, method: 'google_tag_manager', id: gtmIds[0] };
-    }
-  }
-  
-  // Method 2: Check for GTM script tags
-  const gtmScripts = document.querySelectorAll('script[src*="googletagmanager.com/gtm.js"]');
-  if (gtmScripts.length > 0) {
-    const src = gtmScripts[0].src;
-    const match = src.match(/[?&]id=([^&]+)/);
-    if (match && match[1].startsWith('GTM-')) {
-      console.log('✅ GTM detected via script tag:', match[1]);
-      return { found: true, method: 'script_tag', id: match[1] };
-    }
-  }
-  
-  // Method 3: Check dataLayer for GTM events
-  if (window.dataLayer && Array.isArray(window.dataLayer)) {
-    for (let item of window.dataLayer) {
-      if (item && item['gtm.start']) {
-        console.log('✅ GTM detected via dataLayer gtm.start event');
-        return { found: true, method: 'dataLayer', id: 'unknown' };
+// Message passing between page context and content script
+function sendMessageToPage(action, data = {}) {
+  return new Promise((resolve, reject) => {
+    const id = ++messageId;
+    
+    // Store the promise resolver
+    pendingMessages.set(id, { resolve, reject });
+    
+    // Send message to page
+    window.postMessage({
+      source: 'gtm-inspector-content',
+      action: action,
+      data: data,
+      id: id
+    }, '*');
+    
+    // Timeout after 5 seconds
+    setTimeout(() => {
+      if (pendingMessages.has(id)) {
+        pendingMessages.delete(id);
+        reject(new Error('Message timeout'));
       }
-    }
-  }
-  
-  // Method 4: Check for gtag with GA4/GTM
-  if (window.gtag) {
-    console.log('✅ gtag detected (likely GTM or GA4)');
-    return { found: true, method: 'gtag', id: 'gtag-detected' };
-  }
-  
-  console.log('❌ No GTM detected using any method');
-  return { found: false, method: 'none', id: null };
+    }, 5000);
+  });
 }
 
-// Method 5: Check noscript GTM iframe
-function checkGTMNoScript() {
-  const noscripts = document.querySelectorAll('noscript');
-  for (let noscript of noscripts) {
-    if (noscript.innerHTML.includes('googletagmanager.com/ns.html')) {
-      const match = noscript.innerHTML.match(/id=([^"&]+)/);
-      if (match && match[1].startsWith('GTM-')) {
-        console.log('✅ GTM detected via noscript iframe:', match[1]);
-        return match[1];
-      }
+// Listen for responses from page context
+window.addEventListener('message', function(event) {
+  if (event.data.source === 'gtm-inspector-page-response') {
+    const { id, data } = event.data;
+    
+    if (pendingMessages.has(id)) {
+      const { resolve } = pendingMessages.get(id);
+      pendingMessages.delete(id);
+      resolve(data);
     }
   }
-  return null;
-}
-
-// Run enhanced detection immediately
-const gtmResult = enhancedGTMDetection();
-const noscriptGTM = checkGTMNoScript();
-
-// Log comprehensive results
-console.log('📊 GTM Detection Summary:', {
-  mainDetection: gtmResult,
-  noscriptDetection: noscriptGTM,
-  hasDataLayer: !!window.dataLayer,
-  hasGoogleTagManager: !!window.google_tag_manager,
-  hasGtag: !!window.gtag
 });
 
-// Store detection results for popup
-window.gtmDetectionResults = {
-  ...gtmResult,
-  noscriptId: noscriptGTM,
-  timestamp: Date.now()
+// Enhanced GTM detection
+async function checkGTMStatus() {
+  try {
+    console.log('🔍 Checking GTM status...');
+    const result = await sendMessageToPage('detectGTM');
+    
+    if (result) {
+      console.log('📊 GTM Detection Result:', result);
+      
+      if (result.hasGTM) {
+        console.log(`✅ GTM Found: ${result.gtmId}`);
+        
+        // Get additional tag information
+        const tags = await sendMessageToPage('getTagInfo');
+        const events = await sendMessageToPage('getEvents');
+        
+        // Store results for popup
+        chrome.runtime.sendMessage({
+          action: 'storeData',
+          data: {
+            gtm: result,
+            tags: tags || [],
+            events: events || []
+          }
+        });
+      } else {
+        console.log('❌ No GTM detected');
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error checking GTM:', error);
+  }
+}
+
+// Message handlers for popup communication
+const messageHandlers = {
+  ping: () => ({ success: true }),
+  
+  checkGTM: async () => {
+    try {
+      const gtmResult = await sendMessageToPage('detectGTM');
+      const tags = await sendMessageToPage('getTagInfo');
+      const events = await sendMessageToPage('getEvents');
+      
+      return {
+        hasGTM: gtmResult?.hasGTM || false,
+        gtmId: gtmResult?.gtmId || '',
+        hasConsentMode: gtmResult?.hasConsentMode || false,
+        consentState: gtmResult?.consentState || {},
+        tags: tags || [],
+        events: events || []
+      };
+    } catch (error) {
+      console.error('Error in checkGTM:', error);
+      return { error: error.message };
+    }
+  },
+  
+  applyConsent: async (data) => {
+    try {
+      const result = await sendMessageToPage('updateConsent', data);
+      
+      // Wait a bit then refresh tag status
+      setTimeout(() => {
+        sendMessageToPage('getTagInfo').then(tags => {
+          chrome.runtime.sendMessage({
+            action: 'storeData',
+            data: { tags: tags || [] }
+          });
+        });
+      }, 500);
+      
+      return result;
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  },
+  
+  getEventLog: async () => {
+    try {
+      const events = await sendMessageToPage('getEvents');
+      return events || [];
+    } catch (error) {
+      return [];
+    }
+  },
+  
+  clearEventLog: async () => {
+    // Clear events in page context
+    window.postMessage({
+      source: 'gtm-inspector-content',
+      action: 'clearEvents'
+    }, '*');
+    return { success: true };
+  },
+  
+  toggleOverlay: () => {
+    return toggleOverlay();
+  },
+  
+  getTagStatus: async () => {
+    try {
+      const tags = await sendMessageToPage('getTagInfo');
+      return tags || [];
+    } catch (error) {
+      return [];
+    }
+  }
 };
 
-// Also run detection again after page fully loads
-window.addEventListener('load', () => {
-  setTimeout(() => {
-    console.log('🔄 Re-running GTM detection after page load...');
-    const laterResult = enhancedGTMDetection();
-    console.log('📊 Post-load GTM Detection:', laterResult);
-  }, 2000);
-});
-
-// Lightweight event monitoring setup
-function setupEventMonitoring() {
-  // Only initialize if not already done
-  if (window.gtmConsentInspector) return;
+// Chrome runtime message listener
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  const handler = messageHandlers[request.action];
   
-  window.gtmConsentInspector = {
-    events: [],
-    maxEvents: 50, // Lower limit for performance
-    isMonitoring: false
-  };
-  
-  // Hook into dataLayer only if it exists
-  if (window.dataLayer) {
-    interceptDataLayer();
-  } else {
-    // Watch for dataLayer creation
-    const observer = new MutationObserver(() => {
-      if (window.dataLayer && !window.gtmConsentInspector.originalPush) {
-        interceptDataLayer();
-        observer.disconnect();
-      }
-    });
-    observer.observe(document, { childList: true, subtree: true });
+  if (handler) {
+    // Handle async handlers
+    const result = handler(request.data || {});
     
-    // Stop watching after 10 seconds
-    setTimeout(() => observer.disconnect(), 10000);
-  }
-  
-  // Hook into gtag if available
-  if (window.gtag) {
-    interceptGtag();
-  }
-}
-
-// Lightweight dataLayer interception
-function interceptDataLayer() {
-  if (window.gtmConsentInspector.originalPush) return;
-  
-  window.gtmConsentInspector.originalPush = window.dataLayer.push;
-  
-  let lastEventTime = 0;
-  const THROTTLE_MS = 1000; // 1 second throttle
-  
-  window.dataLayer.push = function() {
-    const result = window.gtmConsentInspector.originalPush.apply(this, arguments);
-    
-    // Throttle event logging
-    const now = Date.now();
-    if (now - lastEventTime < THROTTLE_MS) return result;
-    lastEventTime = now;
-    
-    try {
-      const event = arguments[0];
-      
-      // Only log important events
-      if (typeof event === 'object' && event !== null) {
-        if (Array.isArray(event) && event[0] === 'consent') {
-          addEventToBuffer('Consent Update', 'consent', 
-            `${event[1]}: ${JSON.stringify(event[2])}`);
-        } else if (event.event && !event.event.startsWith('gtm.')) {
-          addEventToBuffer('DataLayer Event', 'gtm', 
-            `${event.event}`);
-        }
-      }
-    } catch (e) {
-      // Fail silently
-    }
-    
-    return result;
-  };
-}
-
-// Lightweight gtag interception
-function interceptGtag() {
-  if (window.gtmConsentInspector.originalGtag) return;
-  
-  window.gtmConsentInspector.originalGtag = window.gtag;
-  
-  window.gtag = function() {
-    const result = window.gtmConsentInspector.originalGtag.apply(this, arguments);
-    
-    try {
-      const args = Array.from(arguments);
-      if (args[0] === 'consent') {
-        addEventToBuffer('gtag Consent', 'consent', 
-          `${args[1]}: ${JSON.stringify(args[2])}`);
-      }
-    } catch (e) {
-      // Fail silently
-    }
-    
-    return result;
-  };
-}
-
-// Buffered event logging for performance
-function addEventToBuffer(type, category, details) {
-  eventBuffer.push({
-    timestamp: Date.now(),
-    type,
-    category,
-    details
-  });
-  
-  // Flush buffer periodically
-  const now = Date.now();
-  if (now - lastBufferFlush > 2000 || eventBuffer.length > 10) {
-    flushEventBuffer();
-  }
-}
-
-// Flush event buffer to main storage
-function flushEventBuffer() {
-  if (eventBuffer.length === 0) return;
-  
-  if (!window.gtmConsentInspector.events) {
-    window.gtmConsentInspector.events = [];
-  }
-  
-  // Add buffered events
-  window.gtmConsentInspector.events.push(...eventBuffer);
-  
-  // Maintain size limit
-  if (window.gtmConsentInspector.events.length > window.gtmConsentInspector.maxEvents) {
-    window.gtmConsentInspector.events = window.gtmConsentInspector.events.slice(-30);
-  }
-  
-  // Clear buffer
-  eventBuffer = [];
-  lastBufferFlush = Date.now();
-}
-
-// Setup message handlers
-function setupMessageHandlers() {
-  // Register message handlers efficiently
-  messageHandlers.set('checkGTM', handleCheckGTM);
-  messageHandlers.set('applyConsent', handleApplyConsent);
-  messageHandlers.set('getEventLog', handleGetEventLog);
-  messageHandlers.set('clearEventLog', handleClearEventLog);
-  messageHandlers.set('toggleOverlay', handleToggleOverlay);
-  messageHandlers.set('getTagStatus', handleGetTagStatus);
-  
-  // Single message listener
-  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    const handler = messageHandlers.get(request.action);
-    
-    if (handler) {
-      try {
-        const result = handler(request.data || {});
-        sendResponse(result);
-      } catch (error) {
+    if (result instanceof Promise) {
+      result.then(sendResponse).catch(error => {
         console.error(`Error handling ${request.action}:`, error);
         sendResponse({ error: error.message });
-      }
-    } else {
-      sendResponse({ error: 'Unknown action' });
-    }
-    
-    return true; // Keep message channel open
-  });
-}
-
-// Message handlers
-function handleCheckGTM() {
-  flushEventBuffer(); // Ensure recent events are included
-  
-  const hasGTM = !!window.google_tag_manager;
-  let gtmId = '';
-  let hasConsentMode = false;
-  
-  if (hasGTM) {
-    // Get GTM ID efficiently
-    gtmId = Object.keys(window.google_tag_manager).find(key => key.startsWith('GTM-')) || '';
-    
-    // Quick consent mode check
-    hasConsentMode = !!(window.gtag || (window.dataLayer && 
-      window.dataLayer.some(item => 
-        Array.isArray(item) && item[0] === 'consent')));
-  }
-  
-  return {
-    hasGTM,
-    gtmId,
-    hasConsentMode,
-    consentState: hasConsentMode ? getCurrentConsentState() : {},
-    tags: getBasicTagInfo(),
-    events: getRecentEvents()
-  };
-}
-
-function handleApplyConsent(settings) {
-  if (!window.gtag && !window.dataLayer) {
-    return { success: false, error: 'No consent mechanism available' };
-  }
-  
-  try {
-    if (window.gtag) {
-      window.gtag('consent', 'update', settings);
-    } else if (window.dataLayer) {
-      window.dataLayer.push(['consent', 'update', settings]);
-    }
-    
-    addEventToBuffer('Consent Applied', 'consent', 
-      `Settings: ${JSON.stringify(settings)}`);
-    
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-function handleGetEventLog() {
-  flushEventBuffer();
-  return getRecentEvents();
-}
-
-function handleClearEventLog() {
-  if (window.gtmConsentInspector) {
-    window.gtmConsentInspector.events = [];
-    eventBuffer = [];
-    addEventToBuffer('Log Cleared', 'system', 'Event log cleared by user');
-  }
-  return { success: true };
-}
-
-function handleToggleOverlay() {
-  return toggleOverlay();
-}
-
-function handleGetTagStatus() {
-  return getBasicTagInfo();
-}
-
-// Utility functions
-function getCurrentConsentState() {
-  const defaultState = {
-    analytics_storage: 'granted',
-    ad_storage: 'granted',
-    functionality_storage: 'granted',
-    personalization_storage: 'granted',
-    security_storage: 'granted'
-  };
-  
-  if (!window.dataLayer) return defaultState;
-  
-  // Find most recent consent setting efficiently
-  for (let i = window.dataLayer.length - 1; i >= 0; i--) {
-    const item = window.dataLayer[i];
-    if (Array.isArray(item) && item[0] === 'consent' && 
-        (item[1] === 'default' || item[1] === 'update') && item[2]) {
-      return { ...defaultState, ...item[2] };
-    }
-  }
-  
-  return defaultState;
-}
-
-function getBasicTagInfo() {
-  const tags = [];
-  const consentState = getCurrentConsentState();
-  
-  // Quick detection of common tags
-  const commonTags = [
-    {
-      check: () => window.gtag || document.querySelector('script[src*="gtag/js"]'),
-      name: 'Google Analytics 4',
-      type: 'analytics',
-      consentType: 'analytics_storage'
-    },
-    {
-      check: () => window.ga || document.querySelector('script[src*="google-analytics.com/analytics.js"]'),
-      name: 'Universal Analytics',
-      type: 'analytics',
-      consentType: 'analytics_storage'
-    },
-    {
-      check: () => document.querySelector('script[src*="googleadservices.com"]') || window.gtag,
-      name: 'Google Ads',
-      type: 'advertising',
-      consentType: 'ad_storage'
-    },
-    {
-      check: () => window.fbq || document.querySelector('script[src*="connect.facebook.net"]'),
-      name: 'Facebook Pixel',
-      type: 'advertising',
-      consentType: 'ad_storage'
-    },
-    {
-      check: () => window.hj || document.querySelector('script[src*="hotjar.com"]'),
-      name: 'Hotjar',
-      type: 'personalization',
-      consentType: 'functionality_storage'
-    }
-  ];
-  
-  commonTags.forEach((tagDef, index) => {
-    if (tagDef.check()) {
-      const isAllowed = consentState[tagDef.consentType] === 'granted';
-      
-      tags.push({
-        id: `tag_${index}`,
-        name: tagDef.name,
-        type: tagDef.type,
-        allowed: isAllowed,
-        reason: isAllowed ? 
-          `${tagDef.consentType} granted` : 
-          `${tagDef.consentType} denied`,
-        wouldFireWith: isAllowed ? '' : tagDef.consentType
       });
+      return true; // Keep message channel open for async response
+    } else {
+      sendResponse(result);
     }
-  });
-  
-  return tags;
-}
-
-function getRecentEvents() {
-  flushEventBuffer();
-  
-  if (!window.gtmConsentInspector || !window.gtmConsentInspector.events) {
-    return [];
+  } else {
+    sendResponse({ error: 'Unknown action' });
   }
   
-  return window.gtmConsentInspector.events.slice(-20); // Last 20 events only
-}
+  return true;
+});
 
+// Simple overlay toggle
 function toggleOverlay() {
   let overlay = document.getElementById('gtm-consent-inspector-overlay');
   
@@ -464,10 +230,10 @@ function toggleOverlay() {
                 style="background: none; border: none; font-size: 18px; color: #5f6368; cursor: pointer;">×</button>
       </div>
       <div style="margin-bottom: 12px;">
-        <strong>Status:</strong> ${window.google_tag_manager ? '✅ GTM Active' : '❌ No GTM'}
+        <strong>Status:</strong> <span id="overlay-gtm-status">Checking...</span>
       </div>
       <div style="margin-bottom: 12px;">
-        <strong>Consent Mode:</strong> ${window.gtag ? '✅ Active' : '❌ Not Found'}
+        <strong>Console Access:</strong> Try <code>ConsentInspector.status()</code>
       </div>
       <div style="font-size: 11px; color: #5f6368; text-align: center;">
         Use browser extension popup for full controls
@@ -476,181 +242,26 @@ function toggleOverlay() {
   `;
   
   document.body.appendChild(overlay);
+  
+  // Update overlay status
+  sendMessageToPage('detectGTM').then(result => {
+    const statusEl = overlay.querySelector('#overlay-gtm-status');
+    if (statusEl && result) {
+      statusEl.textContent = result.hasGTM ? `✅ GTM Active (${result.gtmId})` : '❌ No GTM';
+    }
+  });
+  
   return { success: true, action: 'created' };
 }
 
-// Initialize when DOM is ready or immediately if already ready
+// Initialize when ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initializeInspector);
+  document.addEventListener('DOMContentLoaded', injectPageScript);
 } else {
-  // Delay initialization slightly to avoid blocking page load
-  setTimeout(initializeInspector, 100);
+  injectPageScript();
 }
 
-// Add this at the VERY END of content.js (replace the previous version)
+// Remove the second injection attempt
+// setTimeout(injectPageScript, 2000);
 
-// Replace the ConsentInspector creation code with this:
-// Replace the injection function with this CSP-safe approach
-
-// Create ConsentInspector that works with CSP restrictions
-function createConsentInspectorSafe() {
-  console.log('🔧 Creating CSP-safe ConsentInspector...');
-  
-  // Method 1: Try direct window assignment (works in many cases)
-  try {
-    window.ConsentInspector = {
-      getStatus: function() {
-        return {
-          hasGTM: true,
-          gtmId: 'GTM-WDW7RCPK',
-          hasConsentMode: !!window.gtag,
-          consentState: this.getCurrentConsentState(),
-          tags: this.getBasicTagInfo(),
-          events: this.getRecentEvents()
-        };
-      },
-      
-      getCurrentConsentState: function() {
-        const defaultState = {
-          analytics_storage: 'granted',
-          ad_storage: 'granted',
-          functionality_storage: 'granted',
-          personalization_storage: 'granted',
-          security_storage: 'granted'
-        };
-        
-        if (!window.dataLayer) return defaultState;
-        
-        for (let i = window.dataLayer.length - 1; i >= 0; i--) {
-          const item = window.dataLayer[i];
-          if (Array.isArray(item) && item[0] === 'consent' && 
-              (item[1] === 'default' || item[1] === 'update') && item[2]) {
-            return { ...defaultState, ...item[2] };
-          }
-        }
-        
-        return defaultState;
-      },
-      
-      getBasicTagInfo: function() {
-        const tags = [];
-        const consentState = this.getCurrentConsentState();
-        
-        const commonTags = [
-          {
-            check: () => window.gtag || document.querySelector('script[src*="gtag/js"]'),
-            name: 'Google Analytics 4',
-            type: 'analytics',
-            consentType: 'analytics_storage'
-          },
-          {
-            check: () => window.ga || document.querySelector('script[src*="google-analytics.com/analytics.js"]'),
-            name: 'Universal Analytics',
-            type: 'analytics', 
-            consentType: 'analytics_storage'
-          },
-          {
-            check: () => document.querySelector('script[src*="googleadservices.com"]'),
-            name: 'Google Ads',
-            type: 'advertising',
-            consentType: 'ad_storage'
-          }
-        ];
-        
-        commonTags.forEach((tagDef, index) => {
-          if (tagDef.check()) {
-            const isAllowed = consentState[tagDef.consentType] === 'granted';
-            tags.push({
-              id: `tag_${index}`,
-              name: tagDef.name,
-              type: tagDef.type,
-              allowed: isAllowed,
-              reason: isAllowed ? 
-                `${tagDef.consentType} granted` : 
-                `${tagDef.consentType} denied`
-            });
-          }
-        });
-        
-        return tags;
-      },
-      
-      getRecentEvents: function() {
-        return window.gtmConsentInspector ? window.gtmConsentInspector.events.slice(-20) : [];
-      },
-      
-      applyConsent: function(settings) {
-        if (window.gtag) {
-          window.gtag('consent', 'update', settings);
-          return { success: true };
-        } else if (window.dataLayer) {
-          window.dataLayer.push(['consent', 'update', settings]);
-          return { success: true };
-        }
-        return { success: false, error: 'No consent mechanism available' };
-      },
-      
-      showOverlay: function() {
-        // Trigger overlay via content script messaging
-        document.dispatchEvent(new CustomEvent('gtm-inspector-toggle-overlay'));
-        return { success: true, message: 'Overlay toggle requested' };
-      }
-    };
-    
-    console.log('✅ ConsentInspector created via direct assignment');
-    
-  } catch (e) {
-    console.warn('❌ Direct assignment failed:', e);
-    
-    // Method 2: Try using defineProperty
-    try {
-      Object.defineProperty(window, 'ConsentInspector', {
-        value: {
-          getStatus: () => ({
-            hasGTM: true,
-            gtmId: 'GTM-WDW7RCPK',
-            hasConsentMode: false,
-            consentState: {},
-            tags: [],
-            events: []
-          })
-        },
-        writable: true,
-        configurable: true
-      });
-      
-      console.log('✅ ConsentInspector created via defineProperty');
-      
-    } catch (e2) {
-      console.error('❌ All ConsentInspector creation methods failed:', e2);
-    }
-  }
-  
-  // Always create gtmConsentInspector
-  if (!window.gtmConsentInspector) {
-    window.gtmConsentInspector = {
-      events: [],
-      maxEvents: 50,
-      isMonitoring: false
-    };
-    console.log('✅ gtmConsentInspector created');
-  }
-  
-  // Listen for overlay toggle events
-  document.addEventListener('gtm-inspector-toggle-overlay', () => {
-    handleToggleOverlay();
-  });
-}
-
-// Run the safe creation
-createConsentInspectorSafe();
-
-// Also try again after page load
-window.addEventListener('load', () => {
-  setTimeout(() => {
-    if (!window.ConsentInspector) {
-      console.log('🔄 Retrying ConsentInspector creation after page load...');
-      createConsentInspectorSafe();
-    }
-  }, 1000);
-});
+console.log('✅ GTM Consent Inspector: Content script ready');
