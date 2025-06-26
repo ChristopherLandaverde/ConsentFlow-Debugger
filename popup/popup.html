@@ -13,7 +13,6 @@
   <div class="status-container">
     <div id="gtmStatus" class="status">Checking for GTM...</div>
     <div id="consentModeStatus" class="status">Checking for Consent Mode...</div>
-    <!-- Real-time monitoring status (only show when active) -->
     <div id="monitoringStatus" class="status" style="display: none;">
       <span id="monitoringIndicator" class="status-inactive">⚪ OFF</span>
       Real-time Monitoring
@@ -30,8 +29,130 @@
     </button>
     <button class="tab-button" data-tab="qa">QA Tests</button>
   </div>
+
+  <!-- Consent Tab -->
+<div id="consent-tab" class="tab-content">
+  <h2>Consent Simulator</h2>
   
-  <!-- Tags Tab -->
+  <div class="consent-categories">
+    <div class="consent-category">
+      <label for="analytics_storage">analytics_storage:</label>
+      <select id="analytics_storage" class="consent-select">
+        <option value="granted">Granted</option>
+        <option value="denied">Denied</option>
+      </select>
+    </div>
+    
+    <div class="consent-category">
+      <label for="ad_storage">ad_storage:</label>
+      <select id="ad_storage" class="consent-select">
+        <option value="granted">Granted</option>
+        <option value="denied">Denied</option>
+      </select>
+    </div>
+    
+    <div class="consent-category">
+      <label for="functionality_storage">functionality_storage:</label>
+      <select id="functionality_storage" class="consent-select">
+        <option value="granted">Granted</option>
+        <option value="denied">Denied</option>
+      </select>
+    </div>
+    
+    <div class="consent-category">
+      <label for="personalization_storage">personalization_storage:</label>
+      <select id="personalization_storage" class="consent-select">
+        <option value="granted">Granted</option>
+        <option value="denied">Denied</option>
+      </select>
+    </div>
+    
+    <div class="consent-category">
+      <label for="security_storage">security_storage:</label>
+      <select id="security_storage" class="consent-select">
+        <option value="granted">Granted</option>
+        <option value="denied">Denied</option>
+      </select>
+    </div>
+  </div>
+  
+  <div class="action-buttons">
+    <button id="applyConsent" class="action-button primary">Apply Settings</button>
+    <div class="dropdown">
+      <button class="dropdown-toggle action-button">Presets</button>
+      <div class="dropdown-menu">
+        <button class="dropdown-item" data-preset="all-granted">All Granted</button>
+        <button class="dropdown-item" data-preset="all-denied">All Denied</button>
+        <button class="dropdown-item" data-preset="analytics-only">Analytics Only</button>
+        <button class="dropdown-item" data-preset="ads-only">Ads Only</button>
+        <button class="dropdown-item" data-preset="functional-only">Functional Only</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Event Log Tab -->
+<div id="events-tab" class="tab-content">
+  <h2>DataLayer Event Log</h2>
+  <div class="filter-controls">
+    <button class="filter-btn active" data-event-filter="all">All</button>
+    <button class="filter-btn" data-event-filter="consent">Consent</button>
+    <button class="filter-btn" data-event-filter="tag">Tag</button>
+    <button class="filter-btn" data-event-filter="gtm">GTM</button>
+  </div>
+  <div class="event-log" id="eventLog">
+    <div class="event-item empty-state">Waiting for events...</div>
+  </div>
+  <div class="action-buttons">
+    <button id="clearLog" class="action-button">Clear Log</button>
+    <button id="exportLog" class="action-button">Export Log</button>
+  </div>
+</div>
+
+<!-- Monitoring Tab -->
+<div id="monitoring-tab" class="tab-content">
+  <h2>Real-time Monitoring</h2>
+  <div class="monitoring-overview">
+    <div class="status-grid">
+      <div class="status-item">
+        <span class="label">Status:</span>
+        <span class="value" id="monitoringStatusValue">Inactive</span>
+      </div>
+      <div class="status-item">
+        <span class="label">CMP:</span>
+        <span class="value" id="cmpStatusValue">None</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Tags:</span>
+        <span class="value" id="tagsMonitoredValue">0</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Alerts:</span>
+        <span class="value" id="activeAlertsValue">0</span>
+      </div>
+    </div>
+  </div>
+  <div class="action-buttons">
+    <button id="startMonitoring" class="action-button primary">Start Monitoring</button>
+    <button id="stopMonitoring" class="action-button" style="display: none;">Stop Monitoring</button>
+    <button id="validateCompliance" class="action-button">Run Check</button>
+  </div>
+</div>
+
+<!-- QA Testing Tab -->
+<div id="qa-tab" class="tab-content">
+  <h2>QA Testing</h2>
+  <p>Run automated tests against the current page:</p>
+  <div class="action-buttons">
+    <button id="runConsentTest" class="action-button">Test Consent Flow</button>
+    <button id="runTagTest" class="action-button">Test Tag Firing</button>
+  </div>
+  <div id="qaResults" class="results-container">
+    <div class="empty-state">Run a test to see results</div>
+  </div>
+</div>
+  
+  <!-- Your existing tab content here -->
   <div id="tags-tab" class="tab-content active">
     <div class="filter-controls">
       <button class="filter-btn active" data-filter="all">All</button>
@@ -51,124 +172,19 @@
     </div>
   </div>
   
-  <!-- Consent Tab -->
-  <div id="consent-tab" class="tab-content">
-    <h2>Consent Simulator</h2>
-    
-    <div class="consent-categories">
-      <div class="consent-category">
-        <label for="analytics_storage">analytics_storage:</label>
-        <select id="analytics_storage" class="consent-select">
-          <option value="granted">Granted</option>
-          <option value="denied">Denied</option>
-        </select>
-      </div>
-      
-      <div class="consent-category">
-        <label for="ad_storage">ad_storage:</label>
-        <select id="ad_storage" class="consent-select">
-          <option value="granted">Granted</option>
-          <option value="denied">Denied</option>
-        </select>
-      </div>
-      
-      <div class="consent-category">
-        <label for="functionality_storage">functionality_storage:</label>
-        <select id="functionality_storage" class="consent-select">
-          <option value="granted">Granted</option>
-          <option value="denied">Denied</option>
-        </select>
-      </div>
-      
-      <div class="consent-category">
-        <label for="personalization_storage">personalization_storage:</label>
-        <select id="personalization_storage" class="consent-select">
-          <option value="granted">Granted</option>
-          <option value="denied">Denied</option>
-        </select>
-      </div>
-      
-      <div class="consent-category">
-        <label for="security_storage">security_storage:</label>
-        <select id="security_storage" class="consent-select">
-          <option value="granted">Granted</option>
-          <option value="denied">Denied</option>
-        </select>
-      </div>
-    </div>
-    
-    <div class="action-buttons">
-      <button id="applyConsent" class="action-button primary">Apply Settings</button>
-      <div class="dropdown">
-        <button class="dropdown-toggle action-button">Presets</button>
-        <div class="dropdown-menu">
-          <button class="dropdown-item" data-preset="all-granted">All Granted</button>
-          <button class="dropdown-item" data-preset="all-denied">All Denied</button>
-          <button class="dropdown-item" data-preset="analytics-only">Analytics Only</button>
-          <button class="dropdown-item" data-preset="ads-only">Ads Only</button>
-          <button class="dropdown-item" data-preset="functional-only">Functional Only</button>
-        </div>
-      </div>
-    </div>
-  </div>
+  <!-- Include all other tab content from your existing HTML -->
   
-  <!-- Event Log Tab -->
-  <div id="events-tab" class="tab-content">
-    <h2>DataLayer Event Log</h2>
-    <div class="filter-controls">
-      <button class="filter-btn active" data-event-filter="all">All</button>
-      <button class="filter-btn" data-event-filter="consent">Consent</button>
-      <button class="filter-btn" data-event-filter="tag">Tag</button>
-      <button class="filter-btn" data-event-filter="gtm">GTM</button>
-    </div>
-    <div class="event-log" id="eventLog">
-      <div class="event-item empty-state">Waiting for events...</div>
-    </div>
-    <div class="action-buttons">
-      <button id="clearLog" class="action-button">Clear Log</button>
-      <button id="exportLog" class="action-button">Export Log</button>
-    </div>
-  </div>
+  <footer>
+    <div class="version">v1.2 - Modular</div>
+  </footer>
   
-  <!-- NEW: Monitoring Tab -->
-  <div id="monitoring-tab" class="tab-content">
-    <h2>Real-time Monitoring</h2>
-    
-    <div class="monitoring-overview">
-      <div class="status-grid">
-        <div class="status-item">
-          <span class="label">Status:</span>
-          <span class="value" id="monitoringStatusValue">Inactive</span>
-        </div>
-        <div class="status-item">
-          <span class="label">CMP:</span>
-          <span class="value" id="cmpStatusValue">None</span>
-        </div>
-        <div class="status-item">
-          <span class="label">Tags:</span>
-          <span class="value" id="tagsMonitoredValue">0</span>
-        </div>
-        <div class="status-item">
-          <span class="label">Alerts:</span>
-          <span class="value" id="activeAlertsValue">0</span>
-        </div>
-      </div>
-    </div>
-    
-    <div class="action-buttons">
-      <button id="startMonitoring" class="action-button primary">Start Monitoring</button>
-      <button id="stopMonitoring" class="action-button" style="display: none;">Stop Monitoring</button>
-      <button id="validateCompliance" class="action-button">Run Check</button>
-    </div>
-    
-    <div id="alertsContainer" style="display: none;">
-      <h3>Active Alerts</h3>
-      <div id="alertsList" class="alerts-list">
-        <!-- Alerts populated here -->
-      </div>
-    </div>
-    
-    <div class="monitoring-stats">
-      <h3>Statistics</h3>
-      <div class="stats-overview">
-        <script src="popup.js"></script>
+  <!-- Load modules in order -->
+  <script src="utils.js"></script>
+  <script src="tabs-manager.js"></script>
+  <script src="tag-list.js"></script>
+  <script src="consent-stimulator.js"></script>
+  <script src="event-logger.js"></script>
+  <script src="qa-panel.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
