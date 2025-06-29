@@ -1,6 +1,65 @@
-// consent-simulator.js - Converted to IIFE pattern
+// consent-simulator.js - Fixed UI update flow
 const ConsentSimulator = (function() {
   let contentScriptInterface = null;
+
+  // Consent presets configuration  
+  const CONSENT_PRESETS = {
+    'all-granted': {
+      name: 'All Granted',
+      description: 'Allow all tracking and analytics',
+      settings: {
+        analytics_storage: 'granted',
+        ad_storage: 'granted',
+        functionality_storage: 'granted',
+        personalization_storage: 'granted',
+        security_storage: 'granted'
+      }
+    },
+    'all-denied': {
+      name: 'All Denied',
+      description: 'Block all tracking (privacy-first)',
+      settings: {
+        analytics_storage: 'denied',
+        ad_storage: 'denied',
+        functionality_storage: 'denied',
+        personalization_storage: 'denied',
+        security_storage: 'denied'
+      }
+    },
+    'analytics-only': {
+      name: 'Analytics Only',
+      description: 'Allow analytics but block advertising',
+      settings: {
+        analytics_storage: 'granted',
+        ad_storage: 'denied',
+        functionality_storage: 'granted',
+        personalization_storage: 'denied',
+        security_storage: 'granted'
+      }
+    },
+    'ads-only': {
+      name: 'Ads Only',
+      description: 'Allow advertising but block analytics',
+      settings: {
+        analytics_storage: 'denied',
+        ad_storage: 'granted',
+        functionality_storage: 'granted',
+        personalization_storage: 'denied',
+        security_storage: 'granted'
+      }
+    },
+    'functional-only': {
+      name: 'Functional Only',
+      description: 'Essential functionality only',
+      settings: {
+        analytics_storage: 'denied',
+        ad_storage: 'denied',
+        functionality_storage: 'granted',
+        personalization_storage: 'denied',
+        security_storage: 'granted'
+      }
+    }
+  };
 
   function initialize(contentInterface) {
     console.log('⚙️ Initializing ConsentSimulator...');
@@ -8,6 +67,25 @@ const ConsentSimulator = (function() {
     
     initializeConsentPresets();
     initializeApplyButton();
+    
+    // Load current consent state on initialization
+    loadCurrentConsentState();
+  }
+
+  async function loadCurrentConsentState() {
+    try {
+      const result = await contentScriptInterface.sendMessage('checkGTM');
+      if (result && result.consentState) {
+        console.log('📊 Loading current consent state:', result.consentState);
+        updateConsentToggles(result.consentState);
+      } else {
+        console.log('⚠️ No consent state available, using privacy-first defaults');
+        const defaultPreset = CONSENT_PRESETS['functional-only'];
+        updateConsentToggles(defaultPreset.settings);
+      }
+    } catch (error) {
+      console.error('❌ Error loading consent state:', error);
+    }
   }
 
   function initializeConsentPresets() {
@@ -41,34 +119,17 @@ const ConsentSimulator = (function() {
         
         const result = await contentScriptInterface.sendMessage('applyConsent', settings);
         
-        if (result.success) {
+        if (result && result.success) {
           console.log('✅ Consent applied successfully');
           showNotification('✅ Consent applied!', 'success');
           
-          // Refresh tags after applying consent
+          // CRITICAL: Wait longer then force refresh the consent state
           setTimeout(async () => {
-            if (window.TagList) {
-              await window.TagList.refresh();
-            }
-            
-            // Refresh the GTM status display
-            try {
-              const updatedGTMResult = await contentScriptInterface.sendMessage('checkGTM');
-              console.log('🔄 Updated GTM status after consent change:', updatedGTMResult);
-              
-              // Update the status display if function is available
-              if (updatedGTMResult && window.updateGTMStatusDisplay) {
-                window.updateGTMStatusDisplay(updatedGTMResult);
-              } else {
-                console.log('📊 New consent state:', updatedGTMResult?.consentState);
-              }
-            } catch (error) {
-              console.error('❌ Failed to refresh GTM status:', error);
-            }
-          }, 1000);
+            await forceRefreshConsentState();
+          }, 1500); // Increased delay
         } else {
-          console.error('❌ Consent application failed:', result.error);
-          showNotification('❌ Failed: ' + (result.error || 'Unknown error'), 'error');
+          console.error('❌ Consent application failed:', result?.error);
+          showNotification('❌ Failed: ' + (result?.error || 'Unknown error'), 'error');
         }
       } catch (error) {
         console.error('❌ Apply consent error:', error);
@@ -80,68 +141,52 @@ const ConsentSimulator = (function() {
     });
   }
 
+  // NEW: Force refresh consent state after changes
+  async function forceRefreshConsentState() {
+    try {
+      console.log('🔄 Force refreshing consent state...');
+      
+      // Get fresh consent state from page
+      const freshResult = await contentScriptInterface.sendMessage('checkGTM');
+      console.log('🔄 Fresh consent state received:', freshResult);
+      
+      if (freshResult && freshResult.consentState) {
+        // Update our UI to match the actual page state
+        updateConsentToggles(freshResult.consentState);
+      }
+      
+      // Refresh other components
+      if (window.TagList) {
+        await window.TagList.refresh();
+      }
+      
+      // Update main status display
+      if (window.updateGTMStatusDisplay) {
+        window.updateGTMStatusDisplay(freshResult);
+      }
+      
+    } catch (error) {
+      console.error('❌ Failed to force refresh consent state:', error);
+    }
+  }
+
   function applyConsentPreset(preset) {
-    console.log('🎯 Applying consent preset:', preset);
-    let settings = {};
-    
-    switch (preset) {
-      case 'all-granted':
-        settings = {
-          analytics_storage: 'granted',
-          ad_storage: 'granted',
-          functionality_storage: 'granted',
-          personalization_storage: 'granted',
-          security_storage: 'granted'
-        };
-        break;
-      case 'all-denied':
-        settings = {
-          analytics_storage: 'denied',
-          ad_storage: 'denied',
-          functionality_storage: 'denied',
-          personalization_storage: 'denied',
-          security_storage: 'denied'
-        };
-        break;
-      case 'analytics-only':
-        settings = {
-          analytics_storage: 'granted',
-          ad_storage: 'denied',
-          functionality_storage: 'granted',
-          personalization_storage: 'denied',
-          security_storage: 'granted'
-        };
-        break;
-      case 'ads-only':
-        settings = {
-          analytics_storage: 'denied',
-          ad_storage: 'granted',
-          functionality_storage: 'granted',
-          personalization_storage: 'denied',
-          security_storage: 'granted'
-        };
-        break;
-      case 'functional-only':
-        settings = {
-          analytics_storage: 'denied',
-          ad_storage: 'denied',
-          functionality_storage: 'granted',
-          personalization_storage: 'denied',
-          security_storage: 'granted'
-        };
-        break;
-      default:
-        console.warn('⚠️ Unknown preset:', preset);
-        return;
+    const presetConfig = CONSENT_PRESETS[preset];
+    if (!presetConfig) {
+      console.warn('⚠️ Unknown preset:', preset);
+      return;
     }
     
-    // Update the UI toggles
-    updateConsentToggles(settings);
+    console.log(`🎯 Applying: ${presetConfig.name} - ${presetConfig.description}`);
+    console.log('Settings:', presetConfig.settings);
     
-    // Apply the settings automatically
+    // IMMEDIATELY update the UI toggles to show intended state
+    updateConsentToggles(presetConfig.settings);
+    
+    // Apply the settings automatically after a brief delay
     setTimeout(() => {
       const applyBtn = document.getElementById('applyConsent');
-      if (applyBtn) {
+      if (applyBtn && !applyBtn.disabled) {
         applyBtn.click();
       }
     }, 100);
@@ -149,14 +194,14 @@ const ConsentSimulator = (function() {
 
   function getConsentSettings() {
     const settings = {
-      analytics_storage: getSelectValue('analytics_storage', 'granted'),
-      ad_storage: getSelectValue('ad_storage', 'granted'),
+      analytics_storage: getSelectValue('analytics_storage', 'denied'),
+      ad_storage: getSelectValue('ad_storage', 'denied'),
       functionality_storage: getSelectValue('functionality_storage', 'granted'),
-      personalization_storage: getSelectValue('personalization_storage', 'granted'),
+      personalization_storage: getSelectValue('personalization_storage', 'denied'),
       security_storage: getSelectValue('security_storage', 'granted')
     };
     
-    console.log('📋 Current consent settings:', settings);
+    console.log('📋 Current consent settings from UI:', settings);
     return settings;
   }
 
@@ -166,13 +211,25 @@ const ConsentSimulator = (function() {
   }
 
   function updateConsentToggles(consentState) {
-    console.log('🔄 Updating consent toggles:', consentState);
+    console.log('🔄 Updating consent toggles with state:', consentState);
     
     for (const [key, value] of Object.entries(consentState)) {
       const element = document.getElementById(key);
-      if (element && element.value !== value) {
+      if (element) {
+        const oldValue = element.value;
         element.value = value;
-        console.log(`✅ Updated ${key} to ${value}`);
+        
+        console.log(`✅ Updated ${key}: ${oldValue} → ${value}`);
+        
+        // Add visual feedback for ANY change (not just different values)
+        element.style.backgroundColor = value === 'granted' ? '#d4edda' : '#f8d7da';
+        element.style.transition = 'background-color 0.3s ease';
+        
+        setTimeout(() => {
+          element.style.backgroundColor = '';
+        }, 2000);
+      } else {
+        console.warn(`⚠️ Element not found for ${key}`);
       }
     }
   }
@@ -180,25 +237,51 @@ const ConsentSimulator = (function() {
   function showNotification(message, type = 'info') {
     console.log(`📢 Notification [${type}]: ${message}`);
     
-    // Simple visual feedback - could be enhanced later
+    // Enhanced visual feedback
     const applyBtn = document.getElementById('applyConsent');
     if (applyBtn) {
       const originalText = applyBtn.textContent;
-      applyBtn.textContent = type === 'success' ? '✅ Applied!' : '❌ Failed';
-      applyBtn.style.backgroundColor = type === 'success' ? '#28a745' : '#dc3545';
+      const originalBg = applyBtn.style.backgroundColor;
+      
+      if (type === 'success') {
+        applyBtn.textContent = '✅ Applied!';
+        applyBtn.style.backgroundColor = '#28a745';
+        applyBtn.style.color = 'white';
+      } else {
+        applyBtn.textContent = '❌ Failed';
+        applyBtn.style.backgroundColor = '#dc3545';
+        applyBtn.style.color = 'white';
+      }
       
       setTimeout(() => {
         applyBtn.textContent = originalText;
-        applyBtn.style.backgroundColor = '';
+        applyBtn.style.backgroundColor = originalBg;
+        applyBtn.style.color = '';
       }, 2000);
     }
+  }
+
+  // Utility functions
+  function getAvailablePresets() {
+    return Object.keys(CONSENT_PRESETS).map(key => ({
+      key,
+      ...CONSENT_PRESETS[key]
+    }));
+  }
+
+  function getPreset(presetKey) {
+    return CONSENT_PRESETS[presetKey] || null;
   }
 
   // Public API
   return {
     initialize,
     updateConsentToggles,
-    applyConsentPreset
+    applyConsentPreset,
+    loadCurrentConsentState,
+    forceRefreshConsentState, // NEW: Expose for external calls
+    getAvailablePresets,
+    getPreset
   };
 })();
 

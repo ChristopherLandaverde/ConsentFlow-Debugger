@@ -34,9 +34,14 @@ function injectPageScript() {
 }
 
 // Message passing between page context and content script
+// content.js - Add better timeout handling and debugging
+// Replace the sendMessageToPage function:
+
 function sendMessageToPage(action, data = {}) {
   return new Promise((resolve, reject) => {
     const id = ++messageId;
+    
+    console.log(`📤 Sending message to page: ${action} (ID: ${id})`);
     
     // Store the promise resolver
     pendingMessages.set(id, { resolve, reject });
@@ -49,15 +54,33 @@ function sendMessageToPage(action, data = {}) {
       id: id
     }, '*');
     
-    // Timeout after 5 seconds
+    // Timeout after 8 seconds (increased from 5)
     setTimeout(() => {
       if (pendingMessages.has(id)) {
         pendingMessages.delete(id);
-        reject(new Error('Message timeout'));
+        console.error(`⏰ Message timeout for action: ${action} (ID: ${id})`);
+        reject(new Error(`Message timeout for action: ${action}`));
       }
-    }, 5000);
+    }, 8000);
   });
 }
+
+// Also update the message listener to add better logging:
+window.addEventListener('message', function(event) {
+  if (event.data.source === 'gtm-inspector-page-response') {
+    const { id, data } = event.data;
+    
+    console.log(`📥 Received response for ID: ${id}`, data);
+    
+    if (pendingMessages.has(id)) {
+      const { resolve } = pendingMessages.get(id);
+      pendingMessages.delete(id);
+      resolve(data);
+    } else {
+      console.warn(`⚠️ Received response for unknown message ID: ${id}`);
+    }
+  }
+});
 
 // Listen for responses from page context
 window.addEventListener('message', function(event) {

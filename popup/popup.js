@@ -1,4 +1,4 @@
-// popup-main.js - Main orchestrator
+// popup.js - Updated to handle consent state properly
 console.log('🔍 GTM Inspector Popup: Loading...');
 
 // Content script interface
@@ -53,7 +53,7 @@ document.addEventListener('DOMContentLoaded', function() {
       window.QAPanel.initialize(ContentScriptInterface);
     }
     
-    // Initial GTM check
+    // Initial GTM check with a slight delay
     setTimeout(() => {
       checkGTMStatus();
     }, 500);
@@ -80,11 +80,17 @@ async function checkGTMStatus() {
     }
     
     if (result.events && window.EventLogger) {
-      window.EventLogger.updateEvents(result.events);
+      window.EventLogger.updateEventLog(result.events);
     }
     
-    if (result.consentState && window.ConsentSimulator) {
-      window.ConsentSimulator.updateConsentToggles(result.consentState);
+    // IMPORTANT: Update consent state in simulator
+    if (window.ConsentSimulator) {
+      if (result.consentState) {
+        window.ConsentSimulator.updateConsentToggles(result.consentState);
+      } else {
+        // If no consent mode, load with appropriate defaults
+        await window.ConsentSimulator.loadCurrentConsentState();
+      }
     }
     
   } catch (error) {
@@ -106,9 +112,9 @@ function updateGTMStatusDisplay(result) {
     gtmStatus.className = 'status found';
     
     if (result.hasConsentMode && result.consentState) {
-      // Show actual consent state instead of just "Active"
-      const analytics = result.consentState.analytics_storage;
-      const ads = result.consentState.ad_storage;
+      // Show more detailed consent state
+      const analytics = result.consentState.analytics_storage || 'unknown';
+      const ads = result.consentState.ad_storage || 'unknown';
       
       consentModeStatus.textContent = `🔒 Analytics: ${analytics}, Ads: ${ads}`;
       consentModeStatus.className = 'status found';
@@ -125,9 +131,8 @@ function updateGTMStatusDisplay(result) {
     consentModeStatus.className = 'status not-found';
   }
 }
-// Make interface available globally
-// Make interface available globally
-// Make functions available globally - ADD THIS AT THE END
+
+// Make functions available globally
 window.ContentScriptInterface = ContentScriptInterface;
 window.updateGTMStatusDisplay = updateGTMStatusDisplay;
 window.checkGTMStatus = checkGTMStatus;

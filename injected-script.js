@@ -1,10 +1,14 @@
-// injected-script.js - Runs in page context (not isolated)
-// This script has access to the actual window object that console can access
-
+// injected-script.js - Enhanced with consent persistence
 console.log('🔍 GTM Inspector: Injected script loading in page context...');
 
 // Create ConsentInspector in the REAL page context
 window.ConsentInspector = {
+  // Store our override state
+  _overrideActive: false,
+  _overrideState: null,
+  _originalGtag: null,
+  _originalDataLayerPush: null,
+  
   // Detection methods
   detectGTM: function() {
     console.log('🔍 Running GTM detection...');
@@ -13,11 +17,9 @@ window.ConsentInspector = {
     let gtmId = '';
     
     if (hasGTM) {
-      // Get GTM ID
       gtmId = Object.keys(window.google_tag_manager).find(key => key.startsWith('GTM-')) || '';
     }
     
-    // Check for GTM script tags as backup
     if (!gtmId) {
       const gtmScripts = document.querySelectorAll('script[src*="googletagmanager.com/gtm.js"]');
       if (gtmScripts.length > 0) {
@@ -34,15 +36,14 @@ window.ConsentInspector = {
       gtmId: gtmId,
       hasConsentMode: this.detectConsentMode(),
       consentState: this.getCurrentConsentState(),
+      overrideActive: this._overrideActive,
       timestamp: Date.now()
     };
   },
   
   detectConsentMode: function() {
-    // Check for gtag
     if (window.gtag) return true;
     
-    // Check dataLayer for consent events
     if (window.dataLayer && Array.isArray(window.dataLayer)) {
       return window.dataLayer.some(item => 
         Array.isArray(item) && item[0] === 'consent'
@@ -53,47 +54,144 @@ window.ConsentInspector = {
   },
   
   getCurrentConsentState: function() {
-    const defaultState = {
-      analytics_storage: 'granted',
-      ad_storage: 'granted',
-      functionality_storage: 'granted',
-      personalization_storage: 'granted',
-      security_storage: 'granted'
-    };
+    // If we have an active override, return our override state
+    if (this._overrideActive && this._overrideState) {
+      console.log('🎯 Returning override consent state:', this._overrideState);
+      return this._overrideState;
+    }
     
-    if (!window.dataLayer) return defaultState;
+    // Otherwise, read the actual page state
+    console.log('🔍 Reading actual page consent state...');
     
-    // Find most recent consent setting
-    for (let i = window.dataLayer.length - 1; i >= 0; i--) {
-      const item = window.dataLayer[i];
-      if (Array.isArray(item) && item[0] === 'consent' && 
-          (item[1] === 'default' || item[1] === 'update') && item[2]) {
-        return { ...defaultState, ...item[2] };
+    let consentFromDataLayer = null;
+    if (window.dataLayer && Array.isArray(window.dataLayer)) {
+      for (let i = window.dataLayer.length - 1; i >= 0; i--) {
+        const item = window.dataLayer[i];
+        if (Array.isArray(item) && item[0] === 'consent' && 
+            (item[1] === 'default' || item[1] === 'update') && item[2]) {
+          consentFromDataLayer = item[2];
+          console.log('🎯 Found consent in dataLayer:', item);
+          break;
+        }
       }
     }
     
-    return defaultState;
+    const finalState = consentFromDataLayer || {
+      analytics_storage: this.detectConsentMode() ? 'denied' : 'granted',
+      ad_storage: this.detectConsentMode() ? 'denied' : 'granted', 
+      functionality_storage: 'granted',
+      personalization_storage: this.detectConsentMode() ? 'denied' : 'granted',
+      security_storage: 'granted'
+    };
+    
+    console.log('🎯 Final consent state:', finalState);
+    return finalState;
   },
   
-  // Consent manipulation
+  // ENHANCED: Consent override with persistence
   updateConsent: function(settings) {
-    console.log('🔧 Updating consent:', settings);
+    console.log('🔧 Updating consent with OVERRIDE:', settings);
     
-    if (window.gtag) {
-      window.gtag('consent', 'update', settings);
-      return { success: true, method: 'gtag' };
-    } else if (window.dataLayer) {
-      window.dataLayer.push(['consent', 'update', settings]);
-      return { success: true, method: 'dataLayer' };
+    // Store our override state
+    this._overrideState = { ...settings };
+    this._overrideActive = true;
+    
+    // Set up monitoring to maintain our override
+    this._maintainConsentOverride();
+    
+    let success = false;
+    let method = '';
+    
+    // Apply the consent using available methods
+    if (window.gtag && typeof window.gtag === 'function') {
+      try {
+        console.log('🔧 Applying via gtag...');
+        window.gtag('consent', 'update', settings);
+        success = true;
+        method = 'gtag';
+      } catch (e) {
+        console.error('❌ gtag failed:', e);
+      }
     }
     
-    return { success: false, error: 'No consent mechanism available' };
+    if (window.dataLayer && Array.isArray(window.dataLayer)) {
+      try {
+        console.log('🔧 Applying via dataLayer...');
+        window.dataLayer.push(['consent', 'update', settings]);
+        success = true;
+        method = method ? method + '+dataLayer' : 'dataLayer';
+      } catch (e) {
+        console.error('❌ dataLayer failed:', e);
+      }
+    }
+    
+    // Force trigger event
+    if (success && window.dataLayer) {
+      try {
+        window.dataLayer.push({
+          'event': 'gtm_consent_inspector_override',
+          'consent_settings': settings
+        });
+      } catch (e) {
+        console.log('⚠️ Could not trigger event:', e);
+      }
+    }
+    
+    if (success) {
+      console.log(`✅ Consent override activated via ${method}`);
+      return { success: true, method: method, override: true };
+    } else {
+      this._overrideActive = false;
+      this._overrideState = null;
+      return { success: false, error: 'No consent mechanism available' };
+    }
   },
   
-  // Tag detection
+  // NEW: Maintain consent override against site changes
+  _maintainConsentOverride: function() {
+    if (this._overrideActive) {
+      console.log('🛡️ Setting up consent override protection...');
+      
+      // Re-apply our override every 2 seconds
+      const overrideInterval = setInterval(() => {
+        if (!this._overrideActive) {
+          clearInterval(overrideInterval);
+          return;
+        }
+        
+        console.log('🔄 Re-applying consent override...');
+        
+        if (window.gtag) {
+          window.gtag('consent', 'update', this._overrideState);
+        }
+        if (window.dataLayer) {
+          window.dataLayer.push(['consent', 'update', this._overrideState]);
+        }
+      }, 2000);
+      
+      // Stop override after 30 seconds
+      setTimeout(() => {
+        console.log('⏰ Consent override timeout - stopping protection');
+        this._overrideActive = false;
+        clearInterval(overrideInterval);
+      }, 30000);
+    }
+  },
+  
+  // NEW: Stop consent override
+  stopOverride: function() {
+    console.log('🛑 Stopping consent override');
+    this._overrideActive = false;
+    this._overrideState = null;
+    return { success: true, message: 'Override stopped' };
+  },
+  
+  // Enhanced tag detection
   getTagInfo: function() {
     const tags = [];
     const consentState = this.getCurrentConsentState();
+    
+    console.log('🔍 Analyzing tags with consent state:', consentState);
     
     const tagChecks = [
       {
@@ -109,7 +207,8 @@ window.ConsentInspector = {
         consentType: 'analytics_storage'
       },
       {
-        check: () => document.querySelector('script[src*="googleadservices.com"]') || window.gtag,
+        check: () => document.querySelector('script[src*="googleadservices.com"]') || 
+                     document.querySelector('script[src*="googlesyndication.com"]'),
         name: 'Google Ads',
         type: 'advertising',
         consentType: 'ad_storage'
@@ -140,7 +239,8 @@ window.ConsentInspector = {
           reason: isAllowed ? 
             `${tagDef.consentType} granted` : 
             `${tagDef.consentType} denied`,
-          wouldFireWith: isAllowed ? '' : tagDef.consentType
+          consentType: tagDef.consentType,
+          overridden: this._overrideActive
         });
       }
     });
@@ -148,21 +248,14 @@ window.ConsentInspector = {
     return tags;
   },
   
-  // Communication bridge
-  sendToContentScript: function(data) {
-    window.postMessage({
-      source: 'gtm-inspector-page',
-      data: data
-    }, '*');
-  },
-  
-  // Helper methods for console use
+  // Helper methods
   status: function() {
     const result = this.detectGTM();
     console.table({
       'GTM Detected': result.hasGTM,
       'GTM ID': result.gtmId || 'None',
       'Consent Mode': result.hasConsentMode,
+      'Override Active': this._overrideActive,
       'Analytics Storage': result.consentState.analytics_storage,
       'Ad Storage': result.consentState.ad_storage
     });
@@ -170,6 +263,7 @@ window.ConsentInspector = {
   },
   
   allowAll: function() {
+    console.log('🎯 ConsentInspector.allowAll() called');
     return this.updateConsent({
       analytics_storage: 'granted',
       ad_storage: 'granted',
@@ -204,7 +298,11 @@ window.ConsentInspector = {
 window.ConsentInspector._events = [];
 window.ConsentInspector._maxEvents = 50;
 
-// Hook into dataLayer if it exists
+window.ConsentInspector.getEvents = function() {
+  return this._events.slice(-20);
+};
+
+// Enhanced dataLayer monitoring
 if (window.dataLayer && Array.isArray(window.dataLayer)) {
   const originalPush = window.dataLayer.push;
   
@@ -216,12 +314,23 @@ if (window.dataLayer && Array.isArray(window.dataLayer)) {
       
       if (typeof event === 'object' && event !== null) {
         if (Array.isArray(event) && event[0] === 'consent') {
+          // Log all consent changes
           window.ConsentInspector._events.push({
             timestamp: Date.now(),
             type: 'Consent Update',
             category: 'consent',
             details: `${event[1]}: ${JSON.stringify(event[2])}`
           });
+          
+          // If site is trying to override our override, re-apply ours
+          if (window.ConsentInspector._overrideActive && event[1] === 'update') {
+            console.log('🛡️ Site tried to override our consent - re-applying override in 100ms');
+            setTimeout(() => {
+              if (window.ConsentInspector._overrideActive) {
+                originalPush.call(this, ['consent', 'update', window.ConsentInspector._overrideState]);
+              }
+            }, 100);
+          }
         } else if (event.event && !event.event.startsWith('gtm.')) {
           window.ConsentInspector._events.push({
             timestamp: Date.now(),
@@ -232,7 +341,6 @@ if (window.dataLayer && Array.isArray(window.dataLayer)) {
         }
       }
       
-      // Limit events to prevent memory issues
       if (window.ConsentInspector._events.length > window.ConsentInspector._maxEvents) {
         window.ConsentInspector._events = window.ConsentInspector._events.slice(-30);
       }
@@ -244,59 +352,36 @@ if (window.dataLayer && Array.isArray(window.dataLayer)) {
   };
 }
 
-// Hook into gtag if it exists
-if (window.gtag) {
-  const originalGtag = window.gtag;
-  
-  window.gtag = function() {
-    const result = originalGtag.apply(this, arguments);
-    
-    try {
-      const args = Array.from(arguments);
-      if (args[0] === 'consent') {
-        window.ConsentInspector._events.push({
-          timestamp: Date.now(),
-          type: 'gtag Consent',
-          category: 'consent',
-          details: `${args[1]}: ${JSON.stringify(args[2])}`
-        });
-      }
-    } catch (e) {
-      // Fail silently  
-    }
-    
-    return result;
-  };
-}
-
-// Add method to get events
-window.ConsentInspector.getEvents = function() {
-  return this._events.slice(-20); // Return last 20 events
-};
-
 // Listen for messages from content script
 window.addEventListener('message', function(event) {
   if (event.data.source === 'gtm-inspector-content') {
-    // Handle requests from content script
     const { action, data, id } = event.data;
     let response = null;
     
-    switch (action) {
-      case 'detectGTM':
-        response = window.ConsentInspector.detectGTM();
-        break;
-      case 'updateConsent':
-        response = window.ConsentInspector.updateConsent(data);
-        break;
-      case 'getTagInfo':
-        response = window.ConsentInspector.getTagInfo();
-        break;
-      case 'getEvents':
-        response = window.ConsentInspector.getEvents();
-        break;
+    try {
+      switch (action) {
+        case 'detectGTM':
+          response = window.ConsentInspector.detectGTM();
+          break;
+        case 'updateConsent':
+          response = window.ConsentInspector.updateConsent(data);
+          break;
+        case 'getTagInfo':
+          response = window.ConsentInspector.getTagInfo();
+          break;
+        case 'getEvents':
+          response = window.ConsentInspector.getEvents();
+          break;
+        case 'stopOverride':
+          response = window.ConsentInspector.stopOverride();
+          break;
+        default:
+          response = { error: 'Unknown action: ' + action };
+      }
+    } catch (error) {
+      response = { error: error.message };
     }
     
-    // Send response back
     window.postMessage({
       source: 'gtm-inspector-page-response',
       id: id,
@@ -305,13 +390,22 @@ window.addEventListener('message', function(event) {
   }
 });
 
-console.log('✅ GTM Inspector: ConsentInspector created and accessible in console!');
-console.log('💡 Try: ConsentInspector.status() or ConsentInspector.allowAll()');
+console.log('✅ GTM Inspector: ConsentInspector created with override protection!');
+console.log('💡 Try: ConsentInspector.allowAll() - it will maintain the override');
 
-// Run initial detection
+// Initial detection
 setTimeout(() => {
-  const result = window.ConsentInspector.detectGTM();
-  if (result.hasGTM) {
-    console.log(`🎯 GTM Found: ${result.gtmId}`);
+  try {
+    const result = window.ConsentInspector.detectGTM();
+    if (result.hasGTM) {
+      console.log(`🎯 GTM Found: ${result.gtmId}`);
+      console.log('📊 Initial consent state:', result.consentState);
+      
+      if (result.consentState.analytics_storage === 'denied') {
+        console.log('⚠️ Site has consent denied by default - use ConsentInspector.allowAll() to override');
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error in initial GTM detection:', error);
   }
 }, 1000);
