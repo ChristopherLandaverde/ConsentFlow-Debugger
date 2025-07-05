@@ -142,6 +142,8 @@ const messageHandlers = {
       return {
         hasGTM: gtmResult?.hasGTM || false,
         gtmId: gtmResult?.gtmId || '',
+        containers: gtmResult?.containers || [],
+        primaryContainer: gtmResult?.primaryContainer || null,
         hasConsentMode: gtmResult?.hasConsentMode || false,
         consentState: gtmResult?.consentState || {},
         tags: tags || [],
@@ -270,7 +272,15 @@ function toggleOverlay() {
   sendMessageToPage('detectGTM').then(result => {
     const statusEl = overlay.querySelector('#overlay-gtm-status');
     if (statusEl && result) {
-      statusEl.textContent = result.hasGTM ? `✅ GTM Active (${result.gtmId})` : '❌ No GTM';
+      if (result.hasGTM) {
+        if (result.containers && result.containers.length > 1) {
+          statusEl.textContent = `✅ ${result.containers.length} GTM Containers (${result.gtmId})`;
+        } else {
+          statusEl.textContent = `✅ GTM Active (${result.gtmId})`;
+        }
+      } else {
+        statusEl.textContent = '❌ No GTM';
+      }
     }
   });
   

@@ -37,6 +37,10 @@ document.addEventListener('DOMContentLoaded', function() {
       window.TabsManager.initialize();
     }
     
+    if (window.ContainersPanel) {
+      window.ContainersPanel.initialize(ContentScriptInterface);
+    }
+    
     if (window.TagList) {
       window.TagList.initialize(ContentScriptInterface);
     }
@@ -75,6 +79,10 @@ async function checkGTMStatus() {
     updateGTMStatusDisplay(result);
     
     // Notify modules of new data
+    if (result.containers && window.ContainersPanel) {
+      window.ContainersPanel.updateContainers(result.containers);
+    }
+    
     if (result.tags && window.TagList) {
       window.TagList.updateTags(result.tags);
     }
@@ -108,19 +116,37 @@ function updateGTMStatusDisplay(result) {
   if (!gtmStatus || !consentModeStatus) return;
   
   if (result.hasGTM) {
-    gtmStatus.textContent = `✅ GTM Found: ${result.gtmId}`;
-    gtmStatus.className = 'status found';
-    
-    if (result.hasConsentMode && result.consentState) {
-      // Show more detailed consent state
-      const analytics = result.consentState.analytics_storage || 'unknown';
-      const ads = result.consentState.ad_storage || 'unknown';
+    // Handle multiple containers
+    if (result.containers && result.containers.length > 1) {
+      const containerCount = result.containers.length;
+      const primaryId = result.primaryContainer ? result.primaryContainer.id : result.gtmId;
       
-      consentModeStatus.textContent = `🔒 Analytics: ${analytics}, Ads: ${ads}`;
+      gtmStatus.textContent = `✅ ${containerCount} GTM Containers Found (Primary: ${primaryId})`;
+      gtmStatus.className = 'status found';
+      
+      // Show container details in consent status
+      const containerDetails = result.containers.map(c => 
+        `${c.id}${c.hasConsentMode ? '🔒' : '⚠️'}`
+      ).join(', ');
+      
+      consentModeStatus.textContent = `📦 Containers: ${containerDetails}`;
       consentModeStatus.className = 'status found';
     } else {
-      consentModeStatus.textContent = '⚠️ Consent Mode Not Found';
-      consentModeStatus.className = 'status not-found';
+      // Single container (backward compatibility)
+      gtmStatus.textContent = `✅ GTM Found: ${result.gtmId}`;
+      gtmStatus.className = 'status found';
+      
+      if (result.hasConsentMode && result.consentState) {
+        // Show more detailed consent state
+        const analytics = result.consentState.analytics_storage || 'unknown';
+        const ads = result.consentState.ad_storage || 'unknown';
+        
+        consentModeStatus.textContent = `🔒 Analytics: ${analytics}, Ads: ${ads}`;
+        consentModeStatus.className = 'status found';
+      } else {
+        consentModeStatus.textContent = '⚠️ Consent Mode Not Found';
+        consentModeStatus.className = 'status not-found';
+      }
     }
   } else {
     gtmStatus.textContent = result.error ? 

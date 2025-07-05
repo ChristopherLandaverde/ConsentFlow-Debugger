@@ -13,29 +13,74 @@ window.ConsentInspector = {
   detectGTM: function() {
     console.log('🔍 Running GTM detection...');
     
-    const hasGTM = !!window.google_tag_manager;
-    let gtmId = '';
+    const containers = [];
     
-    if (hasGTM) {
-      gtmId = Object.keys(window.google_tag_manager).find(key => key.startsWith('GTM-')) || '';
+    // Method 1: Check window.google_tag_manager for all containers
+    if (window.google_tag_manager) {
+      const gtmKeys = Object.keys(window.google_tag_manager);
+      gtmKeys.forEach(key => {
+        if (key.startsWith('GTM-')) {
+          const container = window.google_tag_manager[key];
+          const dataLayer = (container.dataLayer && Array.isArray(container.dataLayer)) ? container.dataLayer : [];
+          
+          containers.push({
+            id: key,
+            method: 'window.google_tag_manager',
+            dataLayer: dataLayer.length, // Just send the count, not the actual array
+            hasConsentMode: this.detectConsentModeForContainer(key)
+          });
+        }
+      });
     }
     
-    if (!gtmId) {
-      const gtmScripts = document.querySelectorAll('script[src*="googletagmanager.com/gtm.js"]');
-      if (gtmScripts.length > 0) {
-        const src = gtmScripts[0].src;
-        const match = src.match(/[?&]id=([^&]+)/);
-        if (match && match[1].startsWith('GTM-')) {
-          gtmId = match[1];
+    // Method 2: Check all GTM script tags
+    const gtmScripts = document.querySelectorAll('script[src*="googletagmanager.com/gtm.js"]');
+    gtmScripts.forEach(script => {
+      const src = script.src;
+      const match = src.match(/[?&]id=([^&]+)/);
+      if (match && match[1].startsWith('GTM-')) {
+        const containerId = match[1];
+        
+        // Check if we already found this container
+        const existing = containers.find(c => c.id === containerId);
+        if (!existing) {
+          containers.push({
+            id: containerId,
+            method: 'script_tag',
+            dataLayer: (window.dataLayer && Array.isArray(window.dataLayer)) ? window.dataLayer.length : 0,
+            hasConsentMode: this.detectConsentModeForContainer(containerId)
+          });
         }
       }
+    });
+    
+    // Method 3: Check for gtag configurations (GA4)
+    if (window.gtag && typeof window.gtag === 'function') {
+      // Look for gtag config calls that might indicate additional containers
+      const gtagConfigs = this.findGtagConfigs();
+      gtagConfigs.forEach(config => {
+        if (config.startsWith('GTM-') && !containers.find(c => c.id === config)) {
+          containers.push({
+            id: config,
+            method: 'gtag_config',
+            dataLayer: (window.dataLayer && Array.isArray(window.dataLayer)) ? window.dataLayer.length : 0,
+            hasConsentMode: this.detectConsentModeForContainer(config)
+          });
+        }
+      });
     }
     
+    // Get overall consent state (from primary container or global)
+    const primaryContainer = containers[0] || null;
+    const overallConsentState = this.getCurrentConsentState();
+    
     return {
-      hasGTM: hasGTM || !!gtmId,
-      gtmId: gtmId,
+      hasGTM: containers.length > 0,
+      containers: containers,
+      primaryContainer: primaryContainer,
+      gtmId: primaryContainer ? primaryContainer.id : '', // Backward compatibility
       hasConsentMode: this.detectConsentMode(),
-      consentState: this.getCurrentConsentState(),
+      consentState: overallConsentState,
       overrideActive: this._overrideActive,
       timestamp: Date.now()
     };
@@ -51,6 +96,45 @@ window.ConsentInspector = {
     }
     
     return false;
+  },
+  
+  // NEW: Detect consent mode for a specific container
+  detectConsentModeForContainer: function(containerId) {
+    // Check if this specific container has consent mode
+    if (window.google_tag_manager && window.google_tag_manager[containerId]) {
+      const container = window.google_tag_manager[containerId];
+      if (container.dataLayer && Array.isArray(container.dataLayer)) {
+        return container.dataLayer.some(item => 
+          Array.isArray(item) && item[0] === 'consent'
+        );
+      }
+    }
+    
+    // Fallback to global detection
+    return this.detectConsentMode();
+  },
+  
+  // NEW: Find gtag configurations
+  findGtagConfigs: function() {
+    const configs = [];
+    
+    // Look for gtag config calls in the page
+    if (window.gtag && typeof window.gtag === 'function') {
+      // We can't directly inspect gtag calls, but we can look for common patterns
+      // This is a simplified approach - in practice, you might need to monitor gtag calls
+      try {
+        // Check if there are any GTM IDs in the page source
+        const pageSource = document.documentElement.outerHTML;
+        const gtmMatches = pageSource.match(/GTM-[A-Z0-9]+/g);
+        if (gtmMatches) {
+          configs.push(...gtmMatches);
+        }
+      } catch (e) {
+        console.log('Could not search page source for GTM configs:', e);
+      }
+    }
+    
+    return [...new Set(configs)]; // Remove duplicates
   },
   
   getCurrentConsentState: function() {
@@ -382,10 +466,37 @@ window.addEventListener('message', function(event) {
       response = { error: error.message };
     }
     
+    // Create a safe, serializable version of the response
+    const safeResponse = (() => {
+      try {
+        // Try to serialize and deserialize to ensure it's safe
+        return JSON.parse(JSON.stringify(response));
+      } catch (e) {
+        // If serialization fails, create a safe fallback
+        console.warn('Response serialization failed, creating safe fallback:', e);
+        if (response && typeof response === 'object') {
+          const safe = {};
+          for (const [key, value] of Object.entries(response)) {
+            if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) {
+              safe[key] = value;
+            } else if (Array.isArray(value)) {
+              safe[key] = value.map(item => 
+                (typeof item === 'string' || typeof item === 'number' || typeof item === 'boolean' || item === null) ? item : '[Complex Object]'
+              );
+            } else if (typeof value === 'object') {
+              safe[key] = '[Object]';
+            }
+          }
+          return safe;
+        }
+        return { error: 'Response could not be serialized' };
+      }
+    })();
+    
     window.postMessage({
       source: 'gtm-inspector-page-response',
       id: id,
-      data: response
+      data: safeResponse
     }, '*');
   }
 });
@@ -408,4 +519,4 @@ setTimeout(() => {
   } catch (error) {
     console.error('❌ Error in initial GTM detection:', error);
   }
-}, 1000);cl
+}, 1000);
