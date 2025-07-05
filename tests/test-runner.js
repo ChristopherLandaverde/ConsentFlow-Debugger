@@ -85,6 +85,15 @@ class GTMInspectorTestRunner {
           pass: false, 
           message: `Expected ${actual} to be greater than or equal to ${expected}` 
         };
+      },
+      toBeGreaterThan: (expected) => {
+        if (actual > expected) {
+          return { pass: true };
+        }
+        return { 
+          pass: false, 
+          message: `Expected ${actual} to be greater than ${expected}` 
+        };
       }
     };
   }
