@@ -19,11 +19,6 @@
     </div>
   </div>
 
-
-  <button id="debugRefreshConsent" class="action-button" style="background: orange;">🐛 Debug Refresh</button>
-
-
-  
   <div class="tabs">
     <button class="tab-button active" data-tab="tags">Tags</button>
     <button class="tab-button" data-tab="consent">Consent</button>
@@ -236,19 +231,5 @@
   <script src="qa-panel.js"></script>
   <script src="iab-tcf.js"></script>
   <script src="popup.js"></script>
-  <script>
-    // Add this at the end of popup.js
-    document.addEventListener('DOMContentLoaded', function() {
-      const debugBtn = document.getElementById('debugRefreshConsent');
-      if (debugBtn) {
-        debugBtn.addEventListener('click', async function() {
-          console.log('🐛 Debug refresdh triggered');
-          if (window.ConsentSimulator) {
-            await window.ConsentSimulator.forceRefreshConsentState();
-          }
-        });
-      }
-    });
-    </script>
 </body>
 </html>
