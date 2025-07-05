@@ -61,6 +61,14 @@ document.addEventListener('DOMContentLoaded', function() {
       window.IABTCF.initialize(ContentScriptInterface);
     }
     
+    if (window.TriggersVarsModule) {
+      window.TriggersVarsModule.init(ContentScriptInterface);
+    }
+    
+    if (window.PerformanceMonitor) {
+      window.PerformanceMonitor.init(ContentScriptInterface);
+    }
+    
     // Initial GTM check with a slight delay
     setTimeout(() => {
       checkGTMStatus();

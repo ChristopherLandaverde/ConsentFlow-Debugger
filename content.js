@@ -1,5 +1,64 @@
-// content.js - Fixed with proper page context injection
-console.log('🔍 GTM Consent Inspector: Content script loading...FINAL');
+// content.js - Enhanced with comprehensive error handling and performance monitoring
+console.log('🔍 GTM Consent Inspector: Content script loading...ENHANCED');
+
+// Error handling and performance monitoring
+const ErrorTracker = {
+  errors: [],
+  maxErrors: 50,
+  
+  addError: function(error, context = 'content-script') {
+    const errorEntry = {
+      message: error.message || error,
+      context: context,
+      timestamp: Date.now(),
+      stack: error.stack
+    };
+    
+    this.errors.push(errorEntry);
+    
+    // Keep only recent errors
+    if (this.errors.length > this.maxErrors) {
+      this.errors = this.errors.slice(-this.maxErrors);
+    }
+    
+    console.error(`❌ Error in ${context}:`, error);
+  },
+  
+  getErrors: function() {
+    return this.errors;
+  },
+  
+  clearErrors: function() {
+    this.errors = [];
+  }
+};
+
+const PerformanceTracker = {
+  startTime: Date.now(),
+  operations: new Map(),
+  
+  startOperation: function(name) {
+    this.operations.set(name, Date.now());
+  },
+  
+  endOperation: function(name) {
+    const startTime = this.operations.get(name);
+    if (startTime) {
+      const duration = Date.now() - startTime;
+      console.log(`⏱️ ${name} took ${duration}ms`);
+      this.operations.delete(name);
+      return duration;
+    }
+    return 0;
+  },
+  
+  getMetrics: function() {
+    return {
+      totalTime: Date.now() - this.startTime,
+      operations: Object.fromEntries(this.operations)
+    };
+  }
+};
 
 let isInjected = false;
 let messageId = 0;
@@ -41,27 +100,34 @@ function sendMessageToPage(action, data = {}) {
   return new Promise((resolve, reject) => {
     const id = ++messageId;
     
+    PerformanceTracker.startOperation(`message-${action}`);
     console.log(`📤 Sending message to page: ${action} (ID: ${id})`);
     
-    // Store the promise resolver
-    pendingMessages.set(id, { resolve, reject });
-    
-    // Send message to page
-    window.postMessage({
-      source: 'gtm-inspector-content',
-      action: action,
-      data: data,
-      id: id
-    }, '*');
-    
-    // Timeout after 8 seconds (increased from 5)
-    setTimeout(() => {
-      if (pendingMessages.has(id)) {
-        pendingMessages.delete(id);
-        console.error(`⏰ Message timeout for action: ${action} (ID: ${id})`);
-        reject(new Error(`Message timeout for action: ${action}`));
-      }
-    }, 8000);
+    try {
+      // Store the promise resolver
+      pendingMessages.set(id, { resolve, reject });
+      
+      // Send message to page
+      window.postMessage({
+        source: 'gtm-inspector-content',
+        action: action,
+        data: data,
+        id: id
+      }, '*');
+      
+      // Timeout after 8 seconds (increased from 5)
+      setTimeout(() => {
+        if (pendingMessages.has(id)) {
+          pendingMessages.delete(id);
+          const error = new Error(`Message timeout for action: ${action}`);
+          ErrorTracker.addError(error, `message-timeout-${action}`);
+          reject(error);
+        }
+      }, 8000);
+    } catch (error) {
+      ErrorTracker.addError(error, `message-send-${action}`);
+      reject(error);
+    }
   });
 }
 
@@ -87,10 +153,20 @@ window.addEventListener('message', function(event) {
   if (event.data.source === 'gtm-inspector-page-response') {
     const { id, data } = event.data;
     
+    console.log(`📥 Received response for ID: ${id}`, data);
+    
     if (pendingMessages.has(id)) {
       const { resolve } = pendingMessages.get(id);
       pendingMessages.delete(id);
+      
+      // Track performance
+      const action = data?.action || 'unknown';
+      PerformanceTracker.endOperation(`message-${action}`);
+      
       resolve(data);
+    } else {
+      console.warn(`⚠️ Received response for unknown message ID: ${id}`);
+      ErrorTracker.addError(new Error(`Unknown message ID: ${id}`), 'message-handler');
     }
   }
 });
@@ -133,11 +209,23 @@ async function checkGTMStatus() {
 const messageHandlers = {
   ping: () => ({ success: true }),
   
+  getErrors: () => {
+    return ErrorTracker.getErrors();
+  },
+  
+  getPerformanceMetrics: () => {
+    return PerformanceTracker.getMetrics();
+  },
+  
   checkGTM: async () => {
     try {
+      PerformanceTracker.startOperation('checkGTM');
+      
       const gtmResult = await sendMessageToPage('detectGTM');
       const tags = await sendMessageToPage('getTagInfo');
       const events = await sendMessageToPage('getEvents');
+      
+      PerformanceTracker.endOperation('checkGTM');
       
       return {
         hasGTM: gtmResult?.hasGTM || false,
@@ -150,7 +238,7 @@ const messageHandlers = {
         events: events || []
       };
     } catch (error) {
-      console.error('Error in checkGTM:', error);
+      ErrorTracker.addError(error, 'checkGTM');
       return { error: error.message };
     }
   },
@@ -204,28 +292,58 @@ const messageHandlers = {
     } catch (error) {
       return [];
     }
+  },
+  
+  getTriggersAndVariables: async () => {
+    try {
+      const result = await sendMessageToPage('detectTriggersAndVariables');
+      return result || { triggers: [], variables: [], tagTriggerMap: [], consentDependencies: [] };
+    } catch (error) {
+      return { triggers: [], variables: [], tagTriggerMap: [], consentDependencies: [], error: error.message };
+    }
+  },
+  
+  getComprehensiveAnalysis: async () => {
+    try {
+      const result = await sendMessageToPage('getComprehensiveTagAnalysis');
+      return result || { tags: [], triggers: [], variables: [], summary: {} };
+    } catch (error) {
+      return { tags: [], triggers: [], variables: [], summary: {}, error: error.message };
+    }
   }
 };
 
 // Chrome runtime message listener
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  const handler = messageHandlers[request.action];
+  console.log('📨 Received message from popup:', request);
   
-  if (handler) {
-    // Handle async handlers
-    const result = handler(request.data || {});
+  try {
+    const handler = messageHandlers[request.action];
     
-    if (result instanceof Promise) {
-      result.then(sendResponse).catch(error => {
-        console.error(`Error handling ${request.action}:`, error);
-        sendResponse({ error: error.message });
-      });
-      return true; // Keep message channel open for async response
+    if (handler) {
+      // Handle async handlers
+      const result = handler(request.data || {});
+      
+      if (result instanceof Promise) {
+        result.then(sendResponse).catch(error => {
+          ErrorTracker.addError(error, `popup-handler-${request.action}`);
+          console.error(`Error handling ${request.action}:`, error);
+          sendResponse({ error: error.message });
+        });
+        return true; // Keep message channel open for async response
+      } else {
+        sendResponse(result);
+      }
     } else {
-      sendResponse(result);
+      const error = new Error(`Unknown action: ${request.action}`);
+      ErrorTracker.addError(error, 'popup-handler');
+      console.warn('Unknown action:', request.action);
+      sendResponse({ error: 'Unknown action' });
     }
-  } else {
-    sendResponse({ error: 'Unknown action' });
+  } catch (error) {
+    ErrorTracker.addError(error, `popup-handler-${request.action}`);
+    console.error('Handler error:', error);
+    sendResponse({ error: error.message });
   }
   
   return true;

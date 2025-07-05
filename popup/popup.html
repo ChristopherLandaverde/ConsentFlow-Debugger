@@ -23,10 +23,12 @@
     <button class="tab-button active" data-tab="tags">Tags</button>
     <button class="tab-button" data-tab="consent">Consent</button>
     <button class="tab-button" data-tab="events">Event Log</button>
+    <button class="tab-button" data-tab="triggers-vars">Triggers & Variables</button>
     <button class="tab-button" data-tab="monitoring">
       Monitoring 
       <span id="alertBadge" class="alert-badge" style="display: none;">0</span>
     </button>
+    <button class="tab-button" data-tab="performance">Performance</button>
     <button class="tab-button" data-tab="iab-tcf">IAB TCF</button>
     <button class="tab-button" data-tab="qa">QA Tests</button>
   </div>
@@ -110,6 +112,75 @@
   </div>
 </div>
 
+<!-- Triggers & Variables Tab -->
+<div id="triggers-vars-tab" class="tab-content">
+  <h2>GTM Triggers & Variables</h2>
+  
+  <div class="analysis-overview">
+    <div class="status-grid">
+      <div class="status-item">
+        <span class="label">Tags:</span>
+        <span class="value" id="totalTagsValue">0</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Triggers:</span>
+        <span class="value" id="totalTriggersValue">0</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Variables:</span>
+        <span class="value" id="totalVariablesValue">0</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Mapped:</span>
+        <span class="value" id="mappedTagsValue">0</span>
+      </div>
+    </div>
+  </div>
+  
+  <div class="analysis-sections">
+    <div class="section">
+      <h3>Triggers</h3>
+      <div class="filter-controls">
+        <button class="filter-btn active" data-trigger-filter="all">All</button>
+        <button class="filter-btn" data-trigger-filter="page-view">Page View</button>
+        <button class="filter-btn" data-trigger-filter="custom-event">Custom Event</button>
+        <button class="filter-btn" data-trigger-filter="consent">Consent</button>
+        <button class="filter-btn" data-trigger-filter="e-commerce">E-commerce</button>
+      </div>
+      <div class="trigger-list" id="triggerList">
+        <div class="trigger-item empty-state">No triggers detected...</div>
+      </div>
+    </div>
+    
+    <div class="section">
+      <h3>Variables</h3>
+      <div class="filter-controls">
+        <button class="filter-btn active" data-variable-filter="all">All</button>
+        <button class="filter-btn" data-variable-filter="dataLayer">DataLayer</button>
+        <button class="filter-btn" data-variable-filter="config">Config</button>
+        <button class="filter-btn" data-variable-filter="custom">Custom</button>
+        <button class="filter-btn" data-variable-filter="measurement">Measurement</button>
+      </div>
+      <div class="variable-list" id="variableList">
+        <div class="variable-item empty-state">No variables detected...</div>
+      </div>
+    </div>
+    
+    <div class="section">
+      <h3>Tag-Trigger Mapping</h3>
+      <div class="mapping-list" id="mappingList">
+        <div class="mapping-item empty-state">No mappings detected...</div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="action-buttons">
+    <button id="refreshAnalysis" class="action-button primary">Refresh Analysis</button>
+    <button id="exportAnalysis" class="action-button">Export Data</button>
+    <button id="showConsentDependencies" class="action-button">Show Dependencies</button>
+  </div>
+</div>
+
 <!-- Monitoring Tab -->
 <div id="monitoring-tab" class="tab-content">
   <h2>Real-time Monitoring</h2>
@@ -182,6 +253,61 @@
   </div>
 </div>
 
+<!-- Performance Tab -->
+<div id="performance-tab" class="tab-content">
+  <h2>Performance Monitoring</h2>
+  
+  <div class="performance-overview">
+    <div class="status-grid">
+      <div class="status-item">
+        <span class="label">Total Time:</span>
+        <span class="value" id="totalTimeValue">0ms</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Memory Used:</span>
+        <span class="value" id="memoryUsedValue">0MB</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Triggers:</span>
+        <span class="value" id="triggerCountValue">0</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Variables:</span>
+        <span class="value" id="variableCountValue">0</span>
+      </div>
+    </div>
+  </div>
+  
+  <div class="performance-sections">
+    <div class="section">
+      <h3>Timing Breakdown</h3>
+      <div class="timing-list" id="timingList">
+        <div class="timing-item empty-state">No timing data available...</div>
+      </div>
+    </div>
+    
+    <div class="section">
+      <h3>Memory Usage</h3>
+      <div class="memory-info" id="memoryInfo">
+        <div class="memory-item empty-state">No memory data available...</div>
+      </div>
+    </div>
+    
+    <div class="section">
+      <h3>Error Log</h3>
+      <div class="error-log" id="errorLog">
+        <div class="error-item empty-state">No errors detected...</div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="action-buttons">
+    <button id="refreshPerformance" class="action-button primary">Refresh Metrics</button>
+    <button id="exportPerformance" class="action-button">Export Report</button>
+    <button id="clearPerformanceData" class="action-button">Clear Data</button>
+  </div>
+</div>
+
 <!-- QA Testing Tab -->
 <div id="qa-tab" class="tab-content">
   <h2>QA Testing</h2>
@@ -228,6 +354,8 @@
   <script src="tag-list.js"></script>
   <script src="consent-stimulator.js"></script>
   <script src="event-logger.js"></script>
+  <script src="triggers-vars.js"></script>
+  <script src="performance-monitor.js"></script>
   <script src="qa-panel.js"></script>
   <script src="iab-tcf.js"></script>
   <script src="popup.js"></script>

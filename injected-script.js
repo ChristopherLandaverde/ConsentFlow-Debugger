@@ -1,5 +1,121 @@
-// injected-script.js - Enhanced with consent persistence
+// injected-script.js - Enhanced with consent persistence and performance optimizations
 console.log('🔍 GTM Inspector: Injected script loading in page context...');
+
+// Performance monitoring
+const PerformanceMonitor = {
+  startTime: Date.now(),
+  metrics: {
+    detectionTime: 0,
+    memoryUsage: 0,
+    dataLayerSize: 0,
+    triggerCount: 0,
+    variableCount: 0
+  },
+  
+  startTimer: function(name) {
+    this[`${name}Start`] = Date.now();
+  },
+  
+  endTimer: function(name) {
+    if (this[`${name}Start`]) {
+      this.metrics[name] = Date.now() - this[`${name}Start`];
+      console.log(`⏱️ ${name} took ${this.metrics[name]}ms`);
+    }
+  },
+  
+  getMemoryUsage: function() {
+    if (performance.memory) {
+      return {
+        used: performance.memory.usedJSHeapSize,
+        total: performance.memory.totalJSHeapSize,
+        limit: performance.memory.jsHeapSizeLimit
+      };
+    }
+    return null;
+  },
+  
+  getMetrics: function() {
+    return {
+      ...this.metrics,
+      totalTime: Date.now() - this.startTime,
+      memory: this.getMemoryUsage()
+    };
+  }
+};
+
+// Error handling utilities
+const ErrorHandler = {
+  wrapFunction: function(fn, context = 'unknown') {
+    return function(...args) {
+      try {
+        return fn.apply(this, args);
+      } catch (error) {
+        console.error(`❌ Error in ${context}:`, error);
+        return { error: error.message, context };
+      }
+    };
+  },
+  
+  safeExecute: function(fn, fallback = null, context = 'unknown') {
+    try {
+      return fn();
+    } catch (error) {
+      console.error(`❌ Error in ${context}:`, error);
+      return fallback;
+    }
+  },
+  
+  retry: function(fn, maxAttempts = 3, delay = 100, context = 'unknown') {
+    return new Promise((resolve, reject) => {
+      let attempts = 0;
+      
+      const attempt = () => {
+        attempts++;
+        try {
+          const result = fn();
+          resolve(result);
+        } catch (error) {
+          console.warn(`⚠️ Attempt ${attempts} failed in ${context}:`, error);
+          
+          if (attempts >= maxAttempts) {
+            reject(error);
+          } else {
+            setTimeout(attempt, delay * attempts);
+          }
+        }
+      };
+      
+      attempt();
+    });
+  }
+};
+
+// Lazy loading manager
+const LazyLoader = {
+  loadedModules: new Set(),
+  
+  loadModule: function(moduleName, loader) {
+    if (this.loadedModules.has(moduleName)) {
+      return Promise.resolve();
+    }
+    
+    return new Promise((resolve, reject) => {
+      try {
+        const result = loader();
+        this.loadedModules.add(moduleName);
+        console.log(`📦 Lazy loaded module: ${moduleName}`);
+        resolve(result);
+      } catch (error) {
+        console.error(`❌ Failed to load module ${moduleName}:`, error);
+        reject(error);
+      }
+    });
+  },
+  
+  isLoaded: function(moduleName) {
+    return this.loadedModules.has(moduleName);
+  }
+};
 
 // Create ConsentInspector in the REAL page context
 window.ConsentInspector = {
@@ -8,10 +124,39 @@ window.ConsentInspector = {
   _overrideState: null,
   _originalGtag: null,
   _originalDataLayerPush: null,
+  _performanceMonitor: PerformanceMonitor,
+  _errorHandler: ErrorHandler,
+  _lazyLoader: LazyLoader,
+  
+  // Performance monitoring methods
+  getPerformanceMetrics: function() {
+    return this._performanceMonitor.getMetrics();
+  },
+  
+  // Enhanced error handling wrapper
+  safeExecute: function(fn, fallback = null, context = 'ConsentInspector') {
+    return this._errorHandler.safeExecute(fn, fallback, context);
+  },
+  
+  // Lazy loading for heavy operations
+  _loadTriggerDetection: function() {
+    return this._lazyLoader.loadModule('triggerDetection', () => {
+      // This will be loaded only when needed
+      return this.detectTriggersAndVariables();
+    });
+  },
+  
+  _loadVariableDetection: function() {
+    return this._lazyLoader.loadModule('variableDetection', () => {
+      // This will be loaded only when needed
+      return this.detectTriggersAndVariables();
+    });
+  },
   
   // IAB TCF Framework detection
   detectIABTCF: function() {
     console.log('🔍 Detecting IAB TCF Framework...');
+    this._performanceMonitor.startTimer('tcfDetection');
     
     const tcfInfo = {
       version: null,
@@ -87,6 +232,7 @@ window.ConsentInspector = {
       }
     }
     
+    this._performanceMonitor.endTimer('tcfDetection');
     console.log('🎯 IAB TCF detection result:', tcfInfo);
     return tcfInfo;
   },
@@ -94,6 +240,7 @@ window.ConsentInspector = {
   // Enhanced CMP detection
   detectCMP: function() {
     console.log('🔍 Detecting Consent Management Platform...');
+    this._performanceMonitor.startTimer('cmpDetection');
     
     const cmps = [
       {
@@ -159,6 +306,7 @@ window.ConsentInspector = {
       }
     }
     
+    this._performanceMonitor.endTimer('cmpDetection');
     console.log('❌ No known CMP detected');
     return {
       detected: false,
@@ -605,7 +753,464 @@ window.ConsentInspector = {
       personalization_storage: 'denied',
       security_storage: 'granted'
     });
-  }
+  },
+  
+  // NEW: Enhanced trigger and variable detection
+  detectTriggersAndVariables: function() {
+    console.log('🔍 Detecting GTM triggers and variables...');
+    this._performanceMonitor.startTimer('triggerDetection');
+    
+    const result = {
+      triggers: [],
+      variables: [],
+      tagTriggerMap: [],
+      consentDependencies: [],
+      timestamp: Date.now()
+    };
+    
+    // Method 1: Parse GTM container configuration
+    if (window.google_tag_manager) {
+      const containers = Object.keys(window.google_tag_manager);
+      containers.forEach(containerId => {
+        try {
+          const container = window.google_tag_manager[containerId];
+          const containerAnalysis = this.analyzeContainer(containerId, container);
+          
+          result.triggers.push(...containerAnalysis.triggers);
+          result.variables.push(...containerAnalysis.variables);
+          result.tagTriggerMap.push(...containerAnalysis.tagTriggerMap);
+          result.consentDependencies.push(...containerAnalysis.consentDependencies);
+        } catch (error) {
+          console.error(`❌ Error analyzing container ${containerId}:`, error);
+        }
+      });
+    }
+    
+    // Method 2: Parse dataLayer for trigger patterns
+    const dataLayerAnalysis = this.safeExecute(() => this.analyzeDataLayer(), { triggers: [], variables: [] }, 'dataLayer analysis');
+    result.triggers.push(...dataLayerAnalysis.triggers);
+    result.variables.push(...dataLayerAnalysis.variables);
+    
+    // Method 3: Parse page source for GTM configuration
+    const pageAnalysis = this.safeExecute(() => this.analyzePageSource(), { triggers: [], variables: [] }, 'page source analysis');
+    result.triggers.push(...pageAnalysis.triggers);
+    result.variables.push(...pageAnalysis.variables);
+    
+    // Remove duplicates and sort
+    result.triggers = this.deduplicateTriggers(result.triggers);
+    result.variables = this.deduplicateVariables(result.variables);
+    result.tagTriggerMap = this.deduplicateTagMaps(result.tagTriggerMap);
+    
+    this._performanceMonitor.endTimer('triggerDetection');
+    this._performanceMonitor.metrics.triggerCount = result.triggers.length;
+    this._performanceMonitor.metrics.variableCount = result.variables.length;
+    console.log('🎯 Trigger/Variable detection result:', result);
+    return result;
+  },
+  
+  // Analyze individual GTM container
+  analyzeContainer: function(containerId, container) {
+    const analysis = {
+      triggers: [],
+      variables: [],
+      tagTriggerMap: [],
+      consentDependencies: []
+    };
+    
+    // Extract container-level variables
+    if (container.dataLayer && Array.isArray(container.dataLayer)) {
+      const dataLayerVars = this.extractDataLayerVariables(container.dataLayer);
+      analysis.variables.push(...dataLayerVars.map(v => ({
+        ...v,
+        container: containerId,
+        source: 'dataLayer'
+      })));
+    }
+    
+    // Look for GTM configuration in the container
+    if (container.dataLayer) {
+      const configEvents = container.dataLayer.filter(item => 
+        Array.isArray(item) && 
+        (item[0] === 'config' || item[0] === 'set' || item[0] === 'event')
+      );
+      
+      configEvents.forEach(event => {
+        if (event[0] === 'config') {
+          // GA4 configuration
+          analysis.variables.push({
+            name: 'measurement_id',
+            value: event[1],
+            type: 'config',
+            container: containerId,
+            source: 'gtag_config'
+          });
+        } else if (event[0] === 'set') {
+          // Custom variables
+          analysis.variables.push({
+            name: event[1],
+            value: event[2],
+            type: 'custom',
+            container: containerId,
+            source: 'gtag_set'
+          });
+        }
+      });
+    }
+    
+    return analysis;
+  },
+  
+  // Analyze dataLayer for trigger patterns
+  analyzeDataLayer: function() {
+    const analysis = {
+      triggers: [],
+      variables: []
+    };
+    
+    if (!window.dataLayer || !Array.isArray(window.dataLayer)) {
+      return analysis;
+    }
+    
+    // Extract variables from dataLayer
+    analysis.variables = this.extractDataLayerVariables(window.dataLayer);
+    
+    // Detect trigger patterns
+    const triggerPatterns = [
+      {
+        name: 'Page View',
+        pattern: item => Array.isArray(item) && item[0] === 'config',
+        consentType: 'analytics_storage'
+      },
+      {
+        name: 'Custom Event',
+        pattern: item => Array.isArray(item) && item[0] === 'event' && item[1] !== 'gtm.js',
+        consentType: 'analytics_storage'
+      },
+      {
+        name: 'Consent Update',
+        pattern: item => Array.isArray(item) && item[0] === 'consent',
+        consentType: 'security_storage'
+      },
+      {
+        name: 'E-commerce',
+        pattern: item => Array.isArray(item) && item[0] === 'event' && 
+                        (item[1] === 'purchase' || item[1] === 'add_to_cart' || item[1] === 'view_item'),
+        consentType: 'analytics_storage'
+      },
+      {
+        name: 'User Engagement',
+        pattern: item => Array.isArray(item) && item[0] === 'event' && 
+                        (item[1] === 'scroll' || item[1] === 'click' || item[1] === 'form_submit'),
+        consentType: 'analytics_storage'
+      }
+    ];
+    
+    // Check each dataLayer item against trigger patterns
+    window.dataLayer.forEach((item, index) => {
+      triggerPatterns.forEach(pattern => {
+        if (pattern.pattern(item)) {
+          analysis.triggers.push({
+            name: pattern.name,
+            event: item[1] || 'unknown',
+            timestamp: Date.now(),
+            dataLayerIndex: index,
+            consentType: pattern.consentType,
+            data: item
+          });
+        }
+      });
+    });
+    
+    return analysis;
+  },
+  
+  // Extract variables from dataLayer
+  extractDataLayerVariables: function(dataLayer) {
+    const variables = [];
+    
+    dataLayer.forEach((item, index) => {
+      if (typeof item === 'object' && item !== null && !Array.isArray(item)) {
+        // Extract all properties as variables
+        Object.keys(item).forEach(key => {
+          const value = item[key];
+          if (value !== undefined && value !== null) {
+            variables.push({
+              name: key,
+              value: typeof value === 'object' ? JSON.stringify(value) : String(value),
+              type: 'dataLayer',
+              dataLayerIndex: index,
+              dataType: typeof value
+            });
+          }
+        });
+      }
+    });
+    
+    return variables;
+  },
+  
+  // Analyze page source for GTM configuration
+  analyzePageSource: function() {
+    const analysis = {
+      triggers: [],
+      variables: []
+    };
+    
+    try {
+      const pageSource = document.documentElement.outerHTML;
+      
+      // Look for GTM configuration in script tags
+      const gtmScripts = document.querySelectorAll('script');
+      gtmScripts.forEach(script => {
+        if (script.textContent) {
+          const content = script.textContent;
+          
+          // Extract GTM configuration
+          const gtmConfig = this.extractGTMConfig(content);
+          if (gtmConfig) {
+            analysis.variables.push(...gtmConfig.variables);
+            analysis.triggers.push(...gtmConfig.triggers);
+          }
+          
+          // Extract gtag configuration
+          const gtagConfig = this.extractGtagConfig(content);
+          if (gtagConfig) {
+            analysis.variables.push(...gtagConfig.variables);
+            analysis.triggers.push(...gtagConfig.triggers);
+          }
+        }
+      });
+      
+      // Look for data attributes that might indicate triggers
+      const triggerElements = document.querySelectorAll('[data-gtm-trigger], [data-gtm-event], [onclick*="gtag"]');
+      triggerElements.forEach(element => {
+        const trigger = this.extractElementTrigger(element);
+        if (trigger) {
+          analysis.triggers.push(trigger);
+        }
+      });
+      
+    } catch (e) {
+      console.log('⚠️ Error analyzing page source:', e);
+    }
+    
+    return analysis;
+  },
+  
+  // Extract GTM configuration from script content
+  extractGTMConfig: function(content) {
+    const config = {
+      variables: [],
+      triggers: []
+    };
+    
+    // Look for GTM configuration patterns
+    const gtmPatterns = [
+      {
+        name: 'GTM ID',
+        regex: /GTM-[A-Z0-9]+/g,
+        type: 'container_id'
+      },
+      {
+        name: 'Measurement ID',
+        regex: /G-[A-Z0-9]+/g,
+        type: 'measurement_id'
+      },
+      {
+        name: 'Conversion ID',
+        regex: /AW-[0-9]+/g,
+        type: 'conversion_id'
+      }
+    ];
+    
+    gtmPatterns.forEach(pattern => {
+      const matches = content.match(pattern.regex);
+      if (matches) {
+        matches.forEach(match => {
+          config.variables.push({
+            name: pattern.name,
+            value: match,
+            type: pattern.type,
+            source: 'script_content'
+          });
+        });
+      }
+    });
+    
+    return config;
+  },
+  
+  // Extract gtag configuration from script content
+  extractGtagConfig: function(content) {
+    const config = {
+      variables: [],
+      triggers: []
+    };
+    
+    // Look for gtag function calls
+    const gtagCalls = content.match(/gtag\([^)]+\)/g);
+    if (gtagCalls) {
+      gtagCalls.forEach(call => {
+        // Parse gtag call parameters
+        const params = this.parseGtagCall(call);
+        if (params) {
+          config.variables.push(...params.variables);
+          config.triggers.push(...params.triggers);
+        }
+      });
+    }
+    
+    return config;
+  },
+  
+  // Parse gtag function call
+  parseGtagCall: function(call) {
+    const params = {
+      variables: [],
+      triggers: []
+    };
+    
+    try {
+      // Extract parameters from gtag call
+      const match = call.match(/gtag\(([^)]+)\)/);
+      if (match) {
+        const args = match[1].split(',').map(arg => arg.trim().replace(/['"]/g, ''));
+        
+        if (args[0] === 'config') {
+          // Configuration call
+          params.variables.push({
+            name: 'measurement_id',
+            value: args[1],
+            type: 'gtag_config',
+            source: 'script_content'
+          });
+        } else if (args[0] === 'event') {
+          // Event call
+          params.triggers.push({
+            name: 'Custom Event',
+            event: args[1],
+            parameters: args.slice(2),
+            type: 'gtag_event',
+            source: 'script_content'
+          });
+        }
+      }
+    } catch (e) {
+      console.log('⚠️ Error parsing gtag call:', e);
+    }
+    
+    return params;
+  },
+  
+  // Extract trigger from DOM element
+  extractElementTrigger: function(element) {
+    const trigger = {
+      name: 'Element Interaction',
+      element: element.tagName.toLowerCase(),
+      type: 'dom_element',
+      source: 'page_element'
+    };
+    
+    // Check for data attributes
+    if (element.dataset.gtmTrigger) {
+      trigger.name = element.dataset.gtmTrigger;
+    }
+    if (element.dataset.gtmEvent) {
+      trigger.event = element.dataset.gtmEvent;
+    }
+    
+    // Check for onclick handlers
+    if (element.onclick || element.getAttribute('onclick')) {
+      trigger.handler = 'onclick';
+      trigger.consentType = 'analytics_storage';
+    }
+    
+    return trigger;
+  },
+  
+  // Deduplicate triggers
+  deduplicateTriggers: function(triggers) {
+    const seen = new Set();
+    return triggers.filter(trigger => {
+      const key = `${trigger.name}-${trigger.event}-${trigger.type}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  },
+  
+  // Deduplicate variables
+  deduplicateVariables: function(variables) {
+    const seen = new Set();
+    return variables.filter(variable => {
+      const key = `${variable.name}-${variable.value}-${variable.type}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  },
+  
+  // Deduplicate tag maps
+  deduplicateTagMaps: function(tagMaps) {
+    const seen = new Set();
+    return tagMaps.filter(map => {
+      const key = `${map.tag}-${map.trigger}-${map.container}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  },
+  
+  // NEW: Get comprehensive tag analysis with triggers and variables
+  getComprehensiveTagAnalysis: function() {
+    console.log('🔍 Getting comprehensive tag analysis...');
+    
+    const basicTags = this.getTagInfo();
+    const triggersAndVars = this.detectTriggersAndVariables();
+    const consentState = this.getCurrentConsentState();
+    
+    // Enhance basic tags with trigger and variable information
+    const enhancedTags = basicTags.map(tag => {
+      const relatedTriggers = triggersAndVars.triggers.filter(trigger => 
+        trigger.consentType === tag.consentType
+      );
+      
+      const relatedVariables = triggersAndVars.variables.filter(variable => 
+        variable.name.toLowerCase().includes(tag.name.toLowerCase()) ||
+        variable.type === tag.consentType
+      );
+      
+      return {
+        ...tag,
+        triggers: relatedTriggers,
+        variables: relatedVariables,
+        triggerCount: relatedTriggers.length,
+        variableCount: relatedVariables.length
+      };
+    });
+    
+    return {
+      tags: enhancedTags,
+      triggers: triggersAndVars.triggers,
+      variables: triggersAndVars.variables,
+      tagTriggerMap: triggersAndVars.tagTriggerMap,
+      consentDependencies: triggersAndVars.consentDependencies,
+      consentState: consentState,
+      summary: {
+        totalTags: enhancedTags.length,
+        totalTriggers: triggersAndVars.triggers.length,
+        totalVariables: triggersAndVars.variables.length,
+        tagsWithTriggers: enhancedTags.filter(tag => tag.triggers.length > 0).length,
+        tagsWithVariables: enhancedTags.filter(tag => tag.variables.length > 0).length
+      }
+    };
+  },
 };
 
 // Initialize event monitoring
@@ -697,6 +1302,15 @@ window.addEventListener('message', function(event) {
           break;
         case 'parseTCFConsentString':
           response = window.ConsentInspector.parseTCFConsentString(data);
+          break;
+              case 'detectTriggersAndVariables':
+        response = window.ConsentInspector.detectTriggersAndVariables();
+        break;
+      case 'getPerformanceMetrics':
+        response = window.ConsentInspector.getPerformanceMetrics();
+        break;
+        case 'getComprehensiveTagAnalysis':
+          response = window.ConsentInspector.getComprehensiveTagAnalysis();
           break;
         default:
           response = { error: 'Unknown action: ' + action };
