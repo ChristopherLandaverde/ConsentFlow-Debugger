@@ -408,4 +408,4 @@ setTimeout(() => {
   } catch (error) {
     console.error('❌ Error in initial GTM detection:', error);
   }
-}, 1000);
+}, 1000);cl
