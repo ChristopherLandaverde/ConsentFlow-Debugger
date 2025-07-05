@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GTM Consent Mode Inspector - Test Suite</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .test-controls {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .test-results {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .console-output {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        
+        .summary {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        
+        .summary.pass {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .summary.fail {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .test-details {
+            margin-top: 15px;
+        }
+        
+        .test-item {
+            padding: 8px;
+            margin: 4px 0;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .test-item.pass {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .test-item.fail {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧪 GTM Consent Mode Inspector - Test Suite</h1>
+        <p>Comprehensive testing for GTM detection, consent management, and tag analysis functionality.</p>
+    </div>
+    
+    <div class="test-controls">
+        <h2>Test Controls</h2>
+        <button id="runAllTests">🚀 Run All Tests</button>
+        <button id="runGTMTests">🔍 GTM Detection Tests</button>
+        <button id="runConsentTests">🔒 Consent Management Tests</button>
+        <button id="runTagTests">🏷️ Tag Detection Tests</button>
+        <button id="clearResults">🗑️ Clear Results</button>
+        <button id="exportResults">📊 Export Results</button>
+    </div>
+    
+    <div class="test-results">
+        <h2>Test Results</h2>
+        <div id="summary" class="summary" style="display: none;"></div>
+        <div id="testDetails" class="test-details"></div>
+        <div id="consoleOutput" class="console-output">Ready to run tests...</div>
+    </div>
+    
+    <!-- Load test framework and test files -->
+    <script src="test-runner.js"></script>
+    <script src="gtm-detection.test.js"></script>
+    <script src="consent-management.test.js"></script>
+    <script src="tag-detection.test.js"></script>
+    
+    <script>
+        // Test runner instance
+        const testRunner = new GTMInspectorTestRunner();
+        
+        // Test classes
+        const gtmTests = new GTMDetectionTests(testRunner);
+        const consentTests = new ConsentManagementTests(testRunner);
+        const tagTests = new TagDetectionTests(testRunner);
+        
+        // Console capture
+        const originalConsoleLog = console.log;
+        const originalConsoleError = console.error;
+        const originalConsoleWarn = console.warn;
+        
+        const consoleOutput = document.getElementById('consoleOutput');
+        
+        function captureConsole(type, ...args) {
+            const timestamp = new Date().toLocaleTimeString();
+            const message = args.map(arg => 
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+            ).join(' ');
+            
+            consoleOutput.textContent += `[${timestamp}] ${type.toUpperCase()}: ${message}\n`;
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        }
+        
+        console.log = (...args) => {
+            captureConsole('log', ...args);
+            originalConsoleLog.apply(console, args);
+        };
+        
+        console.error = (...args) => {
+            captureConsole('error', ...args);
+            originalConsoleError.apply(console, args);
+        };
+        
+        console.warn = (...args) => {
+            captureConsole('warn', ...args);
+            originalConsoleWarn.apply(console, args);
+        };
+        
+        // Test execution functions
+        async function runAllTests() {
+            consoleOutput.textContent = 'Starting comprehensive test suite...\n';
+            
+            // Run all test suites
+            await gtmTests.runAllTests();
+            await consentTests.runAllTests();
+            await tagTests.runAllTests();
+            
+            const results = await testRunner.runTests();
+            displayResults(results);
+        }
+        
+        async function runGTMTests() {
+            consoleOutput.textContent = 'Running GTM Detection tests...\n';
+            await gtmTests.runAllTests();
+            const results = await testRunner.runTests();
+            displayResults(results);
+        }
+        
+        async function runConsentTests() {
+            consoleOutput.textContent = 'Running Consent Management tests...\n';
+            await consentTests.runAllTests();
+            const results = await testRunner.runTests();
+            displayResults(results);
+        }
+        
+        async function runTagTests() {
+            consoleOutput.textContent = 'Running Tag Detection tests...\n';
+            await tagTests.runAllTests();
+            const results = await testRunner.runTests();
+            displayResults(results);
+        }
+        
+        function displayResults(results) {
+            const summary = document.getElementById('summary');
+            const testDetails = document.getElementById('testDetails');
+            
+            // Update summary
+            summary.style.display = 'block';
+            summary.className = `summary ${results.failed === 0 ? 'pass' : 'fail'}`;
+            summary.innerHTML = `
+                <h3>Test Summary</h3>
+                <p>Total Tests: ${results.total} | Passed: ${results.passed} ✅ | Failed: ${results.failed} ❌</p>
+                <p>Success Rate: ${results.total > 0 ? Math.round((results.passed / results.total) * 100) : 0}%</p>
+            `;
+            
+            // Update test details
+            testDetails.innerHTML = '';
+            results.details.forEach(detail => {
+                const testItem = document.createElement('div');
+                testItem.className = `test-item ${detail.status.toLowerCase()}`;
+                testItem.innerHTML = `
+                    <strong>${detail.suite}:</strong> ${detail.test}
+                    ${detail.error ? `<br><em>Error: ${detail.error}</em>` : ''}
+                `;
+                testDetails.appendChild(testItem);
+            });
+        }
+        
+        function clearResults() {
+            document.getElementById('summary').style.display = 'none';
+            document.getElementById('testDetails').innerHTML = '';
+            consoleOutput.textContent = 'Results cleared. Ready to run tests...\n';
+        }
+        
+        function exportResults() {
+            const results = {
+                timestamp: new Date().toISOString(),
+                summary: {
+                    total: testRunner.results.total,
+                    passed: testRunner.results.passed,
+                    failed: testRunner.results.failed,
+                    successRate: testRunner.results.total > 0 ? Math.round((testRunner.results.passed / testRunner.results.total) * 100) : 0
+                },
+                details: testRunner.results.details
+            };
+            
+            const dataStr = JSON.stringify(results, null, 2);
+            const dataBlob = new Blob([dataStr], {type: 'application/json'});
+            
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(dataBlob);
+            link.download = `gtm-inspector-test-results-${new Date().toISOString().split('T')[0]}.json`;
+            link.click();
+        }
+        
+        // Event listeners
+        document.getElementById('runAllTests').addEventListener('click', runAllTests);
+        document.getElementById('runGTMTests').addEventListener('click', runGTMTests);
+        document.getElementById('runConsentTests').addEventListener('click', runConsentTests);
+        document.getElementById('runTagTests').addEventListener('click', runTagTests);
+        document.getElementById('clearResults').addEventListener('click', clearResults);
+        document.getElementById('exportResults').addEventListener('click', exportResults);
+        
+        // Auto-run tests on load (optional)
+        // window.addEventListener('load', () => {
+        //     setTimeout(runAllTests, 1000);
+        // });
+    </script>
+</body>
+</html> 

@@ -4,7 +4,9 @@
   "description": "A Chrome extension (or bookmarklet) that helps marketers, analysts, and developers **debug Google Tag Manager Consent Mode** in real time.",
   "main": "background.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "echo \"Open tests/run-tests.html in your browser to run the test suite\"",
+    "test:unit": "echo \"Unit tests available in tests/ directory\"",
+    "test:coverage": "echo \"Coverage reporting not yet implemented\"",
     "dev": "node dev-server.js"
   },
   "repository": {
