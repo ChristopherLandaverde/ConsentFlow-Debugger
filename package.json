@@ -1,0 +1,25 @@
+{
+  "name": "gtm_consent",
+  "version": "1.0.0",
+  "description": "A Chrome extension (or bookmarklet) that helps marketers, analysts, and developers **debug Google Tag Manager Consent Mode** in real time.",
+  "main": "background.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "node dev-server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChristopherLandaverde/gtm_consent.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ChristopherLandaverde/gtm_consent/issues"
+  },
+  "homepage": "https://github.com/ChristopherLandaverde/gtm_consent#readme",
+  "devDependencies": {
+    "chokidar": "^4.0.3",
+    "chokidar-cli": "^3.0.0"
+  }
+}

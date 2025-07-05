@@ -1,5 +1,5 @@
 // content.js - Fixed with proper page context injection
-console.log('🔍 GTM Consent Inspector: Content script loading...');
+console.log('🔍 GTM Consent Inspector: Content script loading...FINAL');
 
 let isInjected = false;
 let messageId = 0;
@@ -77,7 +77,7 @@ window.addEventListener('message', function(event) {
       pendingMessages.delete(id);
       resolve(data);
     } else {
-      console.warn(`⚠️ Received response for unknown message ID: ${id}`);
+      console.warn(`⚠️ Recdeived response for unknown message ID: ${id}`);
     }
   }
 });
