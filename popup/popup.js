@@ -57,6 +57,10 @@ document.addEventListener('DOMContentLoaded', function() {
       window.QAPanel.initialize(ContentScriptInterface);
     }
     
+    if (window.IABTCF) {
+      window.IABTCF.initialize(ContentScriptInterface);
+    }
+    
     // Initial GTM check with a slight delay
     setTimeout(() => {
       checkGTMStatus();

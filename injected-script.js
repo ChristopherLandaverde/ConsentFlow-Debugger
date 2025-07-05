@@ -9,6 +9,229 @@ window.ConsentInspector = {
   _originalGtag: null,
   _originalDataLayerPush: null,
   
+  // IAB TCF Framework detection
+  detectIABTCF: function() {
+    console.log('🔍 Detecting IAB TCF Framework...');
+    
+    const tcfInfo = {
+      version: null,
+      consentString: null,
+      vendorConsents: {},
+      purposeConsents: {},
+      cmpId: null,
+      cmpVersion: null,
+      gdprApplies: false,
+      detected: false
+    };
+    
+    // Check for TCF v2.2 (most common) - prioritize this
+    if (window.__tcfapi) {
+      console.log('🎯 TCF v2.2 API detected');
+      tcfInfo.version = '2.2';
+      tcfInfo.detected = true;
+      
+      // Try to get current consent info
+      try {
+        window.__tcfapi('getTCData', 2, (tcData, success) => {
+          if (success && tcData) {
+            tcfInfo.consentString = tcData.tcString;
+            tcfInfo.cmpId = tcData.cmpId;
+            tcfInfo.cmpVersion = tcData.cmpVersion;
+            tcfInfo.gdprApplies = tcData.gdprApplies;
+            
+            if (tcData.purpose && tcData.purpose.consents) {
+              tcfInfo.purposeConsents = tcData.purpose.consents;
+            }
+            
+            if (tcData.vendor && tcData.vendor.consents) {
+              tcfInfo.vendorConsents = tcData.vendor.consents;
+            }
+          }
+        });
+        console.log('✅ TCF v2.2 data retrieved');
+      } catch (e) {
+        console.log('⚠️ Error getting TCF v2.2 data:', e);
+      }
+    }
+    // Only check v1.1 if v2.2 is not present
+    else if (window.__cmp) {
+      console.log('🎯 TCF v1.1 API detected');
+      tcfInfo.version = '1.1';
+      tcfInfo.detected = true;
+      
+      // Try to get consent string
+      try {
+        window.__cmp('getConsentData', null, (consentData) => {
+          if (consentData && consentData.consentData) {
+            tcfInfo.consentString = consentData.consentData;
+            tcfInfo.gdprApplies = consentData.gdprApplies;
+          }
+        });
+      } catch (e) {
+        console.log('⚠️ Error getting TCF v1.1 data:', e);
+      }
+    }
+    
+    // Check for common CMP implementations
+    const cmpDetection = this.detectCMP();
+    if (cmpDetection.detected && !tcfInfo.cmpId) {
+      tcfInfo.cmpId = cmpDetection.cmpId;
+      tcfInfo.cmpVersion = cmpDetection.version;
+    }
+    
+    // Check for consent string in cookies
+    if (!tcfInfo.consentString) {
+      const consentCookie = this.findConsentCookie();
+      if (consentCookie) {
+        tcfInfo.consentString = consentCookie;
+      }
+    }
+    
+    console.log('🎯 IAB TCF detection result:', tcfInfo);
+    return tcfInfo;
+  },
+  
+  // Enhanced CMP detection
+  detectCMP: function() {
+    console.log('🔍 Detecting Consent Management Platform...');
+    
+    const cmps = [
+      {
+        name: 'OneTrust',
+        check: () => window.OneTrust || document.querySelector('[data-domain-script*="cdn.cookielaw.org"]'),
+        version: () => window.OneTrust ? window.OneTrust.version : null,
+        cmpId: 5
+      },
+      {
+        name: 'Cookiebot',
+        check: () => window.Cookiebot || document.querySelector('[data-cookieconsent]'),
+        version: () => window.Cookiebot ? window.Cookiebot.version : null,
+        cmpId: 14
+      },
+      {
+        name: 'TrustArc',
+        check: () => window.truste || document.querySelector('[data-truste]'),
+        version: () => window.truste ? window.truste.version : null,
+        cmpId: 21
+      },
+      {
+        name: 'Quantcast',
+        check: () => window.__tcfapi || document.querySelector('[data-quantcast]'),
+        version: () => null,
+        cmpId: 22
+      },
+      {
+        name: 'Sourcepoint',
+        check: () => window.__spapi || document.querySelector('[data-sp-cc]'),
+        version: () => null,
+        cmpId: 24
+      },
+      {
+        name: 'Didomi',
+        check: () => window.didomi || document.querySelector('[data-didomi]'),
+        version: () => window.didomi ? window.didomi.version : null,
+        cmpId: 7
+      },
+      {
+        name: 'Usercentrics',
+        check: () => window.UC_UI || document.querySelector('[data-usercentrics]'),
+        version: () => null,
+        cmpId: 11
+      },
+      {
+        name: 'Ebay',
+        check: () => window.ebay || document.querySelector('[data-ebay-consent]'),
+        version: () => null,
+        cmpId: 28
+      }
+    ];
+    
+    // Check each CMP and return the first one found
+    for (const cmp of cmps) {
+      if (cmp.check()) {
+        console.log(`🎯 CMP detected: ${cmp.name}`);
+        return {
+          detected: true,
+          name: cmp.name,
+          version: cmp.version(),
+          cmpId: cmp.cmpId
+        };
+      }
+    }
+    
+    console.log('❌ No known CMP detected');
+    return {
+      detected: false,
+      name: null,
+      version: null,
+      cmpId: null
+    };
+  },
+  
+  // Find consent cookie
+  findConsentCookie: function() {
+    const consentCookies = [
+      'euconsent',
+      'euconsent-v2',
+      'consent-string',
+      'tcf_consent',
+      'gdpr_consent',
+      'cookieconsent_status',
+      'OptanonAlertBoxClosed',
+      'CookieConsent'
+    ];
+    
+    for (const cookieName of consentCookies) {
+      const cookie = this.getCookie(cookieName);
+      if (cookie) {
+        console.log(`🎯 Found consent cookie: ${cookieName}`);
+        return cookie;
+      }
+    }
+    
+    return null;
+  },
+  
+  // Helper to get cookie value
+  getCookie: function(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+    return null;
+  },
+  
+  // Parse TCF consent string
+  parseTCFConsentString: function(consentString) {
+    if (!consentString || typeof consentString !== 'string') {
+      console.log('⚠️ Invalid consent string provided:', consentString);
+      return null;
+    }
+    
+    try {
+      // Basic TCF v2 consent string parsing
+      // Format: Base64 encoded string with specific structure
+      const decoded = atob(consentString);
+      
+      // This is a simplified parser - full TCF parsing is complex
+      return {
+        raw: consentString,
+        decoded: decoded,
+        length: consentString.length,
+        version: this.extractTCFVersion(decoded)
+      };
+    } catch (e) {
+      console.log('⚠️ Error parsing TCF consent string:', e);
+      return null;
+    }
+  },
+  
+  // Extract TCF version from consent string
+  extractTCFVersion: function(decoded) {
+    // Simplified version extraction
+    // In practice, this would parse the binary structure
+    return '2.2'; // Default assumption
+  },
+  
   // Detection methods
   detectGTM: function() {
     console.log('🔍 Running GTM detection...');
@@ -74,6 +297,10 @@ window.ConsentInspector = {
     const primaryContainer = containers[0] || null;
     const overallConsentState = this.getCurrentConsentState();
     
+    // Enhanced with IAB TCF detection
+    const tcfInfo = this.detectIABTCF();
+    const cmpInfo = this.detectCMP();
+    
     return {
       hasGTM: containers.length > 0,
       containers: containers,
@@ -82,7 +309,10 @@ window.ConsentInspector = {
       hasConsentMode: this.detectConsentMode(),
       consentState: overallConsentState,
       overrideActive: this._overrideActive,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      // NEW: IAB TCF information
+      tcfInfo: tcfInfo,
+      cmpInfo: cmpInfo
     };
   },
   
@@ -458,6 +688,15 @@ window.addEventListener('message', function(event) {
           break;
         case 'stopOverride':
           response = window.ConsentInspector.stopOverride();
+          break;
+        case 'detectIABTCF':
+          response = window.ConsentInspector.detectIABTCF();
+          break;
+        case 'detectCMP':
+          response = window.ConsentInspector.detectCMP();
+          break;
+        case 'parseTCFConsentString':
+          response = window.ConsentInspector.parseTCFConsentString(data);
           break;
         default:
           response = { error: 'Unknown action: ' + action };

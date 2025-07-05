@@ -32,6 +32,7 @@
       Monitoring 
       <span id="alertBadge" class="alert-badge" style="display: none;">0</span>
     </button>
+    <button class="tab-button" data-tab="iab-tcf">IAB TCF</button>
     <button class="tab-button" data-tab="qa">QA Tests</button>
   </div>
 
@@ -144,6 +145,48 @@
   </div>
 </div>
 
+<!-- IAB TCF Tab -->
+<div id="iab-tcf-tab" class="tab-content">
+  <h2>IAB TCF Framework</h2>
+  <div class="tcf-overview">
+    <div class="status-grid">
+      <div class="status-item">
+        <span class="label">TCF Version:</span>
+        <span class="value" id="tcfVersionValue">Not detected</span>
+      </div>
+      <div class="status-item">
+        <span class="label">CMP:</span>
+        <span class="value" id="cmpNameValue">None</span>
+      </div>
+      <div class="status-item">
+        <span class="label">GDPR Applies:</span>
+        <span class="value" id="gdprAppliesValue">Unknown</span>
+      </div>
+      <div class="status-item">
+        <span class="label">Consent String:</span>
+        <span class="value" id="consentStringValue">None</span>
+      </div>
+    </div>
+  </div>
+  
+  <div class="tcf-details">
+    <h3>Purpose Consents</h3>
+    <div id="purposeConsents" class="consent-grid">
+      <div class="empty-state">No purpose consents detected</div>
+    </div>
+    
+    <h3>Vendor Consents</h3>
+    <div id="vendorConsents" class="consent-grid">
+      <div class="empty-state">No vendor consents detected</div>
+    </div>
+  </div>
+  
+  <div class="action-buttons">
+    <button id="refreshTCF" class="action-button">Refresh TCF Data</button>
+    <button id="parseConsentString" class="action-button">Parse Consent String</button>
+  </div>
+</div>
+
 <!-- QA Testing Tab -->
 <div id="qa-tab" class="tab-content">
   <h2>QA Testing</h2>
@@ -191,6 +234,7 @@
   <script src="consent-stimulator.js"></script>
   <script src="event-logger.js"></script>
   <script src="qa-panel.js"></script>
+  <script src="iab-tcf.js"></script>
   <script src="popup.js"></script>
   <script>
     // Add this at the end of popup.js

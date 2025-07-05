@@ -121,6 +121,7 @@
         <button id="runGTMTests">🔍 GTM Detection Tests</button>
         <button id="runConsentTests">🔒 Consent Management Tests</button>
         <button id="runTagTests">🏷️ Tag Detection Tests</button>
+        <button id="runIABTCFTests">📋 IAB TCF Tests</button>
         <button id="clearResults">🗑️ Clear Results</button>
         <button id="exportResults">📊 Export Results</button>
     </div>
@@ -137,6 +138,7 @@
     <script src="gtm-detection.test.js"></script>
     <script src="consent-management.test.js"></script>
     <script src="tag-detection.test.js"></script>
+    <script src="iab-tcf.test.js"></script>
     
     <script>
         // Test runner instance
@@ -146,6 +148,7 @@
         const gtmTests = new GTMDetectionTests(testRunner);
         const consentTests = new ConsentManagementTests(testRunner);
         const tagTests = new TagDetectionTests(testRunner);
+        const iabTcfTests = new IABTCFTests(testRunner);
         
         // Console capture
         const originalConsoleLog = console.log;
@@ -187,6 +190,7 @@
             await gtmTests.runAllTests();
             await consentTests.runAllTests();
             await tagTests.runAllTests();
+            await iabTcfTests.runAllTests();
             
             const results = await testRunner.runTests();
             displayResults(results);
@@ -209,6 +213,13 @@
         async function runTagTests() {
             consoleOutput.textContent = 'Running Tag Detection tests...\n';
             await tagTests.runAllTests();
+            const results = await testRunner.runTests();
+            displayResults(results);
+        }
+        
+        async function runIABTCFTests() {
+            consoleOutput.textContent = 'Running IAB TCF Framework tests...\n';
+            await iabTcfTests.runAllTests();
             const results = await testRunner.runTests();
             displayResults(results);
         }
@@ -271,6 +282,7 @@
         document.getElementById('runGTMTests').addEventListener('click', runGTMTests);
         document.getElementById('runConsentTests').addEventListener('click', runConsentTests);
         document.getElementById('runTagTests').addEventListener('click', runTagTests);
+        document.getElementById('runIABTCFTests').addEventListener('click', runIABTCFTests);
         document.getElementById('clearResults').addEventListener('click', clearResults);
         document.getElementById('exportResults').addEventListener('click', exportResults);
         
