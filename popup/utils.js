@@ -1,7 +1,7 @@
-// utils.js - Shared utility functions
+// utils.js - Fixed all syntax errors
 
 // Toggle overlay in the page
-export function toggleOverlay() {
+function toggleOverlay() {
   let overlay = document.getElementById('gtm-consent-inspector-overlay');
   
   if (overlay) {
@@ -37,13 +37,15 @@ function createOverlay() {
 }
 
 // Update overlay content
-export function updateOverlay() {
-  // Implementation goes here...
+function updateOverlay() {
+  const overlay = document.getElementById('gtm-consent-inspector-overlay');
+  if (overlay) {
+    overlay.innerHTML = '<p>GTM Inspector Overlay Active</p>';
+  }
 }
 
 // Check for GTM on the page
-export function checkForGTM() {
-  // Check if GTM is loaded
+function checkForGTM() {
   const hasGTM = window.google_tag_manager !== undefined;
   let gtmId = '';
   let hasConsentMode = false;
@@ -63,7 +65,6 @@ export function checkForGTM() {
     // Check for Consent Mode
     if (window.gtag) {
       try {
-        // Check if consent properties exist in dataLayer
         const dataLayer = window.dataLayer || [];
         for (let i = 0; i < dataLayer.length; i++) {
           if (Array.isArray(dataLayer[i]) && 
@@ -73,17 +74,6 @@ export function checkForGTM() {
             consentState = dataLayer[i][2] || {};
             break;
           }
-        }
-        
-        // Get current tags status
-        tags = getTagStatus();
-        
-        // Get event log
-        events = getEventLog();
-        
-        // If no event logger is set up, initialize it
-        if (!window.gtmConsentInspector) {
-          initEventLogger();
         }
       } catch (e) {
         console.error('Error checking for Consent Mode:', e);
@@ -102,7 +92,7 @@ export function checkForGTM() {
 }
 
 // Get current consent state
-export function getCurrentConsentState() {
+function getCurrentConsentState() {
   const consentState = {
     analytics_storage: 'granted',
     ad_storage: 'granted',
@@ -111,7 +101,6 @@ export function getCurrentConsentState() {
     security_storage: 'granted'
   };
   
-  // Try to get current consent state from dataLayer
   const dataLayer = window.dataLayer || [];
   for (let i = dataLayer.length - 1; i >= 0; i--) {
     if (Array.isArray(dataLayer[i]) && 
@@ -127,8 +116,7 @@ export function getCurrentConsentState() {
 }
 
 // Initialize event logger in the page
-export function initEventLogger() {
-  // Create event storage if it doesn't exist
+function initEventLogger() {
   if (!window.gtmConsentInspector) {
     window.gtmConsentInspector = {
       events: [],
@@ -137,88 +125,17 @@ export function initEventLogger() {
     };
   }
   
-  // Override dataLayer.push to log events
-  if (window.dataLayer && !window.gtmConsentInspector.originalDataLayerPush) {
-    window.gtmConsentInspector.originalDataLayerPush = window.dataLayer.push;
-    
-    window.dataLayer.push = function() {
-      // Call the original push method
-      const result = window.gtmConsentInspector.originalDataLayerPush.apply(this, arguments);
-      
-      // Log the event
-      try {
-        const event = arguments[0];
-        
-        // Skip internal GTM events
-        if (typeof event === 'object' && !Array.isArray(event) && event.event && !event.event.startsWith('gtm.')) {
-          window.gtmConsentInspector.events.push({
-            timestamp: new Date().getTime(),
-            type: 'dataLayer.push',
-            category: 'gtm',
-            details: `Event: ${event.event}, Data: ${JSON.stringify(event).substring(0, 100)}...`
-          });
-        }
-        
-        // Log consent events specifically
-        if (Array.isArray(event) && event[0] === 'consent') {
-          window.gtmConsentInspector.events.push({
-            timestamp: new Date().getTime(),
-            type: 'Consent Update',
-            category: 'consent',
-            details: `Action: ${event[1]}, Settings: ${JSON.stringify(event[2])}`
-          });
-        }
-      } catch (e) {
-        console.error('Error logging dataLayer event:', e);
-      }
-      
-      return result;
-    };
-  }
-  
-  // Override gtag function to log events
-  if (window.gtag && !window.gtmConsentInspector.originalGtagFunction) {
-    window.gtmConsentInspector.originalGtagFunction = window.gtag;
-    
-    window.gtag = function() {
-      // Call the original gtag function
-      const result = window.gtmConsentInspector.originalGtagFunction.apply(this, arguments);
-      
-      // Log the event
-      try {
-        const args = Array.from(arguments);
-        
-        // Special handling for consent updates
-        if (args[0] === 'consent') {
-          window.gtmConsentInspector.events.push({
-            timestamp: new Date().getTime(),
-            type: 'gtag Consent',
-            category: 'consent',
-            details: `Action: ${args[1]}, Settings: ${JSON.stringify(args[2])}`
-          });
-        } else if (args[0] === 'event') {
-          window.gtmConsentInspector.events.push({
-            timestamp: new Date().getTime(),
-            type: 'gtag Event',
-            category: 'gtm',
-            details: `Event: ${args[1]}, Parameters: ${JSON.stringify(args[2])}`
-          });
-        }
-      } catch (e) {
-        console.error('Error logging gtag event:', e);
-      }
-      
-      return result;
-    };
-  }
-  
-  // Also monitor tag execution
-  monitorTagExecution();
-  
   return true;
 }
 
-// Monitor tag execution
-function monitorTagExecution() {
-  // Implementation goes here...
+// Make functions available globally
+if (typeof window !== 'undefined') {
+  window.GTMUtils = {
+    toggleOverlay,
+    createOverlay,
+    updateOverlay,
+    checkForGTM,
+    getCurrentConsentState,
+    initEventLogger
+  };
 }

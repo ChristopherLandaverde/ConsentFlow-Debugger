@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "GTM Consent Mode Inspector", 
-  "version": "1.0.2",
+  "version": "1.0.4",
   "description": "Inspects GTM-enabled websites and shows which tags are blocked or allowed based on Consent Mode settings",
   "permissions": [
     "activeTab",
     "scripting", 
     "storage",
     "contextMenus",
-    "notifications"
+    "notifications",
+    "tabs"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -23,7 +24,8 @@
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
-      "run_at": "document_end"
+      "run_at": "document_idle",
+      "all_frames": false
     }
   ],
   "web_accessible_resources": [

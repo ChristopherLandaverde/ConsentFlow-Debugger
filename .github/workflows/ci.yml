@@ -1,0 +1,120 @@
+name: GTM Inspector CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  # Unit Tests
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - run: npm ci
+      - run: npm test
+      
+  # Integration Tests (Would have caught the issue!)
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - run: npm ci
+      - run: npm run test:integration
+      
+  # Extension Build & Validation
+  extension-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - run: npm ci
+      
+      # Validate manifest.json
+      - name: Validate Manifest
+        run: |
+          node -e "
+            const manifest = JSON.parse(require('fs').readFileSync('manifest.json'));
+            if (!manifest.content_scripts || manifest.content_scripts.length === 0) {
+              console.error('❌ No content scripts found in manifest.json');
+              process.exit(1);
+            }
+            console.log('✅ Manifest validation passed');
+          "
+      
+      # Check for critical architecture patterns
+      - name: Architecture Validation
+        run: |
+          # Check for content script isolation violations
+          if grep -r "window.ConsentInspector" content.js; then
+            echo "❌ Content script isolation violation detected!"
+            echo "Content scripts cannot directly access page context"
+            exit 1
+          fi
+          
+          # Check for proper message passing
+          if ! grep -q "postMessage" content.js; then
+            echo "❌ Missing postMessage communication in content script"
+            exit 1
+          fi
+          
+          echo "✅ Architecture validation passed"
+      
+      # Build extension
+      - name: Build Extension
+        run: npm run build
+        
+  # Automated Testing with Real GTM Sites
+  e2e-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - run: npm ci
+      
+      # Install Chrome for testing
+      - name: Install Chrome
+        run: |
+          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add -
+          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list
+          apt-get update
+          apt-get install -y google-chrome-stable
+      
+      # Run E2E tests on GTM-enabled sites
+      - name: E2E Tests
+        run: |
+          npm run test:e2e
+          
+  # Performance Regression Testing
+  performance-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - run: npm ci
+      - run: npm run test:performance
+      
+  # Security & Compliance Checks
+  security-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - run: npm ci
+      - run: npm audit
+      - run: npm run lint:security 
