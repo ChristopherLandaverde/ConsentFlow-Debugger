@@ -241,6 +241,18 @@ header h1 {
   background: var(--color-error);
 }
 
+.status.checking {
+  background: linear-gradient(135deg, var(--color-info-light) 0%, #eff6ff 100%);
+  border-color: var(--color-info-border);
+  color: var(--color-info);
+  animation: pulse 2s infinite;
+}
+
+.status.checking::before {
+  content: "⏳";
+  animation: spin 1s linear infinite;
+}
+
 /* ===== TABS ===== */
 .tabs {
   display: flex;
@@ -1043,7 +1055,8 @@ footer {
 #stopMonitoring::before { content: "⏹️ "; }
 #validateCompliance::before { content: "✅ "; }
 #refreshTags::before { content: "🔄 "; }
-#toggleOverlay::before { content: "👁️ "; }
+#quickTest::before { content: "⚡ "; }
+
 #applyConsent::before { content: "⚡ "; }
 #clearLog::before { content: "🗑️ "; }
 #exportLog::before { content: "📤 "; }

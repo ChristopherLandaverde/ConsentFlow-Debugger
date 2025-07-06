@@ -173,18 +173,9 @@ const UIUtils = (function() {
   
   // Enhanced error handling
   function handleError(error, context = 'Unknown') {
-    console.error(`❌ Error in ${context}:`, error);
-    
     // Show user-friendly error notification
     const message = error.message || 'An unexpected error occurred';
     showNotification(`Error: ${message}`, 'error', 6000);
-    
-    // Log to console for debugging
-    console.group(`Error Details - ${context}`);
-    console.error('Error:', error);
-    console.error('Stack:', error.stack);
-    console.error('Context:', context);
-    console.groupEnd();
   }
   
   // Success feedback
@@ -264,8 +255,6 @@ const UIUtils = (function() {
   
   // Initialize UI enhancements
   function initialize() {
-    console.log('🎨 UI Utils: Initializing...');
-    
     // Add hover effects
     addHoverEffects();
     
@@ -274,8 +263,6 @@ const UIUtils = (function() {
     
     // Add keyboard shortcuts
     addKeyboardShortcuts();
-    
-    console.log('✅ UI Utils: Initialized');
   }
   
   function addCommonTooltips() {

@@ -1,18 +1,16 @@
-// injected-script.js - Enhanced external script
-console.log('🔵 GTM Inspector: External injected script loading...');
+// injected-script.js - FIXED GTM container detection
 
 // Prevent multiple injections
 if (window.ConsentInspector) {
-  console.log('🔵 ConsentInspector already exists, skipping...');
+  // ConsentInspector already exists, skipping...
 } else {
-  console.log('🔵 Creating ConsentInspector...');
+  // Creating ConsentInspector...
   
   // Create ConsentInspector in page context
   window.ConsentInspector = {
-    version: 'external-v1',
+    version: 'external-v2-fixed',
     
     detectGTM: function() {
-      console.log('🔵 detectGTM called...');
       
       const result = {
         hasGTM: false,
@@ -26,60 +24,75 @@ if (window.ConsentInspector) {
       
       // Method 1: Check window.google_tag_manager
       if (window.google_tag_manager && typeof window.google_tag_manager === 'object') {
-        console.log('🔵 Found google_tag_manager:', Object.keys(window.google_tag_manager));
-        result.hasGTM = true;
-        result.detectionMethods.google_tag_manager = true;
         
-        const containerIds = Object.keys(window.google_tag_manager);
+        const allKeys = Object.keys(window.google_tag_manager);
         
-        // Filter and find actual GTM container IDs (GTM-XXXXXXX format)
-        const actualContainers = containerIds.filter(id => {
-          // Look for GTM container ID pattern: GTM-XXXXXXX
-          return /^GTM-[A-Z0-9]+$/.test(id);
+        // FIXED: Better filtering for actual GTM containers
+        const actualContainers = allKeys.filter(id => {
+          // Must start with GTM- and be reasonably short (real containers are like GTM-ABC123)
+          if (!id.startsWith('GTM-')) return false;
+          
+          // Exclude debug groups (they're usually very long)
+          if (id.length > 15) return false;
+          
+          // Must match proper GTM container pattern: GTM-[alphanumeric]
+          if (!/^GTM-[A-Z0-9]{6,8}$/.test(id)) return false;
+          
+          // Additional check: should be an object, not a string
+          const containerData = window.google_tag_manager[id];
+          if (typeof containerData !== 'object' || containerData === null) return false;
+          
+          return true;
         });
         
-        // If we found actual GTM containers, use the first one
+
+        
         if (actualContainers.length > 0) {
-          result.gtmId = actualContainers[0];
-        } else {
-          // Fallback: look for any key that might be a GTM ID (starts with GTM)
-          const gtmLikeContainers = containerIds.filter(id => id.startsWith('GTM-'));
-          if (gtmLikeContainers.length > 0) {
-            result.gtmId = gtmLikeContainers[0];
-          } else if (containerIds.length > 0) {
-            // Last resort: use first key
-            result.gtmId = containerIds[0];
-          }
+          result.hasGTM = true;
+          result.gtmId = actualContainers[0]; // Primary container
+          result.detectionMethods.google_tag_manager = true;
+          
+          // Build container info
+          result.containers = actualContainers.map(id => {
+            const containerData = window.google_tag_manager[id];
+            return {
+              id: id,
+              source: 'google_tag_manager',
+              isDebugGroup: false,
+              hasConsentMode: this.detectConsentMode(),
+              dataLayer: window.dataLayer ? window.dataLayer.length : 0,
+              method: 'object_detection'
+            };
+          });
         }
         
-        result.containers = containerIds.map(id => ({
-          id: id,
-          source: 'google_tag_manager',
-          isDebugGroup: !/^GTM-[A-Z0-9]+$/.test(id) && (id.includes('debug') || id.includes('test') || id.includes('sandbox') || id.length < 8)
-        }));
+
       }
       
-      // Method 2: Check for GTM script tags
+      // Method 2: Check for GTM script tags (fallback)
       const gtmScripts = document.querySelectorAll('script[src*="googletagmanager.com"]');
-      console.log('🔵 GTM scripts found:', gtmScripts.length);
-      result.detectionMethods.scriptTags = gtmScripts.length;
       
-      if (gtmScripts.length > 0) {
-        result.hasGTM = true;
+      if (gtmScripts.length > 0 && !result.hasGTM) {
+        result.detectionMethods.scriptTags = gtmScripts.length;
+        
         gtmScripts.forEach(script => {
           const match = script.src.match(/id=([^&]+)/);
           if (match && match[1]) {
             const id = match[1];
-            // Prioritize script tag IDs over debug groups
-            if (!result.gtmId || result.gtmId.includes('debug')) {
-              result.gtmId = id;
-            }
-            if (!result.containers.some(c => c.id === id)) {
-              result.containers.push({
-                id: id,
-                source: 'script_tag',
-                isDebugGroup: false
-              });
+            if (/^GTM-[A-Z0-9]{6,8}$/.test(id)) {
+              result.hasGTM = true;
+              if (!result.gtmId) result.gtmId = id;
+              
+              if (!result.containers.some(c => c.id === id)) {
+                result.containers.push({
+                  id: id,
+                  source: 'script_tag',
+                  isDebugGroup: false,
+                  hasConsentMode: this.detectConsentMode(),
+                  dataLayer: window.dataLayer ? window.dataLayer.length : 0,
+                  method: 'script_detection'
+                });
+              }
             }
           }
         });
@@ -87,14 +100,15 @@ if (window.ConsentInspector) {
       
       // Method 3: Check for gtag function
       if (window.gtag && typeof window.gtag === 'function') {
-        console.log('🔵 Found gtag function');
         result.detectionMethods.gtag = true;
-        result.hasGTM = true;
+        if (!result.hasGTM) {
+          result.hasGTM = true;
+          result.gtmId = 'gtag-detected';
+        }
       }
       
       // Method 4: Check dataLayer
       if (window.dataLayer && Array.isArray(window.dataLayer)) {
-        console.log('🔵 Found dataLayer with', window.dataLayer.length, 'items');
         result.detectionMethods.dataLayer = window.dataLayer.length;
         
         // Look for GTM-related events
@@ -103,8 +117,9 @@ if (window.ConsentInspector) {
                   (item.event || item['gtm.start'] || item['gtm.uniqueEventId']));
         });
         
-        if (hasGtmEvents) {
+        if (hasGtmEvents && !result.hasGTM) {
           result.hasGTM = true;
+          result.gtmId = 'datalayer-detected';
         }
       }
       
@@ -112,7 +127,16 @@ if (window.ConsentInspector) {
       result.hasConsentMode = this.detectConsentMode();
       result.consentState = this.getCurrentConsentState();
       
-      console.log('🔵 GTM Detection Result:', result);
+      // Final validation: ensure we have a reasonable number of containers
+      if (result.containers.length > 5) {
+        // Keep only containers detected via object method (most reliable)
+        const objectContainers = result.containers.filter(c => c.source === 'google_tag_manager');
+        if (objectContainers.length > 0 && objectContainers.length <= 3) {
+          result.containers = objectContainers;
+          result.gtmId = objectContainers[0].id;
+        }
+      }
+      
       return result;
     },
     
@@ -155,7 +179,6 @@ if (window.ConsentInspector) {
     },
     
     getTagInfo: function() {
-      console.log('🔵 getTagInfo called...');
       
       const tags = [];
       const consentState = this.getCurrentConsentState();
@@ -205,16 +228,13 @@ if (window.ConsentInspector) {
             reason: `${detector.consentType}: ${consentState[detector.consentType]}`
           });
           
-          console.log('🔵 Detected tag:', detector.name, 'allowed:', allowed);
         }
       });
       
-      console.log('🔵 getTagInfo result:', tags);
       return tags;
     },
     
     updateConsent: function(settings) {
-      console.log('🔵 updateConsent called with:', settings);
       
       try {
         if (window.gtag && typeof window.gtag === 'function') {
@@ -238,22 +258,12 @@ if (window.ConsentInspector) {
     }
   };
   
-  console.log('🔵 ConsentInspector created successfully');
-  
-  // Test immediately
-  setTimeout(() => {
-    console.log('🔵 Running immediate test...');
-    console.log('🔵 GTM Detection:', window.ConsentInspector.detectGTM());
-    console.log('🔵 Tag Info:', window.ConsentInspector.getTagInfo());
-  }, 100);
-}
 
-console.log('🔵 External injected script complete');
+}
 
 // Listen for messages from content script
 window.addEventListener('message', function(event) {
   if (event.data && event.data.source === 'gtm-inspector-content') {
-    console.log('🔵 Received message from content script:', event.data);
     
     const { action, data, id } = event.data;
     let result = null;

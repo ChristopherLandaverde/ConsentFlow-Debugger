@@ -2,15 +2,12 @@
 const TabsManager = (function() {
   
   function initializeTabs() {
-    console.log('🏷️ Initializing tabs...');
-    
     const tabButtons = document.querySelectorAll('.tab-button');
     const tabContents = document.querySelectorAll('.tab-content');
     
     tabButtons.forEach(button => {
       button.addEventListener('click', function() {
         const tabName = this.getAttribute('data-tab');
-        console.log('Tab clicked:', tabName);
         
         // Remove active class from all tabs and contents
         tabButtons.forEach(b => b.classList.remove('active'));

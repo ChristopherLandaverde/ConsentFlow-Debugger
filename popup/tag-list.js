@@ -1,22 +1,20 @@
-// tag-list.js - Converted to IIFE pattern
+// tag-list.js - FIXED version with setActiveContainer
 const TagList = (function() {
   let currentTags = [];
   let currentFilter = 'all';
+  let activeContainer = null; // Add this
   let contentScriptInterface = null;
 
   function initialize(contentInterface) {
-    console.log('🏷️ Initializing TagList...');
     contentScriptInterface = contentInterface;
     
     initializeTagFilters();
     initializeRefreshButton();
-    initializeOverlayButton();
   }
 
   function initializeTagFilters() {
     const filterContainer = document.querySelector('#tags-tab .filter-controls');
     if (!filterContainer) {
-      console.error('❌ Filter container not found');
       return;
     }
     
@@ -24,7 +22,6 @@ const TagList = (function() {
       if (!e.target.matches('.filter-btn[data-filter]')) return;
       
       const filterValue = e.target.getAttribute('data-filter');
-      console.log('🔍 Filter clicked:', filterValue);
       
       // Update active state
       filterContainer.querySelectorAll('.filter-btn').forEach(btn => {
@@ -39,12 +36,10 @@ const TagList = (function() {
   function initializeRefreshButton() {
     const refreshBtn = document.getElementById('refreshTags');
     if (!refreshBtn) {
-      console.error('❌ Refresh button not found');
       return;
     }
     
     refreshBtn.addEventListener('click', async function() {
-      console.log('🔄 Refresh tags clicked');
       this.disabled = true;
       this.textContent = '🔄 Refreshing...';
       
@@ -57,57 +52,29 @@ const TagList = (function() {
     });
   }
 
-  function initializeOverlayButton() {
-    const overlayBtn = document.getElementById('toggleOverlay');
-    if (!overlayBtn) {
-      console.error('❌ Overlay button not found');
-      return;
-    }
-    
-    overlayBtn.addEventListener('click', async function() {
-      console.log('👁️ Toggle overlay clicked');
-      this.disabled = true;
-      
-      try {
-        const result = await contentScriptInterface.sendMessage('toggleOverlay');
-        if (result.success) {
-          this.textContent = result.action === 'created' ? '👁️ Hide' : '👁️ Show';
-          console.log('✅ Overlay toggled:', result.action);
-        }
-      } catch (error) {
-        console.error('❌ Overlay toggle failed:', error);
-      } finally {
-        this.disabled = false;
-      }
-    });
-  }
+
 
   async function refresh() {
     if (!contentScriptInterface) {
-      console.error('❌ No content script interface');
       return;
     }
     
-    console.log('🔄 Refreshing tag status...');
     try {
       const result = await contentScriptInterface.sendMessage('getTagStatus');
-      console.log('📊 Tag refresh result:', result);
       
       if (result && Array.isArray(result)) {
         updateTags(result);
       } else {
-        console.warn('⚠️ No tags returned or invalid format');
+        updateTags([]);
       }
     } catch (error) {
-      console.error('❌ Error refreshing tags:', error);
+      updateTags([]);
     }
   }
 
   function updateTags(tags) {
-    console.log('📋 Updating tags:', tags.length, 'tags');
     const tagListElement = document.getElementById('tagList');
     if (!tagListElement) {
-      console.error('❌ Tag list element not found');
       return;
     }
     
@@ -130,8 +97,6 @@ const TagList = (function() {
     
     // Reapply current filter
     filterTags(currentFilter);
-    
-    console.log('✅ Tags updated successfully');
   }
 
   function createTagElement(tag) {
@@ -160,7 +125,6 @@ const TagList = (function() {
   }
 
   function filterTags(category) {
-    console.log('🔍 Filtering tags by:', category);
     const tagItems = document.querySelectorAll('#tagList .tag-item:not(.empty-state)');
     
     tagItems.forEach(item => {
@@ -173,17 +137,58 @@ const TagList = (function() {
     });
   }
 
+  // ADD THIS MISSING FUNCTION
+  function setActiveContainer(containerId) {
+    activeContainer = containerId;
+    
+    // Filter tags by container if needed
+    if (currentTags.length > 0) {
+      const containerTags = currentTags.filter(tag => 
+        !tag.container || tag.container === containerId
+      );
+      
+      if (containerTags.length !== currentTags.length) {
+        updateTagDisplay(containerTags);
+      }
+    }
+  }
+
+  // ADD THIS HELPER FUNCTION
+  function updateTagDisplay(tags) {
+    const tagListElement = document.getElementById('tagList');
+    if (!tagListElement) return;
+    
+    if (!tags || tags.length === 0) {
+      tagListElement.innerHTML = '<div class="tag-item empty-state">No tags for this container</div>';
+      return;
+    }
+    
+    const fragment = document.createDocumentFragment();
+    
+    tags.forEach(tag => {
+      const tagElement = createTagElement(tag);
+      fragment.appendChild(tagElement);
+    });
+    
+    tagListElement.innerHTML = '';
+    tagListElement.appendChild(fragment);
+    
+    // Reapply current filter
+    filterTags(currentFilter);
+  }
+
   function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
   }
 
-  // Public API
+  // FIXED: Include setActiveContainer in the return object
   return {
     initialize,
     refresh,
-    updateTags
+    updateTags,
+    setActiveContainer  // ADD THIS LINE - This was missing!
   };
 })();
 
