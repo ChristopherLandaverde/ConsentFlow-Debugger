@@ -237,27 +237,25 @@ const ConsentSimulator = (function() {
   function showNotification(message, type = 'info') {
     console.log(`📢 Notification [${type}]: ${message}`);
     
-    // Enhanced visual feedback
+    // Use new UI utilities for better notifications
+    if (window.UIUtils) {
+      window.UIUtils.showNotification(message, type);
+    }
+    
+    // Enhanced visual feedback for apply button
     const applyBtn = document.getElementById('applyConsent');
     if (applyBtn) {
-      const originalText = applyBtn.textContent;
-      const originalBg = applyBtn.style.backgroundColor;
-      
       if (type === 'success') {
-        applyBtn.textContent = '✅ Applied!';
-        applyBtn.style.backgroundColor = '#28a745';
-        applyBtn.style.color = 'white';
-      } else {
-        applyBtn.textContent = '❌ Failed';
-        applyBtn.style.backgroundColor = '#dc3545';
-        applyBtn.style.color = 'white';
+        window.UIUtils.setButtonLoading(applyBtn, true, '✅ Applied!');
+        setTimeout(() => {
+          window.UIUtils.setButtonLoading(applyBtn, false);
+        }, 2000);
+      } else if (type === 'error') {
+        window.UIUtils.setButtonLoading(applyBtn, true, '❌ Failed');
+        setTimeout(() => {
+          window.UIUtils.setButtonLoading(applyBtn, false);
+        }, 2000);
       }
-      
-      setTimeout(() => {
-        applyBtn.textContent = originalText;
-        applyBtn.style.backgroundColor = originalBg;
-        applyBtn.style.color = '';
-      }, 2000);
     }
   }
 

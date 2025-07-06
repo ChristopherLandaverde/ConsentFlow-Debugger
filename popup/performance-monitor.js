@@ -1,9 +1,10 @@
-// Performance Monitor Module
+// popup/performance-monitor.js - COMPLETE Implementation
 const PerformanceMonitor = (function() {
   let performanceData = {
     metrics: {},
     errors: [],
-    lastUpdate: null
+    lastUpdate: null,
+    isMonitoring: false
   };
 
   function init(contentInterface) {
@@ -22,65 +23,98 @@ const PerformanceMonitor = (function() {
       clearPerformanceData();
     });
     
+    // Start real-time monitoring
+    startRealTimeMonitoring(contentInterface);
+    
     // Initial load
     refreshPerformanceData(contentInterface);
+  }
+
+  function startRealTimeMonitoring(contentInterface) {
+    if (performanceData.isMonitoring) return;
+    
+    performanceData.isMonitoring = true;
+    
+    // Monitor every 5 seconds
+    setInterval(async () => {
+      try {
+        const metrics = await contentInterface.sendMessage('getPerformanceMetrics');
+        if (metrics && !metrics.error) {
+          performanceData.metrics = metrics;
+          performanceData.lastUpdate = new Date();
+          updatePerformanceDisplay();
+        }
+      } catch (error) {
+        addError(error, 'Real-time monitoring');
+      }
+    }, 5000);
   }
 
   async function refreshPerformanceData(contentInterface) {
     try {
       console.log('📊 Refreshing performance data...');
       
-      // Get performance metrics from injected script
-      const metrics = await contentInterface.sendMessage('getPerformanceMetrics');
+      // Get metrics from all sources
+      const [metrics, errors] = await Promise.all([
+        contentInterface.sendMessage('getPerformanceMetrics'),
+        contentInterface.sendMessage('getErrors')
+      ]);
       
       if (metrics && !metrics.error) {
         performanceData.metrics = metrics;
         performanceData.lastUpdate = new Date();
-        
         updatePerformanceDisplay();
-      } else {
-        console.error('❌ Failed to get performance metrics:', metrics?.error);
-        showError('Failed to retrieve performance data');
       }
+      
+      if (errors && Array.isArray(errors)) {
+        performanceData.errors = errors;
+        updateErrorLog();
+      }
+      
     } catch (error) {
       console.error('❌ Error refreshing performance data:', error);
-      showError('Error refreshing performance data');
+      showError('Failed to retrieve performance data');
     }
   }
 
   function updatePerformanceDisplay() {
     const metrics = performanceData.metrics;
     
-    // Update overview values
-    document.getElementById('totalTimeValue').textContent = `${metrics.totalTime || 0}ms`;
+    // Update overview values with null checks
+    const totalTimeEl = document.getElementById('totalTimeValue');
+    const memoryUsedEl = document.getElementById('memoryUsedValue');
+    const triggerCountEl = document.getElementById('triggerCountValue');
+    const variableCountEl = document.getElementById('variableCountValue');
     
-    if (metrics.memory) {
-      const usedMB = Math.round(metrics.memory.used / 1024 / 1024);
-      document.getElementById('memoryUsedValue').textContent = `${usedMB}MB`;
-    } else {
-      document.getElementById('memoryUsedValue').textContent = 'N/A';
+    if (totalTimeEl) totalTimeEl.textContent = `${metrics.totalTime || 0}ms`;
+    
+    if (memoryUsedEl) {
+      if (metrics.memory) {
+        const usedMB = Math.round(metrics.memory.used / 1024 / 1024);
+        memoryUsedEl.textContent = `${usedMB}MB`;
+      } else {
+        memoryUsedEl.textContent = 'N/A';
+      }
     }
     
-    document.getElementById('triggerCountValue').textContent = metrics.triggerCount || 0;
-    document.getElementById('variableCountValue').textContent = metrics.variableCount || 0;
+    if (triggerCountEl) triggerCountEl.textContent = metrics.triggerCount || 0;
+    if (variableCountEl) variableCountEl.textContent = metrics.variableCount || 0;
     
-    // Update timing breakdown
+    // Update detailed sections
     updateTimingBreakdown(metrics);
-    
-    // Update memory info
     updateMemoryInfo(metrics.memory);
-    
-    // Update error log
     updateErrorLog();
   }
 
   function updateTimingBreakdown(metrics) {
     const timingList = document.getElementById('timingList');
+    if (!timingList) return;
+    
     const timingItems = [];
     
-    // Create timing items from metrics
+    // Extract timing metrics
     Object.entries(metrics).forEach(([key, value]) => {
-      if (typeof value === 'number' && key !== 'totalTime' && key !== 'triggerCount' && key !== 'variableCount') {
+      if (typeof value === 'number' && key.includes('Time') && key !== 'totalTime') {
         timingItems.push({
           name: key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase()),
           time: value,
@@ -113,6 +147,7 @@ const PerformanceMonitor = (function() {
 
   function updateMemoryInfo(memory) {
     const memoryInfo = document.getElementById('memoryInfo');
+    if (!memoryInfo) return;
     
     if (!memory) {
       memoryInfo.innerHTML = '<div class="memory-item empty-state">Memory data not available</div>';
@@ -129,7 +164,7 @@ const PerformanceMonitor = (function() {
         <div class="memory-label">Used Memory</div>
         <div class="memory-value">${usedMB}MB / ${limitMB}MB</div>
         <div class="memory-bar">
-          <div class="memory-bar-fill" style="width: ${usagePercentage}%"></div>
+          <div class="memory-bar-fill" style="width: ${Math.min(usagePercentage, 100)}%"></div>
         </div>
         <div class="memory-percentage">${usagePercentage}%</div>
       </div>
@@ -146,6 +181,7 @@ const PerformanceMonitor = (function() {
 
   function updateErrorLog() {
     const errorLog = document.getElementById('errorLog');
+    if (!errorLog) return;
     
     if (performanceData.errors.length === 0) {
       errorLog.innerHTML = '<div class="error-item empty-state">No errors detected...</div>';
@@ -187,7 +223,7 @@ const PerformanceMonitor = (function() {
       timestamp: new Date().toISOString(),
       performanceData: performanceData,
       pageInfo: {
-        url: window.location.href,
+        url: 'Extension Context',
         userAgent: navigator.userAgent
       }
     };
@@ -197,7 +233,7 @@ const PerformanceMonitor = (function() {
     
     const a = document.createElement('a');
     a.href = url;
-    a.download = `performance-report-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `gtm-performance-report-${new Date().toISOString().split('T')[0]}.json`;
     a.click();
     
     URL.revokeObjectURL(url);
@@ -207,7 +243,8 @@ const PerformanceMonitor = (function() {
     performanceData = {
       metrics: {},
       errors: [],
-      lastUpdate: null
+      lastUpdate: null,
+      isMonitoring: performanceData.isMonitoring
     };
     
     updatePerformanceDisplay();
@@ -219,4 +256,6 @@ const PerformanceMonitor = (function() {
     refreshPerformanceData: refreshPerformanceData,
     addError: addError
   };
-})(); 
+})();
+
+window.PerformanceMonitor = PerformanceMonitor;

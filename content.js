@@ -370,10 +370,6 @@ const messageHandlers = {
     return { success: true };
   },
   
-  toggleOverlay: () => {
-    return toggleOverlay();
-  },
-  
   getTagStatus: async () => {
     try {
       const tags = await sendMessageToPage('getTagInfo');
@@ -437,70 +433,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
   return true;
 });
-
-// Optimized overlay toggle
-function toggleOverlay() {
-  let overlay = document.getElementById('gtm-consent-inspector-overlay');
-  
-  if (overlay) {
-    overlay.remove();
-    return { success: true, action: 'removed' };
-  }
-  
-  // Create minimal overlay
-  overlay = document.createElement('div');
-  overlay.id = 'gtm-consent-inspector-overlay';
-  overlay.innerHTML = `
-    <div style="position: fixed; top: 10px; right: 10px; width: 320px; 
-                background: white; border: 1px solid #ddd; border-radius: 6px; 
-                padding: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); 
-                z-index: 9999999; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                font-size: 13px; line-height: 1.4;">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-        <h3 style="margin: 0; font-size: 16px; color: #202124;">🔍 GTM Inspector</h3>
-        <button onclick="this.closest('#gtm-consent-inspector-overlay').remove()" 
-                style="background: none; border: none; font-size: 18px; color: #5f6368; cursor: pointer;">×</button>
-      </div>
-      <div style="margin-bottom: 12px;">
-        <strong>Status:</strong> <span id="overlay-gtm-status">Checking...</span>
-      </div>
-      <div style="margin-bottom: 12px;">
-        <strong>Console Access:</strong> Try <code>ConsentInspector.status()</code>
-      </div>
-      <div style="font-size: 11px; color: #5f6368; text-align: center;">
-        Use browser extension popup for full controls
-      </div>
-    </div>
-  `;
-  
-  document.body.appendChild(overlay);
-  
-  // Update overlay status using cached data if available
-  if (gtmCache) {
-    updateOverlayStatus(overlay, gtmCache);
-  } else {
-    sendMessageToPage('detectGTM').then(result => {
-      updateOverlayStatus(overlay, result);
-    });
-  }
-  
-  return { success: true, action: 'created' };
-}
-
-function updateOverlayStatus(overlay, result) {
-  const statusEl = overlay.querySelector('#overlay-gtm-status');
-  if (statusEl && result) {
-    if (result.hasGTM) {
-      if (result.containers && result.containers.length > 1) {
-        statusEl.textContent = `✅ ${result.containers.length} GTM Containers (${result.gtmId})`;
-      } else {
-        statusEl.textContent = `✅ GTM Active (${result.gtmId})`;
-      }
-    } else {
-      statusEl.textContent = '❌ No GTM';
-    }
-  }
-}
 
 // Memory cleanup function
 function cleanupMemory() {

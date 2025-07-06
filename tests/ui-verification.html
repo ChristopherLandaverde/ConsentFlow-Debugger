@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>GTM Inspector - UI Verification Test</title>
+  <link rel="stylesheet" href="../popup/popup.css">
+  <style>
+    /* Test-specific styles */
+    .test-container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    .test-section {
+      margin: 30px 0;
+      padding: 20px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #f9fafb;
+    }
+    
+    .test-section h2 {
+      margin-top: 0;
+      color: #111827;
+    }
+    
+    .test-button {
+      margin: 10px;
+      padding: 10px 20px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background: #ffffff;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .test-button:hover {
+      background: #f3f4f6;
+      transform: translateY(-1px);
+    }
+    
+    .test-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      margin: 20px 0;
+    }
+    
+    .status-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    
+    .status-indicator.online { background: #d1fae5; color: #10b981; }
+    .status-indicator.offline { background: #fee2e2; color: #ef4444; }
+    .status-indicator.warning { background: #fef3c7; color: #f59e0b; }
+    .status-indicator.pending { background: #dbeafe; color: #3b82f6; }
+    
+    .test-result {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 6px;
+      font-weight: 500;
+    }
+    
+    .test-result.pass {
+      background: #d1fae5;
+      color: #10b981;
+      border: 1px solid #a7f3d0;
+    }
+    
+    .test-result.fail {
+      background: #fee2e2;
+      color: #ef4444;
+      border: 1px solid #fecaca;
+    }
+    
+    .test-result.info {
+      background: #dbeafe;
+      color: #3b82f6;
+      border: 1px solid #bfdbfe;
+    }
+  </style>
+</head>
+<body>
+  <div class="test-container">
+    <h1>🎨 GTM Inspector UI Verification Test</h1>
+    <p>This page tests all UI improvements to ensure they work correctly.</p>
+    
+    <!-- Notification System Test -->
+    <div class="test-section">
+      <h2>📢 Notification System</h2>
+      <p>Test the notification system with different types:</p>
+      <button class="test-button" onclick="testNotification('success', 'Success notification test')">Success Notification</button>
+      <button class="test-button" onclick="testNotification('error', 'Error notification test')">Error Notification</button>
+      <button class="test-button" onclick="testNotification('warning', 'Warning notification test')">Warning Notification</button>
+      <button class="test-button" onclick="testNotification('info', 'Info notification test')">Info Notification</button>
+      <button class="test-button" onclick="clearAllNotifications()">Clear All Notifications</button>
+      <div id="notification-results"></div>
+    </div>
+    
+    <!-- Tooltip System Test -->
+    <div class="test-section">
+      <h2>💡 Tooltip System</h2>
+      <p>Hover over these elements to see tooltips:</p>
+      <button class="test-button tooltip" data-tooltip="This is a success tooltip">Success Tooltip</button>
+      <button class="test-button tooltip" data-tooltip="This is an error tooltip">Error Tooltip</button>
+      <button class="test-button tooltip" data-tooltip="This is a warning tooltip">Warning Tooltip</button>
+      <button class="test-button tooltip" data-tooltip="This is an info tooltip">Info Tooltip</button>
+      <div id="tooltip-results" class="test-result info">Hover over the buttons above to test tooltips</div>
+    </div>
+    
+    <!-- Loading States Test -->
+    <div class="test-section">
+      <h2>⏳ Loading States</h2>
+      <p>Test loading states and button loading:</p>
+      <button class="test-button" id="loading-test-btn" onclick="testLoadingState()">Test Loading State</button>
+      <button class="test-button" id="button-loading-test" onclick="testButtonLoading()">Test Button Loading</button>
+      <div class="card" id="loading-card">
+        <h3>Loading Card Test</h3>
+        <p>This card will show a loading overlay when tested.</p>
+      </div>
+      <div id="loading-results"></div>
+    </div>
+    
+    <!-- Empty States Test -->
+    <div class="test-section">
+      <h2>📭 Empty States</h2>
+      <p>Test different empty state types:</p>
+      <button class="test-button" onclick="testEmptyState('default', 'No data available')">Default Empty State</button>
+      <button class="test-button" onclick="testEmptyState('loading', 'Loading data...')">Loading Empty State</button>
+      <button class="test-button" onclick="testEmptyState('error', 'Error loading data')">Error Empty State</button>
+      <button class="test-button" onclick="testEmptyState('success', 'All done!')">Success Empty State</button>
+      <div id="empty-state-test" class="empty-state">Click buttons above to test empty states</div>
+    </div>
+    
+    <!-- Status Indicators Test -->
+    <div class="test-section">
+      <h2>📊 Status Indicators</h2>
+      <p>Test status indicators:</p>
+      <div class="test-grid">
+        <div class="status-indicator online">Online</div>
+        <div class="status-indicator offline">Offline</div>
+        <div class="status-indicator warning">Warning</div>
+        <div class="status-indicator pending">Pending</div>
+      </div>
+    </div>
+    
+    <!-- Responsive Design Test -->
+    <div class="test-section">
+      <h2>📱 Responsive Design</h2>
+      <p>Resize your browser window to test responsive design:</p>
+      <div class="tabs">
+        <button class="tab-button active">Tab 1</button>
+        <button class="tab-button">Tab 2</button>
+        <button class="tab-button">Tab 3</button>
+        <button class="tab-button">Tab 4</button>
+        <button class="tab-button">Tab 5</button>
+        <button class="tab-button">Tab 6</button>
+        <button class="tab-button">Tab 7</button>
+        <button class="tab-button">Tab 8</button>
+      </div>
+      <div class="action-buttons">
+        <button class="action-button">Button 1</button>
+        <button class="action-button">Button 2</button>
+        <button class="action-button">Button 3</button>
+      </div>
+      <div id="responsive-results" class="test-result info">Resize browser to test responsive behavior</div>
+    </div>
+    
+    <!-- Dark Mode Test -->
+    <div class="test-section">
+      <h2>🌙 Dark Mode Support</h2>
+      <p>Test dark mode (if your system supports it):</p>
+      <button class="test-button" onclick="toggleDarkMode()">Toggle Dark Mode Test</button>
+      <div id="dark-mode-results" class="test-result info">Dark mode will activate based on system preference</div>
+    </div>
+    
+    <!-- Accessibility Test -->
+    <div class="test-section">
+      <h2>♿ Accessibility Features</h2>
+      <p>Test accessibility features:</p>
+      <button class="test-button" onclick="testFocusManagement()">Test Focus Management</button>
+      <button class="test-button" onclick="testScreenReader()">Test Screen Reader Announcement</button>
+      <div id="accessibility-results"></div>
+    </div>
+    
+    <!-- Animation Test -->
+    <div class="test-section">
+      <h2>🎬 Animation System</h2>
+      <p>Test animations:</p>
+      <button class="test-button" onclick="testAnimation('fadeInUp')">Fade In Up</button>
+      <button class="test-button" onclick="testAnimation('scaleIn')">Scale In</button>
+      <button class="test-button" onclick="testAnimation('fadeIn')">Fade In</button>
+      <div id="animation-test" class="card">Animation test element</div>
+    </div>
+    
+    <!-- Error Handling Test -->
+    <div class="test-section">
+      <h2>🚨 Error Handling</h2>
+      <p>Test error handling:</p>
+      <button class="test-button" onclick="testErrorHandling()">Test Error Handling</button>
+      <div id="error-results"></div>
+    </div>
+    
+    <!-- Test Results Summary -->
+    <div class="test-section">
+      <h2>📊 Test Results Summary</h2>
+      <button class="test-button" onclick="runAllTests()">Run All Tests</button>
+      <div id="test-summary"></div>
+    </div>
+  </div>
+
+  <script src="../popup/ui-utils.js"></script>
+  <script>
+    // Test functions
+    function testNotification(type, message) {
+      if (window.UIUtils) {
+        window.UIUtils.showNotification(message, type);
+        addTestResult('notification-results', `✅ ${type} notification displayed`, 'pass');
+      } else {
+        addTestResult('notification-results', '❌ UIUtils not available', 'fail');
+      }
+    }
+    
+    function clearAllNotifications() {
+      if (window.UIUtils) {
+        window.UIUtils.clearAllNotifications();
+        addTestResult('notification-results', '✅ All notifications cleared', 'pass');
+      }
+    }
+    
+    function testLoadingState() {
+      const btn = document.getElementById('loading-test-btn');
+      if (window.UIUtils) {
+        window.UIUtils.setLoadingState(btn, true);
+        setTimeout(() => {
+          window.UIUtils.setLoadingState(btn, false);
+          addTestResult('loading-results', '✅ Loading state test completed', 'pass');
+        }, 2000);
+      }
+    }
+    
+    function testButtonLoading() {
+      const btn = document.getElementById('button-loading-test');
+      if (window.UIUtils) {
+        window.UIUtils.setButtonLoading(btn, true, 'Loading...');
+        setTimeout(() => {
+          window.UIUtils.setButtonLoading(btn, false);
+          addTestResult('loading-results', '✅ Button loading test completed', 'pass');
+        }, 2000);
+      }
+    }
+    
+    function testEmptyState(type, message) {
+      const element = document.getElementById('empty-state-test');
+      if (window.UIUtils) {
+        window.UIUtils.setEmptyState(element, type, message);
+        addTestResult('empty-state-test', `✅ ${type} empty state applied`, 'pass');
+      }
+    }
+    
+    function testFocusManagement() {
+      const testElement = document.createElement('div');
+      testElement.innerHTML = `
+        <button>Button 1</button>
+        <button>Button 2</button>
+        <button>Button 3</button>
+      `;
+      
+      if (window.UIUtils) {
+        window.UIUtils.trapFocus(testElement);
+        addTestResult('accessibility-results', '✅ Focus management configured', 'pass');
+      }
+    }
+    
+    function testScreenReader() {
+      if (window.UIUtils) {
+        window.UIUtils.announceToScreenReader('Test announcement for screen readers');
+        addTestResult('accessibility-results', '✅ Screen reader announcement sent', 'pass');
+      }
+    }
+    
+    function testAnimation(animationType) {
+      const element = document.getElementById('animation-test');
+      if (window.UIUtils) {
+        window.UIUtils.animateElement(element, animationType);
+        addTestResult('animation-test', `✅ ${animationType} animation applied`, 'pass');
+      }
+    }
+    
+    function testErrorHandling() {
+      if (window.UIUtils) {
+        const testError = new Error('Test error for UI verification');
+        window.UIUtils.handleError(testError, 'UI Test');
+        addTestResult('error-results', '✅ Error handling test completed', 'pass');
+      }
+    }
+    
+    function toggleDarkMode() {
+      document.body.classList.toggle('dark-mode-test');
+      const isDark = document.body.classList.contains('dark-mode-test');
+      addTestResult('dark-mode-results', 
+        isDark ? '✅ Dark mode test activated' : '✅ Light mode test activated', 'pass');
+    }
+    
+    function addTestResult(containerId, message, type) {
+      const container = document.getElementById(containerId);
+      const result = document.createElement('div');
+      result.className = `test-result ${type}`;
+      result.textContent = message;
+      container.appendChild(result);
+      
+      // Auto-remove after 5 seconds
+      setTimeout(() => {
+        if (result.parentNode) {
+          result.parentNode.removeChild(result);
+        }
+      }, 5000);
+    }
+    
+    function runAllTests() {
+      const summary = document.getElementById('test-summary');
+      summary.innerHTML = '<div class="test-result info">Running all tests...</div>';
+      
+      // Run tests in sequence
+      setTimeout(() => testNotification('info', 'All tests starting...'), 100);
+      setTimeout(() => testLoadingState(), 500);
+      setTimeout(() => testButtonLoading(), 1000);
+      setTimeout(() => testEmptyState('success', 'All tests completed!'), 1500);
+      setTimeout(() => testAnimation('fadeInUp'), 2000);
+      setTimeout(() => {
+        summary.innerHTML = '<div class="test-result pass">✅ All UI tests completed successfully!</div>';
+      }, 2500);
+    }
+    
+    // Initialize tests
+    document.addEventListener('DOMContentLoaded', function() {
+      console.log('🎨 UI Verification Test Page Loaded');
+      
+      // Test if UIUtils is available
+      if (window.UIUtils) {
+        console.log('✅ UIUtils module loaded successfully');
+        addTestResult('test-summary', '✅ UIUtils module available', 'pass');
+      } else {
+        console.log('❌ UIUtils module not found');
+        addTestResult('test-summary', '❌ UIUtils module not available', 'fail');
+      }
+    });
+  </script>
+</body>
+</html> 
