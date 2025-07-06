@@ -8,7 +8,6 @@ const PerformanceMonitor = (function() {
   };
 
   function init(contentInterface) {
-    console.log('🔧 Initializing Performance Monitor...');
     
     // Bind event listeners
     document.getElementById('refreshPerformance').addEventListener('click', () => {
@@ -52,7 +51,6 @@ const PerformanceMonitor = (function() {
 
   async function refreshPerformanceData(contentInterface) {
     try {
-      console.log('📊 Refreshing performance data...');
       
       // Get metrics from all sources
       const [metrics, errors] = await Promise.all([
@@ -72,7 +70,6 @@ const PerformanceMonitor = (function() {
       }
       
     } catch (error) {
-      console.error('❌ Error refreshing performance data:', error);
       showError('Failed to retrieve performance data');
     }
   }
@@ -248,7 +245,6 @@ const PerformanceMonitor = (function() {
     };
     
     updatePerformanceDisplay();
-    console.log('🧹 Performance data cleared');
   }
 
   return {

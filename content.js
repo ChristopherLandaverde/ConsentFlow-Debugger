@@ -4,25 +4,19 @@
   
   // Prevent multiple injections
   if (window.gtmInspectorContentLoaded) {
-    console.log('🟡 Content script already loaded, skipping...');
     return;
   }
   window.gtmInspectorContentLoaded = true;
-  
-  console.log('🟢 GTM Inspector Content Script Loading...');
-  console.log('🟢 URL:', window.location.href);
   
   let scriptInjected = false;
   
   // Inject external script file (CSP compliant)
   async function injectScript() {
     if (scriptInjected) {
-      console.log('🟢 Script already injected');
       return true;
     }
     
     try {
-      console.log('🟢 Injecting external script file...');
       
       const script = document.createElement('script');
       script.src = chrome.runtime.getURL('injected-script.js');
@@ -35,7 +29,6 @@
         
         script.onload = () => {
           clearTimeout(timeout);
-          console.log('🟢 External script loaded successfully');
           scriptInjected = true;
           
           // Clean up script element
@@ -50,7 +43,6 @@
         
         script.onerror = (error) => {
           clearTimeout(timeout);
-          console.error('🔴 Script loading failed:', error);
           script.remove();
           reject(new Error('Script loading failed'));
         };
@@ -59,14 +51,12 @@
       });
       
     } catch (error) {
-      console.error('🔴 Error injecting script:', error);
       return false;
     }
   }
   
     // Message listener
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    console.log('🟢 Content script received message:', request.action);
     
     const handleMessage = async () => {
       try {
@@ -87,7 +77,6 @@
             }
             // Use postMessage to communicate with page context
             const gtmResult = await sendMessageToPage('detectGTM');
-            console.log('🟢 GTM detection result:', gtmResult);
             sendResponse(gtmResult);
             break;
             
@@ -98,7 +87,6 @@
             }
             // Use postMessage to communicate with page context
             const tagResult = await sendMessageToPage('getTagInfo');
-            console.log('🟢 Tag info result:', tagResult);
             sendResponse(Array.isArray(tagResult) ? tagResult : []);
             break;
             
@@ -109,7 +97,6 @@
             }
             // Use postMessage to communicate with page context
             const consentResult = await sendMessageToPage('updateConsent', request.data);
-            console.log('🟢 Consent update result:', consentResult);
             sendResponse(consentResult);
             break;
             
@@ -124,11 +111,9 @@
             break;
             
           default:
-            console.log('🔴 Unknown action:', request.action);
             sendResponse({ error: 'Unknown action: ' + request.action });
         }
       } catch (error) {
-        console.error('🔴 Error handling message:', error);
         sendResponse({ error: error.message });
       }
     };
@@ -174,7 +159,6 @@
   
   // Initialize script injection
   function initialize() {
-    console.log('🟢 Initializing content script...');
     
     // Inject script when page is ready
     if (document.readyState === 'loading') {
@@ -188,6 +172,4 @@
   
   // Start initialization
   initialize();
-  
-  console.log('🟢 Content script setup complete');
 })();

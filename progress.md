@@ -201,3 +201,128 @@ git add . && git commit -m "Feature: description" && git push
 # Load extension
 # Chrome: chrome://extensions/ → Load unpacked
 # Test: Click Extensions Reloader button
+```
+
+# GTM Consent Mode Inspector - Progress Tracking
+
+## Project Overview
+Chrome Extension (Manifest V3) for debugging Google Tag Manager Consent Mode implementations. Provides DevTools-like experience for consent signal inspection and tag firing analysis.
+
+## ✅ COMPLETED FEATURES
+
+### Core Infrastructure
+- **Manifest V3 Setup**: Proper extension structure with CSP compliance ✅
+- **Content Script Injection**: Robust injection with error handling and retry logic ✅
+- **Message Passing**: Reliable communication between popup ↔ content script ↔ injected script ✅
+- **GTM Detection**: Robust container detection with debug group filtering ✅
+- **Multi-container Support**: Handles multiple GTM containers on single page ✅
+
+### Tags Tab - ✅ FULLY FUNCTIONAL
+**Status: COMPLETE - Working as intended**
+
+#### Features Working:
+- **GTM Container Detection**: Automatically detects and lists all GTM containers
+- **Tag Detection**: Identifies and categorizes tags (analytics, advertising, personalization, functionality)
+- **Consent Status**: Shows which tags are allowed/blocked based on current consent state
+- **Real-time Filtering**: Filter tags by category (All, Analytics, Advertising, Personalization, Functionality)
+- **Container Switching**: Select different GTM containers to view their specific tags
+- **Tag Details**: Shows tag name, type, consent requirements, and blocking reasons
+- **Refresh Functionality**: Updates tag list with current consent state
+
+#### UI Components Working:
+- **Container Panel**: Shows detected containers with selection
+- **Tag List**: Displays filtered tags with status indicators
+- **Filter Controls**: Category-based filtering buttons
+- **Action Buttons**: 
+  - **"Refresh Tags"** - Quick tag list update
+  - **"🔍 Diagnose"** - Complete setup and analysis (inject + check GTM)
+
+#### Recent Improvements:
+- **Removed excessive console logging** (~120+ console statements removed)
+- **Removed toggle overlay functionality** (unused feature)
+- **Enhanced diagnose function** - Combines injection + GTM detection
+- **Simplified button set** - Removed redundant "Force Inject" button
+- **Better error handling** - User-friendly error messages via UI notifications
+
+#### Technical Implementation:
+- **Modular Architecture**: Clean separation between TagList, ContainersPanel, and main popup
+- **Message Passing**: Reliable communication with content script
+- **State Management**: Proper tracking of active container and filters
+- **Performance**: Optimized tag detection and filtering
+
+---
+
+## 🚧 INCOMPLETE TABS
+
+### Consent Simulator Tab
+- **Status**: ⚠️ Partially implemented
+- **Issues**: May not be showing properly
+
+### Event Logger Tab  
+- **Status**: ⚠️ Partially implemented
+- **Issues**: May not be showing properly
+
+### Triggers & Variables Tab
+- **Status**: ⚠️ Partially implemented  
+- **Issues**: May not be showing properly
+
+### Performance Monitor Tab
+- **Status**: ⚠️ Partially implemented
+- **Issues**: May not be showing properly
+
+### IAB TCF Tab
+- **Status**: ⚠️ Partially implemented
+- **Issues**: May not be showing properly
+
+### QA Testing Tab
+- **Status**: ⚠️ Partially implemented
+- **Issues**: May not be showing properly
+
+---
+
+## 🎯 NEXT PRIORITIES
+
+### Phase 2: Tab Visibility & Functionality
+1. **Fix tab switching** - Ensure all tabs are accessible and visible
+2. **Complete Consent Simulator** - Full consent state manipulation
+3. **Complete Event Logger** - Real-time event monitoring
+4. **Complete Triggers & Variables** - GTM trigger and variable analysis
+5. **Complete Performance Monitor** - Performance metrics and monitoring
+6. **Complete IAB TCF** - TCF framework compliance checking
+7. **Complete QA Testing** - Automated testing suite
+
+### Phase 3: Advanced Features
+- **Multi-container GTM support** - Enhanced multi-container debugging
+- **Testing suite** - Comprehensive test coverage
+- **IAB TCF framework** - Full TCF compliance checking
+- **Performance optimization** - Enhanced monitoring and metrics
+
+---
+
+## 📝 TECHNICAL NOTES
+
+### Architecture Status
+- **Background Service Worker**: ✅ Working
+- **Content Script**: ✅ Working  
+- **Injected Script**: ✅ Working
+- **Popup Interface**: ✅ Working (Tags tab)
+- **Message Passing**: ✅ Working
+
+### Code Quality
+- **Console Logging**: ✅ Cleaned up (removed ~120+ statements)
+- **Error Handling**: ✅ Improved with UI notifications
+- **Performance**: ✅ Optimized
+- **Modularity**: ✅ Good separation of concerns
+
+### Known Issues
+- Some tabs may not be visible or functional
+- Need to investigate tab switching mechanism
+- Some modules may need initialization fixes
+
+---
+
+## 🏁 CURRENT STATUS
+**Tags Tab**: ✅ COMPLETE - Ready for production use
+**Other Tabs**: 🚧 NEED ATTENTION - Require debugging and completion
+
+The extension has a solid foundation with the Tags tab fully functional. The next phase should focus on making all tabs visible and functional.

@@ -114,12 +114,25 @@ const EventLogger = (function() {
     
     const timestamp = new Date(event.timestamp).toLocaleTimeString();
     
+    // Format event data for display
+    let eventData = '';
+    if (event.data) {
+      try {
+        eventData = JSON.stringify(event.data, null, 2);
+      } catch (e) {
+        eventData = String(event.data);
+      }
+    }
+    
+    const details = event.details || event.eventName || 'Event';
+    
     eventItem.innerHTML = `
       <div class="event-header">
         <span class="event-time">[${timestamp}]</span>
         <span class="event-type ${event.category || 'other'}">${escapeHtml(event.type || 'Event')}</span>
       </div>
-      <div class="event-detail">${escapeHtml(truncateText(event.details || '', 100))}</div>
+      <div class="event-detail">${escapeHtml(details)}</div>
+      ${eventData ? `<div class="event-data"><pre>${escapeHtml(eventData)}</pre></div>` : ''}
     `;
     
     return eventItem;
