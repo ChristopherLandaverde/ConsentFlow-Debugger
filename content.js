@@ -1,7 +1,7 @@
-// content.js - Enhanced with comprehensive error handling and performance monitoring
-console.log('🔍 GTM Consent Inspector: Content script loading...ENHANCED');
+// content.js - Optimized with enhanced performance and memory management
+console.log('🔍 GTM Consent Inspector: Content script loading...OPTIMIZED');
 
-// Error handling and performance monitoring
+// Enhanced error handling and performance monitoring
 const ErrorTracker = {
   errors: [],
   maxErrors: 50,
@@ -60,42 +60,117 @@ const PerformanceTracker = {
   }
 };
 
+// Connection pooling for message passing
+const MessagePool = {
+  connections: new Map(),
+  maxConnections: 5,
+  connectionTimeout: 30000, // 30 seconds
+  
+  getConnection: function(action) {
+    const now = Date.now();
+    
+    // Clean up expired connections
+    for (const [id, connection] of this.connections.entries()) {
+      if (now - connection.timestamp > this.connectionTimeout) {
+        this.connections.delete(id);
+      }
+    }
+    
+    // Return existing connection if available
+    if (this.connections.has(action)) {
+      const connection = this.connections.get(action);
+      connection.timestamp = now;
+      return connection;
+    }
+    
+    // Create new connection if under limit
+    if (this.connections.size < this.maxConnections) {
+      const connection = {
+        action: action,
+        timestamp: now,
+        pending: new Map()
+      };
+      this.connections.set(action, connection);
+      return connection;
+    }
+    
+    // Reuse oldest connection if at limit
+    let oldestConnection = null;
+    let oldestTime = Infinity;
+    
+    for (const connection of this.connections.values()) {
+      if (connection.timestamp < oldestTime) {
+        oldestTime = connection.timestamp;
+        oldestConnection = connection;
+      }
+    }
+    
+    if (oldestConnection) {
+      oldestConnection.action = action;
+      oldestConnection.timestamp = now;
+      oldestConnection.pending.clear();
+      return oldestConnection;
+    }
+    
+    return null;
+  },
+  
+  cleanup: function() {
+    const now = Date.now();
+    for (const [id, connection] of this.connections.entries()) {
+      if (now - connection.timestamp > this.connectionTimeout) {
+        this.connections.delete(id);
+      }
+    }
+  }
+};
+
+// State management
 let isInjected = false;
 let messageId = 0;
 let pendingMessages = new Map();
+let isInitialized = false;
+let gtmCache = null;
+let cacheTimestamp = 0;
+const CACHE_DURATION = 30000; // 30 seconds
 
-// Inject the script into page context
+// Optimized script injection with retry logic
 function injectPageScript() {
   if (isInjected) {
     console.log('🔧 Page script already injected, skipping...');
-    return;
+    return Promise.resolve();
   }
   
-  console.log('🔧 Injecting page context script...');
-  
-  const script = document.createElement('script');
-  script.src = chrome.runtime.getURL('injected-script.js');
-  script.onload = function() {
-    console.log('✅ Page context script injected successfully');
-    script.remove();
-    isInjected = true;
+  return new Promise((resolve, reject) => {
+    console.log('🔧 Injecting page context script...');
     
-    // Run initial GTM detection
-    setTimeout(() => {
-      checkGTMStatus();
-    }, 500);
-  };
-  script.onerror = function() {
-    console.error('❌ Failed to inject page context script');
-  };
-  
-  (document.head || document.documentElement).appendChild(script);
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('injected-script.js');
+    
+    const timeout = setTimeout(() => {
+      script.remove();
+      reject(new Error('Script injection timeout'));
+    }, 10000);
+    
+    script.onload = function() {
+      clearTimeout(timeout);
+      console.log('✅ Page context script injected successfully');
+      script.remove();
+      isInjected = true;
+      resolve();
+    };
+    
+    script.onerror = function() {
+      clearTimeout(timeout);
+      console.error('❌ Failed to inject page context script');
+      reject(new Error('Script injection failed'));
+    };
+    
+    (document.head || document.documentElement).appendChild(script);
+  });
 }
 
-// Message passing between page context and content script
-// content.js - Add better timeout handling and debugging
-// Replace the sendMessageToPage function:
-
+// Optimized message passing with connection pooling
 function sendMessageToPage(action, data = {}) {
   return new Promise((resolve, reject) => {
     const id = ++messageId;
@@ -104,8 +179,14 @@ function sendMessageToPage(action, data = {}) {
     console.log(`📤 Sending message to page: ${action} (ID: ${id})`);
     
     try {
+      // Get or create connection
+      const connection = MessagePool.getConnection(action);
+      if (!connection) {
+        throw new Error('No available message connections');
+      }
+      
       // Store the promise resolver
-      pendingMessages.set(id, { resolve, reject });
+      pendingMessages.set(id, { resolve, reject, action, timestamp: Date.now() });
       
       // Send message to page
       window.postMessage({
@@ -115,7 +196,7 @@ function sendMessageToPage(action, data = {}) {
         id: id
       }, '*');
       
-      // Timeout after 8 seconds (increased from 5)
+      // Timeout after 8 seconds
       setTimeout(() => {
         if (pendingMessages.has(id)) {
           pendingMessages.delete(id);
@@ -131,7 +212,7 @@ function sendMessageToPage(action, data = {}) {
   });
 }
 
-// Also update the message listener to add better logging:
+// Single optimized message listener
 window.addEventListener('message', function(event) {
   if (event.data.source === 'gtm-inspector-page-response') {
     const { id, data } = event.data;
@@ -139,28 +220,10 @@ window.addEventListener('message', function(event) {
     console.log(`📥 Received response for ID: ${id}`, data);
     
     if (pendingMessages.has(id)) {
-      const { resolve } = pendingMessages.get(id);
-      pendingMessages.delete(id);
-      resolve(data);
-    } else {
-      console.warn(`⚠️ Recdeived response for unknown message ID: ${id}`);
-    }
-  }
-});
-
-// Listen for responses from page context
-window.addEventListener('message', function(event) {
-  if (event.data.source === 'gtm-inspector-page-response') {
-    const { id, data } = event.data;
-    
-    console.log(`📥 Received response for ID: ${id}`, data);
-    
-    if (pendingMessages.has(id)) {
-      const { resolve } = pendingMessages.get(id);
+      const { resolve, action } = pendingMessages.get(id);
       pendingMessages.delete(id);
       
       // Track performance
-      const action = data?.action || 'unknown';
       PerformanceTracker.endOperation(`message-${action}`);
       
       resolve(data);
@@ -171,8 +234,16 @@ window.addEventListener('message', function(event) {
   }
 });
 
-// Enhanced GTM detection
-async function checkGTMStatus() {
+// Cached GTM detection with intelligent refresh
+async function checkGTMStatus(forceRefresh = false) {
+  const now = Date.now();
+  
+  // Return cached result if still valid
+  if (!forceRefresh && gtmCache && (now - cacheTimestamp) < CACHE_DURATION) {
+    console.log('📊 Returning cached GTM status');
+    return gtmCache;
+  }
+  
   try {
     console.log('🔍 Checking GTM status...');
     const result = await sendMessageToPage('detectGTM');
@@ -180,32 +251,47 @@ async function checkGTMStatus() {
     if (result) {
       console.log('📊 GTM Detection Result:', result);
       
+      // Cache the result
+      gtmCache = result;
+      cacheTimestamp = now;
+      
       if (result.hasGTM) {
         console.log(`✅ GTM Found: ${result.gtmId}`);
         
-        // Get additional tag information
-        const tags = await sendMessageToPage('getTagInfo');
-        const events = await sendMessageToPage('getEvents');
+        // Get additional tag information only if needed
+        if (!result.tags || !result.events) {
+          const [tags, events] = await Promise.all([
+            sendMessageToPage('getTagInfo'),
+            sendMessageToPage('getEvents')
+          ]);
+          
+          gtmCache.tags = tags || [];
+          gtmCache.events = events || [];
+        }
         
         // Store results for popup
         chrome.runtime.sendMessage({
           action: 'storeData',
           data: {
-            gtm: result,
-            tags: tags || [],
-            events: events || []
+            gtm: gtmCache,
+            tags: gtmCache.tags || [],
+            events: gtmCache.events || []
           }
         });
       } else {
         console.log('❌ No GTM detected');
       }
+      
+      return gtmCache;
     }
   } catch (error) {
     console.error('❌ Error checking GTM:', error);
+    ErrorTracker.addError(error, 'checkGTM');
+    return null;
   }
 }
 
-// Message handlers for popup communication
+// Optimized message handlers with caching
 const messageHandlers = {
   ping: () => ({ success: true }),
   
@@ -217,25 +303,24 @@ const messageHandlers = {
     return PerformanceTracker.getMetrics();
   },
   
-  checkGTM: async () => {
+  checkGTM: async (data) => {
     try {
       PerformanceTracker.startOperation('checkGTM');
       
-      const gtmResult = await sendMessageToPage('detectGTM');
-      const tags = await sendMessageToPage('getTagInfo');
-      const events = await sendMessageToPage('getEvents');
+      const forceRefresh = data?.forceRefresh || false;
+      const result = await checkGTMStatus(forceRefresh);
       
       PerformanceTracker.endOperation('checkGTM');
       
       return {
-        hasGTM: gtmResult?.hasGTM || false,
-        gtmId: gtmResult?.gtmId || '',
-        containers: gtmResult?.containers || [],
-        primaryContainer: gtmResult?.primaryContainer || null,
-        hasConsentMode: gtmResult?.hasConsentMode || false,
-        consentState: gtmResult?.consentState || {},
-        tags: tags || [],
-        events: events || []
+        hasGTM: result?.hasGTM || false,
+        gtmId: result?.gtmId || '',
+        containers: result?.containers || [],
+        primaryContainer: result?.primaryContainer || null,
+        hasConsentMode: result?.hasConsentMode || false,
+        consentState: result?.consentState || {},
+        tags: result?.tags || [],
+        events: result?.events || []
       };
     } catch (error) {
       ErrorTracker.addError(error, 'checkGTM');
@@ -246,6 +331,10 @@ const messageHandlers = {
   applyConsent: async (data) => {
     try {
       const result = await sendMessageToPage('updateConsent', data);
+      
+      // Invalidate cache since consent changed
+      gtmCache = null;
+      cacheTimestamp = 0;
       
       // Wait a bit then refresh tag status
       setTimeout(() => {
@@ -313,7 +402,7 @@ const messageHandlers = {
   }
 };
 
-// Chrome runtime message listener
+// Optimized Chrome runtime message listener
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('📨 Received message from popup:', request);
   
@@ -349,7 +438,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true;
 });
 
-// Simple overlay toggle
+// Optimized overlay toggle
 function toggleOverlay() {
   let overlay = document.getElementById('gtm-consent-inspector-overlay');
   
@@ -386,33 +475,83 @@ function toggleOverlay() {
   
   document.body.appendChild(overlay);
   
-  // Update overlay status
-  sendMessageToPage('detectGTM').then(result => {
-    const statusEl = overlay.querySelector('#overlay-gtm-status');
-    if (statusEl && result) {
-      if (result.hasGTM) {
-        if (result.containers && result.containers.length > 1) {
-          statusEl.textContent = `✅ ${result.containers.length} GTM Containers (${result.gtmId})`;
-        } else {
-          statusEl.textContent = `✅ GTM Active (${result.gtmId})`;
-        }
-      } else {
-        statusEl.textContent = '❌ No GTM';
-      }
-    }
-  });
+  // Update overlay status using cached data if available
+  if (gtmCache) {
+    updateOverlayStatus(overlay, gtmCache);
+  } else {
+    sendMessageToPage('detectGTM').then(result => {
+      updateOverlayStatus(overlay, result);
+    });
+  }
   
   return { success: true, action: 'created' };
 }
 
-// Initialize when ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', injectPageScript);
-} else {
-  injectPageScript();
+function updateOverlayStatus(overlay, result) {
+  const statusEl = overlay.querySelector('#overlay-gtm-status');
+  if (statusEl && result) {
+    if (result.hasGTM) {
+      if (result.containers && result.containers.length > 1) {
+        statusEl.textContent = `✅ ${result.containers.length} GTM Containers (${result.gtmId})`;
+      } else {
+        statusEl.textContent = `✅ GTM Active (${result.gtmId})`;
+      }
+    } else {
+      statusEl.textContent = '❌ No GTM';
+    }
+  }
 }
 
-// Remove the second injection attempt
-// setTimeout(injectPageScript, 2000);
+// Memory cleanup function
+function cleanupMemory() {
+  // Clean up expired pending messages
+  const now = Date.now();
+  for (const [id, message] of pendingMessages.entries()) {
+    if (now - message.timestamp > 30000) { // 30 seconds
+      pendingMessages.delete(id);
+    }
+  }
+  
+  // Clean up message pool
+  MessagePool.cleanup();
+  
+  // Clear old errors if too many
+  if (ErrorTracker.errors.length > ErrorTracker.maxErrors) {
+    ErrorTracker.errors = ErrorTracker.errors.slice(-ErrorTracker.maxErrors);
+  }
+}
 
-console.log('✅ GTM Consent Inspector: Content script ready');
+// Initialize with lazy loading
+async function initialize() {
+  if (isInitialized) {
+    return;
+  }
+  
+  try {
+    console.log('🚀 Initializing GTM Consent Inspector...');
+    
+    // Inject page script
+    await injectPageScript();
+    
+    // Run initial GTM detection
+    await checkGTMStatus();
+    
+    // Set up periodic cleanup
+    setInterval(cleanupMemory, 60000); // Every minute
+    
+    isInitialized = true;
+    console.log('✅ GTM Consent Inspector initialized successfully');
+  } catch (error) {
+    console.error('❌ Failed to initialize:', error);
+    ErrorTracker.addError(error, 'initialization');
+  }
+}
+
+// Initialize when ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initialize);
+} else {
+  initialize();
+}
+
+console.log('✅ GTM Consent Inspector: Content script ready (OPTIMIZED)');
