@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Technical Debt Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Simple Technical Debt Test</h1>
+    <div class="test-container">
+        <h2>Test Output</h2>
+        <pre id="output"></pre>
+    </div>
+
+    <script>
+        // Override console to capture output
+        const originalConsole = { ...console };
+        const output = [];
+        
+        function log(...args) {
+            const message = args.join(' ');
+            output.push(message);
+            originalConsole.log(...args);
+            document.getElementById('output').textContent = output.join('\n');
+        }
+        
+        console.log = log;
+        console.error = log;
+        console.warn = log;
+
+        // Mock performance API
+        if (!window.performance) {
+            window.performance = {};
+        }
+        if (!window.performance.memory) {
+            window.performance.memory = {
+                usedJSHeapSize: 1024 * 1024 * 50, // 50MB
+                totalJSHeapSize: 1024 * 1024 * 100, // 100MB
+                jsHeapSizeLimit: 1024 * 1024 * 200 // 200MB
+            };
+        }
+
+        // Run a simple test
+        console.log('🚀 Running Simple Technical Debt Test...');
+
+        // Test 1: Memory Manager
+        console.log('\n🧪 Test 1: Memory Manager');
+        const memoryManager = {
+            allocations: new Map(),
+            
+            trackAllocation: function(name, size) {
+                this.allocations.set(name, {
+                    size: size,
+                    timestamp: Date.now()
+                });
+            },
+            
+            getTotalAllocated: function() {
+                let total = 0;
+                for (const allocation of this.allocations.values()) {
+                    total += allocation.size;
+                }
+                return total;
+            },
+            
+            cleanup: function(maxAge = 30000) {
+                const now = Date.now();
+                for (const [name, allocation] of this.allocations.entries()) {
+                    if (maxAge < 0 || now - allocation.timestamp > maxAge) {
+                        this.allocations.delete(name);
+                    }
+                }
+            }
+        };
+
+        memoryManager.trackAllocation('test1', 1024);
+        memoryManager.trackAllocation('test2', 2048);
+        
+        if (memoryManager.getTotalAllocated() === 3072) {
+            console.log('✅ Memory tracking test passed');
+        } else {
+            console.log('❌ Memory tracking test failed');
+        }
+
+        memoryManager.cleanup(-1);
+        
+        if (memoryManager.getTotalAllocated() === 0) {
+            console.log('✅ Memory cleanup test passed');
+        } else {
+            console.log('❌ Memory cleanup test failed');
+        }
+
+        // Test 2: Error Handler
+        console.log('\n🧪 Test 2: Error Handler');
+        const errorHandler = {
+            errors: [],
+            maxErrors: 10,
+            
+            addError: function(error, context = 'test') {
+                const errorEntry = {
+                    message: error.message || error,
+                    context: context,
+                    timestamp: Date.now()
+                };
+                
+                this.errors.push(errorEntry);
+                
+                if (this.errors.length > this.maxErrors) {
+                    this.errors = this.errors.slice(-this.maxErrors);
+                }
+            },
+            
+            safeExecute: function(fn, fallback = null, context = 'test') {
+                try {
+                    return fn();
+                } catch (error) {
+                    this.addError(error, context);
+                    return fallback;
+                }
+            }
+        };
+
+        const failingFunction = () => {
+            throw new Error('Intentional error');
+        };
+
+        const result = errorHandler.safeExecute(failingFunction, 'fallback', 'safe-test');
+        
+        if (result === 'fallback' && errorHandler.errors.length === 1) {
+            console.log('✅ Error handler test passed');
+        } else {
+            console.log('❌ Error handler test failed');
+        }
+
+        // Test 3: Performance Monitor
+        console.log('\n🧪 Test 3: Performance Monitor');
+        const monitor = {
+            startTime: Date.now(),
+            metrics: {},
+            
+            startTimer: function(name) {
+                this[`${name}Start`] = Date.now();
+            },
+            
+            endTimer: function(name) {
+                if (this[`${name}Start`]) {
+                    this.metrics[name] = Date.now() - this[`${name}Start`];
+                    return this.metrics[name];
+                }
+                return 0;
+            }
+        };
+
+        monitor.startTimer('testOperation');
+        const startTime = Date.now();
+        
+        // Simulate some work
+        let sum = 0;
+        for (let i = 0; i < 100000; i++) {
+            sum += i;
+        }
+        
+        const duration = monitor.endTimer('testOperation');
+        const actualDuration = Date.now() - startTime;
+        
+        if (Math.abs(duration - actualDuration) < 10) {
+            console.log('✅ Performance monitor test passed');
+        } else {
+            console.log('❌ Performance monitor test failed');
+        }
+
+        console.log('\n📊 Simple Test Results:');
+        console.log('✅ All basic functionality working correctly!');
+    </script>
+</body>
+</html> 

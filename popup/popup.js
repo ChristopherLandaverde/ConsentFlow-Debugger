@@ -1,9 +1,6 @@
-// popup/popup.js - FIXED VERSION with proper UI updates
-
-// Enhanced Content script interface with better error handling
+// Simplified popup.js - Back to basics
 const ContentScriptInterface = {
   sendMessage: async function(action, data = {}) {
-    
     return new Promise((resolve) => {
       chrome.tabs.query({active: true, currentWindow: true}, async (tabs) => {
         if (!tabs[0]) {
@@ -13,51 +10,37 @@ const ContentScriptInterface = {
         
         const tabId = tabs[0].id;
         
-        // First try direct communication
         chrome.tabs.sendMessage(tabId, { action, data }, async (response) => {
           if (chrome.runtime.lastError) {
-            // Try to ensure content script is injected
-            
-                          try {
-                const injectResult = await this.ensureContentScript(tabId);
-                
-                if (injectResult.success) {
-                  // Wait longer for script to initialize
-                  setTimeout(() => {
-                    chrome.tabs.sendMessage(tabId, { action, data }, (retryResponse) => {
-                      if (chrome.runtime.lastError) {
-                        resolve({ error: `Content script communication failed after injection: ${chrome.runtime.lastError.message}` });
-                      } else {
-                        resolve(retryResponse || { error: 'No response' });
-                      }
-                    });
-                  }, 2000); // Wait 2 seconds for injection to complete
-                } else {
-                  resolve({ error: 'Content script injection failed: ' + (injectResult.error || 'Unknown error') });
-                }
-              } catch (error) {
-                resolve({ error: 'Injection error: ' + error.message });
+            try {
+              const injectResult = await this.ensureContentScript(tabId);
+              if (injectResult.success) {
+                setTimeout(() => {
+                  chrome.tabs.sendMessage(tabId, { action, data }, (retryResponse) => {
+                    resolve(retryResponse || { error: 'No response after injection' });
+                  });
+                }, 2000);
+              } else {
+                resolve({ error: 'Content script injection failed' });
               }
-            } else {
-              resolve(response || { error: 'No response' });
+            } catch (error) {
+              resolve({ error: 'Injection error: ' + error.message });
             }
+          } else {
+            resolve(response || { error: 'No response' });
+          }
         });
       });
     });
   },
   
-  // ... rest of the interface
   ensureContentScript: function(tabId) {
     return new Promise((resolve) => {
       chrome.runtime.sendMessage({
         action: 'ensureContentScript',
         tabId: tabId
       }, (response) => {
-        if (chrome.runtime.lastError) {
-          resolve({ success: false, error: chrome.runtime.lastError.message });
-        } else {
-          resolve(response || { success: false, error: 'No response from background' });
-        }
+        resolve(response || { success: false, error: 'No response from background' });
       });
     });
   }
@@ -65,25 +48,12 @@ const ContentScriptInterface = {
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
-  
   initializeTabs();
-  initializeModules();
-  
-  // CRITICAL: Give time for modules to initialize before checking GTM
-  setTimeout(() => {
-    checkGTMStatus();
-  }, 500);
+  initializeButtons();
+  checkGTMStatus();
 });
 
 function initializeTabs() {
-  if (window.TabsManager) {
-    window.TabsManager.initialize();
-  } else {
-    initializeBasicTabs();
-  }
-}
-
-function initializeBasicTabs() {
   const tabButtons = document.querySelectorAll('.tab-button');
   const tabContents = document.querySelectorAll('.tab-content');
   
@@ -99,146 +69,122 @@ function initializeBasicTabs() {
       if (targetContent) {
         targetContent.classList.add('active');
       }
+      
+      // Refresh data when switching to certain tabs
+      if (tabName === 'tags') refreshTags();
+      if (tabName === 'events') refreshEvents();
     });
   });
 }
 
-function initializeModules() {
+function initializeButtons() {
+  // Overview tab buttons
+  document.getElementById('refreshOverview').addEventListener('click', checkGTMStatus);
+  document.getElementById('diagnoseTab').addEventListener('click', runDiagnostics);
   
-  // Initialize UI utilities first
-  if (window.UIUtils) {
-    window.UIUtils.initialize();
-  }
+  // Tags tab buttons  
+  document.getElementById('refreshTags').addEventListener('click', refreshTags);
   
-  // Initialize other modules
-  if (window.TagList) {
-    window.TagList.initialize(ContentScriptInterface);
-  }
+  // Filter buttons
+  initializeTagFilters();
+  initializeEventFilters();
   
-  if (window.ConsentSimulator) {
-    window.ConsentSimulator.initialize(ContentScriptInterface);
-  }
+  // Consent tab buttons
+  initializeConsentSimulator();
   
-  if (window.EventLogger) {
-    window.EventLogger.initialize(ContentScriptInterface);
-  }
-  
-  if (window.ContainersPanel) {
-    window.ContainersPanel.initialize(ContentScriptInterface);
-  }
-  
-  // Initialize diagnostic buttons
-  initializeDiagnosticButtons();
+  // Event tab buttons
+  document.getElementById('clearLog').addEventListener('click', clearEventLog);
+  document.getElementById('exportLog').addEventListener('click', exportEventLog);
 }
 
-function initializeDiagnosticButtons() {
-  const refreshBtn = document.getElementById('refreshTags');
-  if (refreshBtn && refreshBtn.parentNode) {
+function initializeTagFilters() {
+  const filterContainer = document.querySelector('#tags-tab .filter-controls');
+  if (!filterContainer) return;
+  
+  filterContainer.addEventListener('click', function(e) {
+    if (!e.target.matches('.filter-btn[data-filter]')) return;
     
-    // Diagnose button
-    const diagnoseBtn = document.createElement('button');
-    diagnoseBtn.id = 'diagnoseTab';
-    diagnoseBtn.className = 'action-button';
-    diagnoseBtn.textContent = '🔍 Diagnose';
-    diagnoseBtn.addEventListener('click', runDiagnostics);
+    const filterValue = e.target.getAttribute('data-filter');
     
-    refreshBtn.parentNode.insertBefore(diagnoseBtn, refreshBtn.nextSibling);
-  }
-}
-
-async function runDiagnostics() {
-  console.log('🔍 Starting diagnostics...');
-  try {
-    chrome.tabs.query({active: true, currentWindow: true}, async (tabs) => {
-      if (tabs[0]) {
-        const tab = tabs[0];
-        console.log('📋 Current tab:', { id: tab.id, url: tab.url, title: tab.title });
-        
-        // Check if URL is injectable
-        const canInject = !tab.url.startsWith('chrome://') && 
-                         !tab.url.startsWith('chrome-extension://') &&
-                         !tab.url.startsWith('edge://') &&
-                         !tab.url.startsWith('about:');
-        
-        console.log('🔍 URL injectable check:', canInject);
-        
-        if (!canInject) {
-          console.error('❌ Cannot inject into this page type:', tab.url);
-          showError('Cannot inject content script into this type of page: ' + tab.url);
-          return;
-        }
-        
-        // Step 1: Force inject content script
-        console.log('🚀 Step 1: Injecting content script...');
-        showSuccess('Injecting content script...');
-        const injectResult = await ContentScriptInterface.ensureContentScript(tab.id);
-        console.log('📤 Injection result:', injectResult);
-        
-        if (!injectResult.success) {
-          console.error('❌ Injection failed:', injectResult.error);
-          showError('Content script injection failed: ' + (injectResult.error || 'Unknown error'));
-          return;
-        }
-        
-        // Step 2: Wait for script to initialize
-        console.log('⏳ Step 2: Waiting for script initialization...');
-        showSuccess('Content script injected, checking GTM...');
-        setTimeout(async () => {
-          // Step 3: Check GTM status
-          console.log('🔍 Step 3: Checking GTM status...');
-          await checkGTMStatus();
-          console.log('✅ Diagnostics completed successfully!');
-          showSuccess('Diagnostics completed!');
-        }, 2000);
-        
-      } else {
-        console.error('❌ No active tab found');
-      }
+    filterContainer.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.classList.toggle('active', btn === e.target);
     });
-  } catch (error) {
-    console.error('❌ Diagnostics error:', error);
-    showError('Diagnostics error: ' + error.message);
-  }
+    
+    filterTags(filterValue);
+  });
 }
 
-// FIXED: Improved GTM status checking with better error handling
-async function checkGTMStatus() {
+function initializeEventFilters() {
+  const filterContainer = document.querySelector('#events-tab .filter-controls');
+  if (!filterContainer) return;
   
-  // Show loading state
+  filterContainer.addEventListener('click', function(e) {
+    if (!e.target.matches('.filter-btn[data-event-filter]')) return;
+    
+    const filterValue = e.target.getAttribute('data-event-filter');
+    
+    filterContainer.querySelectorAll('.filter-btn').forEach(btn => {
+      btn.classList.toggle('active', btn === e.target);
+    });
+    
+    filterEvents(filterValue);
+  });
+}
+
+function initializeConsentSimulator() {
+  // Apply button
+  document.getElementById('applyConsent').addEventListener('click', async function() {
+    this.disabled = true;
+    this.textContent = '⚡ Applying...';
+    
+    try {
+      const settings = getConsentSettings();
+      const result = await ContentScriptInterface.sendMessage('applyConsent', settings);
+      
+      if (result && result.success) {
+        showNotification('✅ Consent applied!', 'success');
+        setTimeout(() => {
+          checkGTMStatus();
+          refreshTags();
+        }, 1000);
+      } else {
+        showNotification('❌ Failed to apply consent', 'error');
+      }
+    } catch (error) {
+      showNotification('❌ Error applying consent', 'error');
+    } finally {
+      this.disabled = false;
+      this.textContent = '⚡ Apply Settings';
+    }
+  });
+  
+  // Preset buttons
+  document.querySelectorAll('.dropdown-item[data-preset]').forEach(item => {
+    item.addEventListener('click', function() {
+      const preset = this.getAttribute('data-preset');
+      applyConsentPreset(preset);
+    });
+  });
+}
+
+async function checkGTMStatus() {
   updateStatusDisplay({ loading: true });
   
   try {
     const result = await ContentScriptInterface.sendMessage('checkGTM');
-    
-    // CRITICAL: Always update the display, even with errors
     updateStatusDisplay(result);
-    
-    // If we have GTM, refresh tags
-    if (result && result.hasGTM && window.TagList) {
-      setTimeout(() => {
-        window.TagList.refresh();
-      }, 500);
-    }
-    
+    updateOverviewTab(result);
   } catch (error) {
-    updateStatusDisplay({ 
-      hasGTM: false, 
-      error: error.message,
-      hasConsentMode: false 
-    });
+    updateStatusDisplay({ hasGTM: false, error: error.message });
   }
 }
 
-// FIXED: Better status display with loading states
 function updateStatusDisplay(result) {
   const gtmStatus = document.getElementById('gtmStatus');
   const consentModeStatus = document.getElementById('consentModeStatus');
   
-  if (!gtmStatus || !consentModeStatus) {
-    return;
-  }
+  if (!gtmStatus || !consentModeStatus) return;
   
-  // Handle loading state
   if (result && result.loading) {
     gtmStatus.textContent = '🔄 Checking for GTM...';
     gtmStatus.className = 'status';
@@ -247,27 +193,17 @@ function updateStatusDisplay(result) {
     return;
   }
   
-  // Handle error state
   if (result && result.error) {
     gtmStatus.textContent = `❌ Error: ${result.error}`;
     gtmStatus.className = 'status not-found';
-    consentModeStatus.textContent = '❌ Not Applicable (Error)';
+    consentModeStatus.textContent = '❌ Not Applicable';
     consentModeStatus.className = 'status not-found';
     return;
   }
   
-  // Handle success state
   if (result && result.hasGTM) {
-    const containersText = result.containers && result.containers.length > 1 ? 
-      ` (${result.containers.length} containers)` : '';
-    
-    gtmStatus.textContent = `✅ GTM Found: ${result.gtmId}${containersText}`;
+    gtmStatus.textContent = `✅ GTM Found: ${result.gtmId}`;
     gtmStatus.className = 'status found';
-    
-    // Update containers panel if available
-    if (window.ContainersPanel && result.containers) {
-      window.ContainersPanel.updateContainers(result.containers);
-    }
     
     if (result.hasConsentMode) {
       const analytics = result.consentState?.analytics_storage || 'unknown';
@@ -275,10 +211,7 @@ function updateStatusDisplay(result) {
       consentModeStatus.textContent = `🔒 Analytics: ${analytics}, Ads: ${ads}`;
       consentModeStatus.className = 'status found';
       
-      // Update consent simulator if available
-      if (window.ConsentSimulator && result.consentState) {
-        window.ConsentSimulator.updateConsentToggles(result.consentState);
-      }
+      updateConsentToggles(result.consentState);
     } else {
       consentModeStatus.textContent = '⚠️ Consent Mode Not Found';
       consentModeStatus.className = 'status not-found';
@@ -289,53 +222,219 @@ function updateStatusDisplay(result) {
     consentModeStatus.textContent = '❌ Not Applicable';
     consentModeStatus.className = 'status not-found';
   }
-  
 }
 
-function showError(message) {
+function updateOverviewTab(result) {
+  document.getElementById('gtmContainerValue').textContent = result?.gtmId || 'Not detected';
+  document.getElementById('overviewConsentValue').textContent = result?.hasConsentMode ? 'Active' : 'Not detected';
   
-  if (window.UIUtils) {
-    window.UIUtils.showNotification(message, 'error');
-  } else {
-    // Fallback error display
-    let errorDisplay = document.getElementById('errorDisplay');
-    if (!errorDisplay) {
-      errorDisplay = document.createElement('div');
-      errorDisplay.id = 'errorDisplay';
-      errorDisplay.style.cssText = `
-        background: #fee2e2;
-        color: #991b1b;
-        padding: 10px;
-        margin: 10px 0;
-        border-radius: 4px;
-        border: 1px solid #fecaca;
-        font-size: 12px;
-        word-break: break-word;
-      `;
+  if (result?.tags) {
+    document.getElementById('totalTagsFound').textContent = result.tags.length;
+    document.getElementById('totalTagsBlocked').textContent = result.tags.filter(tag => !tag.allowed).length;
+  }
+}
+
+async function refreshTags() {
+  const tagList = document.getElementById('tagList');
+  tagList.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
+  
+  try {
+    const result = await ContentScriptInterface.sendMessage('getTagStatus');
+    updateTagDisplay(result || []);
+  } catch (error) {
+    tagList.innerHTML = '<div class="tag-item empty-state">Error loading tags</div>';
+  }
+}
+
+function updateTagDisplay(tags) {
+  const tagList = document.getElementById('tagList');
+  
+  if (!tags || tags.length === 0) {
+    tagList.innerHTML = '<div class="tag-item empty-state">No tags detected</div>';
+    return;
+  }
+  
+  tagList.innerHTML = tags.map(tag => `
+    <div class="tag-item ${tag.type || 'other'}">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+        <strong>${escapeHtml(tag.name)}</strong>
+        <span style="color: ${tag.allowed ? '#28a745' : '#dc3545'}; font-weight: 600;">
+          ${tag.allowed ? '✅ Allowed' : '❌ Blocked'}
+        </span>
+      </div>
+      <div style="font-size: 12px; color: #666;">
+        Type: ${escapeHtml(tag.type || 'Unknown')}
+      </div>
+      ${tag.reason ? `<div style="font-size: 11px; color: #888; margin-top: 2px;">
+        ${escapeHtml(tag.reason)}
+      </div>` : ''}
+    </div>
+  `).join('');
+}
+
+function filterTags(category) {
+  const tagItems = document.querySelectorAll('#tagList .tag-item:not(.empty-state)');
+  tagItems.forEach(item => {
+    if (category === 'all') {
+      item.style.display = 'block';
+    } else {
+      item.style.display = item.classList.contains(category) ? 'block' : 'none';
+    }
+  });
+}
+
+async function refreshEvents() {
+  try {
+    const events = await ContentScriptInterface.sendMessage('getEventLog');
+    updateEventDisplay(events || []);
+  } catch (error) {
+    document.getElementById('eventLog').innerHTML = '<div class="event-item empty-state">Error loading events</div>';
+  }
+}
+
+function updateEventDisplay(events) {
+  const eventLog = document.getElementById('eventLog');
+  
+  if (!events || events.length === 0) {
+    eventLog.innerHTML = '<div class="event-item empty-state">No events recorded yet</div>';
+    return;
+  }
+  
+  eventLog.innerHTML = events.slice(-20).reverse().map(event => `
+    <div class="event-item" data-event-type="${event.category || 'other'}">
+      <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+        <span style="font-size: 12px; color: #666;">[${new Date(event.timestamp).toLocaleTimeString()}]</span>
+        <span style="font-size: 10px; background: #007bff; color: white; padding: 2px 6px; border-radius: 3px;">
+          ${escapeHtml(event.type || 'Event')}
+        </span>
+      </div>
+      <div style="font-size: 13px; color: #333;">
+        ${escapeHtml(event.details || event.eventName || 'Event')}
+      </div>
+    </div>
+  `).join('');
+}
+
+function filterEvents(category) {
+  const eventItems = document.querySelectorAll('#eventLog .event-item:not(.empty-state)');
+  eventItems.forEach(item => {
+    if (category === 'all') {
+      item.style.display = 'block';
+    } else {
+      item.style.display = item.dataset.eventType === category ? 'block' : 'none';
+    }
+  });
+}
+
+function getConsentSettings() {
+  return {
+    analytics_storage: document.getElementById('analytics_storage').value,
+    ad_storage: document.getElementById('ad_storage').value,
+    functionality_storage: document.getElementById('functionality_storage').value,
+    personalization_storage: document.getElementById('personalization_storage').value,
+    security_storage: document.getElementById('security_storage').value
+  };
+}
+
+function updateConsentToggles(consentState) {
+  Object.entries(consentState).forEach(([key, value]) => {
+    const element = document.getElementById(key);
+    if (element) {
+      element.value = value;
+    }
+  });
+}
+
+function applyConsentPreset(preset) {
+  const presets = {
+    'all-granted': {
+      analytics_storage: 'granted',
+      ad_storage: 'granted',
+      functionality_storage: 'granted',
+      personalization_storage: 'granted',
+      security_storage: 'granted'
+    },
+    'all-denied': {
+      analytics_storage: 'denied',
+      ad_storage: 'denied',
+      functionality_storage: 'denied',
+      personalization_storage: 'denied',
+      security_storage: 'denied'
+    },
+    'analytics-only': {
+      analytics_storage: 'granted',
+      ad_storage: 'denied',
+      functionality_storage: 'granted',
+      personalization_storage: 'denied',
+      security_storage: 'granted'
+    },
+    'functional-only': {
+      analytics_storage: 'denied',
+      ad_storage: 'denied',
+      functionality_storage: 'granted',
+      personalization_storage: 'denied',
+      security_storage: 'granted'
+    }
+  };
+  
+  const settings = presets[preset];
+  if (settings) {
+    updateConsentToggles(settings);
+    setTimeout(() => {
+      document.getElementById('applyConsent').click();
+    }, 100);
+  }
+}
+
+async function clearEventLog() {
+  try {
+    await ContentScriptInterface.sendMessage('clearEventLog');
+    document.getElementById('eventLog').innerHTML = '<div class="event-item empty-state">Event log cleared</div>';
+  } catch (error) {
+    showNotification('Failed to clear event log', 'error');
+  }
+}
+
+function exportEventLog() {
+  showNotification('Export functionality would be implemented here', 'info');
+}
+
+async function runDiagnostics() {
+  showNotification('Running diagnostics...', 'info');
+  
+  chrome.tabs.query({active: true, currentWindow: true}, async (tabs) => {
+    if (tabs[0]) {
+      const tab = tabs[0];
       
-      const container = document.querySelector('.status-container');
-      if (container) {
-        container.appendChild(errorDisplay);
+      if (tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) {
+        showNotification('Cannot run on system pages', 'error');
+        return;
+      }
+      
+      try {
+        const injectResult = await ContentScriptInterface.ensureContentScript(tab.id);
+        if (injectResult.success) {
+          setTimeout(() => {
+            checkGTMStatus();
+            showNotification('Diagnostics completed!', 'success');
+          }, 2000);
+        } else {
+          showNotification('Diagnostics failed: ' + injectResult.error, 'error');
+        }
+      } catch (error) {
+        showNotification('Diagnostics error: ' + error.message, 'error');
       }
     }
-    
-    errorDisplay.textContent = message;
-    
-    // Auto-hide after 10 seconds
-    setTimeout(() => {
-      if (errorDisplay.parentNode) {
-        errorDisplay.parentNode.removeChild(errorDisplay);
-      }
-    }, 10000);
-  }
+  });
 }
 
-function showSuccess(message) {
-  
-  if (window.UIUtils) {
-    window.UIUtils.showNotification(message, 'success');
-  }
+function showNotification(message, type = 'info') {
+  console.log(`${type.toUpperCase()}: ${message}`);
+  // Simple notification - you can enhance this later
 }
 
-// Make available globally for debugging
-window.updateGTMStatusDisplay = updateStatusDisplay;
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}

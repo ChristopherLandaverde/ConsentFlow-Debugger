@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GTM Event Logger Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .button-group {
+            margin: 20px 0;
+        }
+        button {
+            background: #007cba;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #005a87;
+        }
+        .event-log {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .event-item {
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            padding: 10px;
+            margin: 5px 0;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .event-time {
+            color: #6c757d;
+            font-weight: bold;
+        }
+        .event-type {
+            color: #007cba;
+            font-weight: bold;
+        }
+        .event-detail {
+            color: #495057;
+            margin-top: 5px;
+        }
+        .consent { border-left: 4px solid #28a745; }
+        .tag { border-left: 4px solid #007cba; }
+        .gtm { border-left: 4px solid #ffc107; }
+        .other { border-left: 4px solid #6c757d; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>GTM Event Logger Test</h1>
+        <p>This page simulates various GTM events to test the event logging functionality.</p>
+        
+        <div class="button-group">
+            <h3>Trigger Events:</h3>
+            <button onclick="triggerPageView()">Page View Event</button>
+            <button onclick="triggerCustomEvent()">Custom Event</button>
+            <button onclick="triggerConsentUpdate()">Consent Update</button>
+            <button onclick="triggerGTMStart()">GTM Start</button>
+            <button onclick="triggerGA4Event()">GA4 Event</button>
+            <button onclick="clearEvents()">Clear Events</button>
+        </div>
+        
+        <div class="button-group">
+            <h3>Check Events in Extension:</h3>
+            <p>1. Open the GTM Inspector extension</p>
+            <p>2. Go to the "Event Logger" tab</p>
+            <p>3. Click "Refresh" to see captured events</p>
+        </div>
+        
+        <div class="event-log" id="localEventLog">
+            <div class="event-item empty-state">No events triggered yet. Click buttons above to generate events.</div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize dataLayer
+        window.dataLayer = window.dataLayer || [];
+        
+        // Mock GTM
+        window.google_tag_manager = {
+            'GTM-TEST123': {
+                dataLayer: window.dataLayer
+            }
+        };
+        
+        // Mock gtag function
+        window.gtag = function(...args) {
+            console.log('🔵 gtag called:', args);
+            // Also push to dataLayer for consistency
+            window.dataLayer.push(['event', ...args.slice(1)]);
+        };
+        
+        // Mock gtag consent
+        window.gtag('consent', 'default', {
+            analytics_storage: 'denied',
+            ad_storage: 'denied',
+            functionality_storage: 'granted',
+            personalization_storage: 'denied',
+            security_storage: 'granted'
+        });
+        
+        let eventCounter = 0;
+        
+        function addLocalEvent(type, details) {
+            const eventLog = document.getElementById('localEventLog');
+            const eventItem = document.createElement('div');
+            eventItem.className = `event-item ${type}`;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            eventItem.innerHTML = `
+                <div class="event-time">[${timestamp}]</div>
+                <div class="event-type">${type.toUpperCase()}</div>
+                <div class="event-detail">${details}</div>
+            `;
+            
+            // Remove empty state if present
+            const emptyState = eventLog.querySelector('.empty-state');
+            if (emptyState) {
+                emptyState.remove();
+            }
+            
+            eventLog.insertBefore(eventItem, eventLog.firstChild);
+        }
+        
+        function triggerPageView() {
+            window.dataLayer.push({
+                event: 'page_view',
+                page_title: 'Test Page',
+                page_location: window.location.href
+            });
+            addLocalEvent('tag', 'Page view event triggered');
+        }
+        
+        function triggerCustomEvent() {
+            window.dataLayer.push({
+                event: 'custom_event',
+                custom_parameter: 'test_value',
+                event_category: 'test'
+            });
+            addLocalEvent('tag', 'Custom event triggered');
+        }
+        
+        function triggerConsentUpdate() {
+            window.dataLayer.push(['consent', 'update', {
+                analytics_storage: 'granted',
+                ad_storage: 'granted'
+            }]);
+            addLocalEvent('consent', 'Consent update triggered');
+        }
+        
+        function triggerGTMStart() {
+            window.dataLayer.push({
+                'gtm.start': Date.now()
+            });
+            addLocalEvent('gtm', 'GTM start event triggered');
+        }
+        
+        function triggerGA4Event() {
+            window.gtag('event', 'test_event', {
+                event_category: 'test',
+                event_label: 'test_label',
+                value: 1
+            });
+            addLocalEvent('tag', 'GA4 event triggered via gtag');
+        }
+        
+        function clearEvents() {
+            window.dataLayer = [];
+            const eventLog = document.getElementById('localEventLog');
+            eventLog.innerHTML = '<div class="event-item empty-state">Events cleared</div>';
+        }
+        
+        // Auto-trigger some events on page load
+        setTimeout(() => {
+            triggerPageView();
+        }, 1000);
+        
+        setTimeout(() => {
+            triggerGTMStart();
+        }, 1500);
+        
+        console.log('🔵 Test page loaded with GTM simulation');
+        console.log('🔵 dataLayer:', window.dataLayer);
+        console.log('🔵 google_tag_manager:', window.google_tag_manager);
+    </script>
+</body>
+</html> 

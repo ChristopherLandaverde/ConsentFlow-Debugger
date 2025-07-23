@@ -2,332 +2,61 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>GTM Consent Mode Inspector</title>
+  <title>GTM Consent Inspector</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
   <header>
-    <h1>GTM Consent Mode Inspector</h1>
+    <h1>GTM Consent Inspector</h1>
   </header>
   
   <div class="status-container">
     <div id="gtmStatus" class="status">Checking for GTM...</div>
     <div id="consentModeStatus" class="status">Checking for Consent Mode...</div>
-    <div id="monitoringStatus" class="status" style="display: none;">
-      <span id="monitoringIndicator" class="status-inactive">⚪ OFF</span>
-      Real-time Monitoring
-    </div>
   </div>
 
   <div class="tabs">
-    <button class="tab-button active" data-tab="tags">Tags</button>
+    <button class="tab-button active" data-tab="overview">Overview</button>
+    <button class="tab-button" data-tab="tags">Tags</button>
     <button class="tab-button" data-tab="consent">Consent</button>
-    <button class="tab-button" data-tab="events">Event Log</button>
-    <button class="tab-button" data-tab="triggers-vars">Triggers & Variables</button>
-    <button class="tab-button" data-tab="monitoring">
-      Monitoring 
-      <span id="alertBadge" class="alert-badge" style="display: none;">0</span>
-    </button>
-    <button class="tab-button" data-tab="performance">Performance</button>
-    <button class="tab-button" data-tab="iab-tcf">IAB TCF</button>
-    <button class="tab-button" data-tab="qa">QA Tests</button>
+    <button class="tab-button" data-tab="events">Events</button>
   </div>
 
-  <!-- Consent Tab -->
-<div id="consent-tab" class="tab-content">
-  <h2>Consent Simulator</h2>
-  
-  <div class="consent-categories">
-    <div class="consent-category">
-      <label for="analytics_storage">analytics_storage:</label>
-      <select id="analytics_storage" class="consent-select">
-        <option value="granted">Granted</option>
-        <option value="denied">Denied</option>
-      </select>
-    </div>
-    
-    <div class="consent-category">
-      <label for="ad_storage">ad_storage:</label>
-      <select id="ad_storage" class="consent-select">
-        <option value="granted">Granted</option>
-        <option value="denied">Denied</option>
-      </select>
-    </div>
-    
-    <div class="consent-category">
-      <label for="functionality_storage">functionality_storage:</label>
-      <select id="functionality_storage" class="consent-select">
-        <option value="granted">Granted</option>
-        <option value="denied">Denied</option>
-      </select>
-    </div>
-    
-    <div class="consent-category">
-      <label for="personalization_storage">personalization_storage:</label>
-      <select id="personalization_storage" class="consent-select">
-        <option value="granted">Granted</option>
-        <option value="denied">Denied</option>
-      </select>
-    </div>
-    
-    <div class="consent-category">
-      <label for="security_storage">security_storage:</label>
-      <select id="security_storage" class="consent-select">
-        <option value="granted">Granted</option>
-        <option value="denied">Denied</option>
-      </select>
-    </div>
-  </div>
-  
-  <div class="action-buttons">
-    <button id="applyConsent" class="action-button primary">Apply Settings</button>
-    <div class="dropdown">
-      <button class="dropdown-toggle action-button">Presets</button>
-      <div class="dropdown-menu">
-        <button class="dropdown-item" data-preset="all-granted">All Granted</button>
-        <button class="dropdown-item" data-preset="all-denied">All Denied</button>
-        <button class="dropdown-item" data-preset="analytics-only">Analytics Only</button>
-        <button class="dropdown-item" data-preset="ads-only">Ads Only</button>
-        <button class="dropdown-item" data-preset="functional-only">Functional Only</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Event Log Tab -->
-<div id="events-tab" class="tab-content">
-  <h2>DataLayer Event Log</h2>
-  <div class="filter-controls">
-    <button class="filter-btn active" data-event-filter="all">All</button>
-    <button class="filter-btn" data-event-filter="consent">Consent</button>
-    <button class="filter-btn" data-event-filter="tag">Tag</button>
-    <button class="filter-btn" data-event-filter="gtm">GTM</button>
-  </div>
-  <div class="event-log" id="eventLog">
-    <div class="event-item empty-state">Waiting for events...</div>
-  </div>
-  <div class="action-buttons">
-    <button id="clearLog" class="action-button">Clear Log</button>
-    <button id="exportLog" class="action-button">Export Log</button>
-  </div>
-</div>
-
-<!-- Triggers & Variables Tab -->
-<div id="triggers-vars-tab" class="tab-content">
-  <h2>GTM Triggers & Variables</h2>
-  
-  <div class="analysis-overview">
+  <!-- Overview Tab -->
+  <div id="overview-tab" class="tab-content active">
+    <h2>GTM Overview</h2>
     <div class="status-grid">
       <div class="status-item">
-        <span class="label">Tags:</span>
-        <span class="value" id="totalTagsValue">0</span>
+        <span class="label">GTM Container:</span>
+        <span class="value" id="gtmContainerValue">Not detected</span>
       </div>
       <div class="status-item">
-        <span class="label">Triggers:</span>
-        <span class="value" id="totalTriggersValue">0</span>
+        <span class="label">Consent Mode:</span>
+        <span class="value" id="overviewConsentValue">Not detected</span>
       </div>
       <div class="status-item">
-        <span class="label">Variables:</span>
-        <span class="value" id="totalVariablesValue">0</span>
+        <span class="label">Tags Found:</span>
+        <span class="value" id="totalTagsFound">0</span>
       </div>
       <div class="status-item">
-        <span class="label">Mapped:</span>
-        <span class="value" id="mappedTagsValue">0</span>
-      </div>
-    </div>
-  </div>
-  
-  <div class="analysis-sections">
-    <div class="section">
-      <h3>Triggers</h3>
-      <div class="filter-controls">
-        <button class="filter-btn active" data-trigger-filter="all">All</button>
-        <button class="filter-btn" data-trigger-filter="page-view">Page View</button>
-        <button class="filter-btn" data-trigger-filter="custom-event">Custom Event</button>
-        <button class="filter-btn" data-trigger-filter="consent">Consent</button>
-        <button class="filter-btn" data-trigger-filter="e-commerce">E-commerce</button>
-      </div>
-      <div class="trigger-list" id="triggerList">
-        <div class="trigger-item empty-state">No triggers detected...</div>
+        <span class="label">Tags Blocked:</span>
+        <span class="value" id="totalTagsBlocked">0</span>
       </div>
     </div>
     
-    <div class="section">
-      <h3>Variables</h3>
-      <div class="filter-controls">
-        <button class="filter-btn active" data-variable-filter="all">All</button>
-        <button class="filter-btn" data-variable-filter="dataLayer">DataLayer</button>
-        <button class="filter-btn" data-variable-filter="config">Config</button>
-        <button class="filter-btn" data-variable-filter="custom">Custom</button>
-        <button class="filter-btn" data-variable-filter="measurement">Measurement</button>
-      </div>
-      <div class="variable-list" id="variableList">
-        <div class="variable-item empty-state">No variables detected...</div>
-      </div>
-    </div>
-    
-    <div class="section">
-      <h3>Tag-Trigger Mapping</h3>
-      <div class="mapping-list" id="mappingList">
-        <div class="mapping-item empty-state">No mappings detected...</div>
-      </div>
+    <div class="action-buttons">
+      <button id="refreshOverview" class="action-button primary">🔄 Refresh</button>
+      <button id="diagnoseTab" class="action-button">🔍 Diagnose</button>
     </div>
   </div>
-  
-  <div class="action-buttons">
-    <button id="refreshAnalysis" class="action-button primary">Refresh Analysis</button>
-    <button id="exportAnalysis" class="action-button">Export Data</button>
-    <button id="showConsentDependencies" class="action-button">Show Dependencies</button>
-  </div>
-</div>
 
-<!-- Monitoring Tab -->
-<div id="monitoring-tab" class="tab-content">
-  <h2>Real-time Monitoring</h2>
-  <div class="monitoring-overview">
-    <div class="status-grid">
-      <div class="status-item">
-        <span class="label">Status:</span>
-        <span class="value" id="monitoringStatusValue">Inactive</span>
-      </div>
-      <div class="status-item">
-        <span class="label">CMP:</span>
-        <span class="value" id="cmpStatusValue">None</span>
-      </div>
-      <div class="status-item">
-        <span class="label">Tags:</span>
-        <span class="value" id="tagsMonitoredValue">0</span>
-      </div>
-      <div class="status-item">
-        <span class="label">Alerts:</span>
-        <span class="value" id="activeAlertsValue">0</span>
-      </div>
-    </div>
-  </div>
-  <div class="action-buttons">
-    <button id="startMonitoring" class="action-button primary">Start Monitoring</button>
-    <button id="stopMonitoring" class="action-button" style="display: none;">Stop Monitoring</button>
-    <button id="validateCompliance" class="action-button">Run Check</button>
-  </div>
-</div>
-
-<!-- IAB TCF Tab -->
-<div id="iab-tcf-tab" class="tab-content">
-  <h2>IAB TCF Framework</h2>
-  <div class="tcf-overview">
-    <div class="status-grid">
-      <div class="status-item">
-        <span class="label">TCF Version:</span>
-        <span class="value" id="tcfVersionValue">Not detected</span>
-      </div>
-      <div class="status-item">
-        <span class="label">CMP:</span>
-        <span class="value" id="cmpNameValue">None</span>
-      </div>
-      <div class="status-item">
-        <span class="label">GDPR Applies:</span>
-        <span class="value" id="gdprAppliesValue">Unknown</span>
-      </div>
-      <div class="status-item">
-        <span class="label">Consent String:</span>
-        <span class="value" id="consentStringValue">None</span>
-      </div>
-    </div>
-  </div>
-  
-  <div class="tcf-details">
-    <h3>Purpose Consents</h3>
-    <div id="purposeConsents" class="consent-grid">
-      <div class="empty-state">No purpose consents detected</div>
-    </div>
-    
-    <h3>Vendor Consents</h3>
-    <div id="vendorConsents" class="consent-grid">
-      <div class="empty-state">No vendor consents detected</div>
-    </div>
-  </div>
-  
-  <div class="action-buttons">
-    <button id="refreshTCF" class="action-button">Refresh TCF Data</button>
-    <button id="parseConsentString" class="action-button">Parse Consent String</button>
-  </div>
-</div>
-
-<!-- Performance Tab -->
-<div id="performance-tab" class="tab-content">
-  <h2>Performance Monitoring</h2>
-  
-  <div class="performance-overview">
-    <div class="status-grid">
-      <div class="status-item">
-        <span class="label">Total Time:</span>
-        <span class="value" id="totalTimeValue">0ms</span>
-      </div>
-      <div class="status-item">
-        <span class="label">Memory Used:</span>
-        <span class="value" id="memoryUsedValue">0MB</span>
-      </div>
-      <div class="status-item">
-        <span class="label">Triggers:</span>
-        <span class="value" id="triggerCountValue">0</span>
-      </div>
-      <div class="status-item">
-        <span class="label">Variables:</span>
-        <span class="value" id="variableCountValue">0</span>
-      </div>
-    </div>
-  </div>
-  
-  <div class="performance-sections">
-    <div class="section">
-      <h3>Timing Breakdown</h3>
-      <div class="timing-list" id="timingList">
-        <div class="timing-item empty-state">No timing data available...</div>
-      </div>
-    </div>
-    
-    <div class="section">
-      <h3>Memory Usage</h3>
-      <div class="memory-info" id="memoryInfo">
-        <div class="memory-item empty-state">No memory data available...</div>
-      </div>
-    </div>
-    
-    <div class="section">
-      <h3>Error Log</h3>
-      <div class="error-log" id="errorLog">
-        <div class="error-item empty-state">No errors detected...</div>
-      </div>
-    </div>
-  </div>
-  
-  <div class="action-buttons">
-    <button id="refreshPerformance" class="action-button primary">Refresh Metrics</button>
-    <button id="exportPerformance" class="action-button">Export Report</button>
-    <button id="clearPerformanceData" class="action-button">Clear Data</button>
-  </div>
-</div>
-
-<!-- QA Testing Tab -->
-<div id="qa-tab" class="tab-content">
-  <h2>QA Testing</h2>
-  <p>Run automated tests against the current page:</p>
-  <div class="action-buttons">
-    <button id="runConsentTest" class="action-button">Test Consent Flow</button>
-    <button id="runTagTest" class="action-button">Test Tag Firing</button>
-  </div>
-  <div id="qaResults" class="results-container">
-    <div class="empty-state">Run a test to see results</div>
-  </div>
-</div>
-  
-  <!-- Your existing tab content here -->
-  <div id="tags-tab" class="tab-content active">
+  <!-- Tags Tab -->
+  <div id="tags-tab" class="tab-content">
+    <h2>Tag Status</h2>
     <div class="filter-controls">
       <button class="filter-btn active" data-filter="all">All</button>
       <button class="filter-btn" data-filter="analytics">Analytics</button>
       <button class="filter-btn" data-filter="advertising">Advertising</button>
-      <button class="filter-btn" data-filter="personalization">Personalization</button>
       <button class="filter-btn" data-filter="functionality">Functionality</button>
     </div>
     
@@ -336,28 +65,92 @@
     </div>
     
     <div class="action-buttons">
-      <button id="refreshTags" class="action-button">Refresh Tags</button>
+      <button id="refreshTags" class="action-button">🔄 Refresh Tags</button>
+    </div>
+  </div>
+
+  <!-- Consent Tab -->
+  <div id="consent-tab" class="tab-content">
+    <h2>Consent Simulator</h2>
+    
+    <div class="consent-categories">
+      <div class="consent-category">
+        <label for="analytics_storage">analytics_storage:</label>
+        <select id="analytics_storage" class="consent-select">
+          <option value="granted">Granted</option>
+          <option value="denied">Denied</option>
+        </select>
+      </div>
+      
+      <div class="consent-category">
+        <label for="ad_storage">ad_storage:</label>
+        <select id="ad_storage" class="consent-select">
+          <option value="granted">Granted</option>
+          <option value="denied">Denied</option>
+        </select>
+      </div>
+      
+      <div class="consent-category">
+        <label for="functionality_storage">functionality_storage:</label>
+        <select id="functionality_storage" class="consent-select">
+          <option value="granted">Granted</option>
+          <option value="denied">Denied</option>
+        </select>
+      </div>
+      
+      <div class="consent-category">
+        <label for="personalization_storage">personalization_storage:</label>
+        <select id="personalization_storage" class="consent-select">
+          <option value="granted">Granted</option>
+          <option value="denied">Denied</option>
+        </select>
+      </div>
+      
+      <div class="consent-category">
+        <label for="security_storage">security_storage:</label>
+        <select id="security_storage" class="consent-select">
+          <option value="granted">Granted</option>
+          <option value="denied">Denied</option>
+        </select>
+      </div>
+    </div>
+    
+    <div class="action-buttons">
+      <button id="applyConsent" class="action-button primary">⚡ Apply Settings</button>
+      <div class="dropdown">
+        <button class="dropdown-toggle action-button">📋 Presets</button>
+        <div class="dropdown-menu">
+          <button class="dropdown-item" data-preset="all-granted">All Granted</button>
+          <button class="dropdown-item" data-preset="all-denied">All Denied</button>
+          <button class="dropdown-item" data-preset="analytics-only">Analytics Only</button>
+          <button class="dropdown-item" data-preset="functional-only">Functional Only</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Events Tab -->
+  <div id="events-tab" class="tab-content">
+    <h2>Event Log</h2>
+    <div class="filter-controls">
+      <button class="filter-btn active" data-event-filter="all">All</button>
+      <button class="filter-btn" data-event-filter="consent">Consent</button>
+      <button class="filter-btn" data-event-filter="gtm">GTM</button>
+    </div>
+    <div class="event-log" id="eventLog">
+      <div class="event-item empty-state">Waiting for events...</div>
+    </div>
+    <div class="action-buttons">
+      <button id="clearLog" class="action-button">🗑️ Clear Log</button>
+      <button id="exportLog" class="action-button">📤 Export Log</button>
     </div>
   </div>
   
-  <!-- Include all other tab content from your existing HTML -->
-  
   <footer>
-    <div class="version">v1.2 - Modular</div>
+    <div class="version">GTM Inspector MVP</div>
   </footer>
   
-  <!-- Load modules in order -->
-  <script src="utils.js"></script>
-  <script src="ui-utils.js"></script>
-  <script src="tabs-manager.js"></script>
-  <script src="containers-panel.js"></script>
-  <script src="tag-list.js"></script>
-  <script src="consent-stimulator.js"></script>
-  <script src="event-logger.js"></script>
-  <script src="triggers-vars.js"></script>
-  <script src="performance-monitor.js"></script>
-  <script src="qa-panel.js"></script>
-  <script src="iab-tcf.js"></script>
+  <!-- Simplified Scripts -->
   <script src="popup.js"></script>
 </body>
 </html>
