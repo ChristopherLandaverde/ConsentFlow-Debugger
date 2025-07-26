@@ -266,12 +266,29 @@ if (window.ConsentInspector) {
                 eventType = 'consent';
               }
               
-              events.push({
+              // Create a serializable event object
+              const serializableEvent = {
                 timestamp: Date.now() - (recentEvents.length - index) * 100, // Approximate timing
-                event: event,
                 type: eventType,
                 source: 'dataLayer'
-              });
+              };
+              
+              // Safely serialize the event data
+              try {
+                // Try to JSON.stringify to ensure it's serializable
+                const eventString = JSON.stringify(event);
+                serializableEvent.event = JSON.parse(eventString);
+              } catch (serializeError) {
+                // If serialization fails, create a simplified version
+                console.warn('⚠️ Event not serializable, creating simplified version:', serializeError);
+                serializableEvent.event = {
+                  _error: 'Event data not serializable',
+                  _type: typeof event,
+                  _keys: Object.keys(event || {}).slice(0, 5) // First 5 keys as hint
+                };
+              }
+              
+              events.push(serializableEvent);
             }
           });
         } else {
@@ -336,12 +353,27 @@ window.addEventListener('message', function(event) {
     
     console.log('📤 Sending response:', { result, error });
     
+    // Ensure response is serializable before sending
+    let serializableResult = result;
+    let serializableError = error;
+    
+    try {
+      // Test if result can be serialized
+      if (result !== null && result !== undefined) {
+        JSON.stringify(result);
+      }
+    } catch (serializeError) {
+      console.error('❌ Result not serializable, sending error instead:', serializeError);
+      serializableResult = null;
+      serializableError = 'Result data not serializable: ' + serializeError.message;
+    }
+    
     // Send response back to content script
     window.postMessage({
       source: 'gtm-inspector-page',
       id: id,
-      result: result,
-      error: error
+      result: serializableResult,
+      error: serializableError
     }, '*');
   }
 });
