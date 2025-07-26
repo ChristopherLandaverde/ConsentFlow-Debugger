@@ -241,68 +241,27 @@ if (window.ConsentInspector) {
     },
     
     getEvents: function() {
-      // Enhanced event logging - focus on tag behavior and consent impact
+      // Simple event logging - avoid complex function calls that might timeout
       const events = [];
-      const consentState = this.getCurrentConsentState();
       
       try {
-        // Get detected tags and their consent requirements
-        const detectedTags = this.getTagInfo();
-        console.log('📊 Detected tags:', detectedTags);
+        console.log('📊 Getting simple events...');
         
-        // Create tag firing events based on detected tags and consent state
-        detectedTags.forEach(tag => {
-          const event = {
-            timestamp: Date.now(),
-            tagName: tag.name,
-            tagType: tag.type,
-            consentType: tag.consentType,
-            allowed: tag.allowed,
-            reason: tag.reason,
-            status: tag.allowed ? 'ALLOWED ✅' : 'BLOCKED ❌',
-            source: 'tag-detection'
-          };
-          
-          events.push(event);
-        });
+        // Just return a simple status event to test communication
+        const statusEvent = {
+          timestamp: Date.now(),
+          tagName: 'Event Log Test',
+          tagType: 'test',
+          consentType: 'none',
+          allowed: true,
+          reason: 'Testing event log communication',
+          status: 'WORKING ✅',
+          source: 'test'
+        };
         
-        // Add consent state change events if consent mode is active
-        if (this.detectConsentMode()) {
-          const consentEvent = {
-            timestamp: Date.now(),
-            tagName: 'Consent Mode',
-            tagType: 'consent',
-            consentType: 'all',
-            allowed: true,
-            reason: 'Current consent state',
-            status: 'ACTIVE 🔐',
-            consentState: consentState,
-            source: 'consent-state'
-          };
-          
-          events.push(consentEvent);
-        }
+        events.push(statusEvent);
         
-        // Add GTM container info
-        const gtmInfo = this.detectGTM();
-        if (gtmInfo.hasGTM) {
-          const gtmEvent = {
-            timestamp: Date.now(),
-            tagName: 'GTM Container',
-            tagType: 'container',
-            consentType: 'none',
-            allowed: true,
-            reason: 'GTM container detected',
-            status: 'ACTIVE 🏗️',
-            gtmId: gtmInfo.gtmId,
-            containers: gtmInfo.containers,
-            source: 'gtm-detection'
-          };
-          
-          events.push(gtmEvent);
-        }
-        
-        console.log('📊 Returning', events.length, 'tag-related events');
+        console.log('📊 Returning', events.length, 'test events');
         return events;
         
       } catch (error) {

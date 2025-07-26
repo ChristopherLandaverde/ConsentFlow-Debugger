@@ -171,7 +171,18 @@ async function checkGTMStatus() {
   updateStatusDisplay({ loading: true });
   
   try {
-    const result = await ContentScriptInterface.sendMessage('checkGTM');
+    // Get GTM detection data
+    const gtmResult = await ContentScriptInterface.sendMessage('checkGTM');
+    
+    // Get tag data
+    const tagResult = await ContentScriptInterface.sendMessage('getTagStatus');
+    
+    // Combine the results
+    const result = {
+      ...gtmResult,
+      tags: Array.isArray(tagResult) ? tagResult : []
+    };
+    
     updateStatusDisplay(result);
     updateOverviewTab(result);
   } catch (error) {
@@ -253,9 +264,17 @@ function updateOverviewTab(result) {
   
   if (result?.tags) {
     document.getElementById('totalTagsFound').textContent = result.tags.length;
-    const blockedTags = result.hasConsentMode ? 
-      result.tags.filter(tag => !tag.allowed).length : 0;
-    document.getElementById('totalTagsBlocked').textContent = blockedTags;
+    
+    // Handle tags blocked based on consent mode
+    if (result.hasConsentMode) {
+      const blockedTags = result.tags.filter(tag => !tag.allowed).length;
+      document.getElementById('totalTagsBlocked').textContent = blockedTags;
+    } else {
+      document.getElementById('totalTagsBlocked').textContent = 'Consent Mode Not Implemented';
+    }
+  } else {
+    document.getElementById('totalTagsFound').textContent = '0';
+    document.getElementById('totalTagsBlocked').textContent = 'N/A';
   }
 }
 
