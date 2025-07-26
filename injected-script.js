@@ -310,9 +310,21 @@ if (window.ConsentInspector) {
 
 // Listen for messages from content script
 window.addEventListener('message', function(event) {
-  console.log('📥 Injected script received message:', event.data);
-  
+  // Only log and process our specific messages to avoid spam
   if (event.data && event.data.source === 'gtm-inspector-content') {
+    console.log('📥 Injected script received GTM Inspector message:', event.data);
+    
+    // Ensure ConsentInspector is available
+    if (!window.ConsentInspector) {
+      console.error('❌ ConsentInspector not available, cannot process message');
+      window.postMessage({
+        source: 'gtm-inspector-page',
+        id: event.data.id,
+        result: null,
+        error: 'ConsentInspector not initialized'
+      }, '*');
+      return;
+    }
     
     const { action, data, id } = event.data;
     console.log('🔧 Processing action:', action, 'with data:', data);
