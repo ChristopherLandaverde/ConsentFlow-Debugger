@@ -390,35 +390,68 @@ function filterTags(category) {
 }
 
 async function refreshEvents() {
+  const eventLog = document.getElementById('eventLog');
+  eventLog.innerHTML = '<div class="event-item empty-state">🔄 Loading events...</div>';
+  
   try {
+    console.log('🔄 Fetching events...');
     const events = await ContentScriptInterface.sendMessage('getEventLog');
+    console.log('📊 Events received:', events);
     updateEventDisplay(events || []);
   } catch (error) {
-    document.getElementById('eventLog').innerHTML = '<div class="event-item empty-state">Error loading events</div>';
+    console.error('❌ Error loading events:', error);
+    eventLog.innerHTML = `<div class="event-item empty-state">Error loading events: ${error.message}</div>`;
   }
 }
 
 function updateEventDisplay(events) {
   const eventLog = document.getElementById('eventLog');
   
+  console.log('📋 Updating event display with:', events);
+  
   if (!events || events.length === 0) {
-    eventLog.innerHTML = '<div class="event-item empty-state">No events recorded yet</div>';
+    eventLog.innerHTML = '<div class="event-item empty-state">No events recorded yet. Try triggering some events on the page.</div>';
     return;
   }
   
-  eventLog.innerHTML = events.slice(-20).reverse().map(event => `
-    <div class="event-item" data-event-type="${event.category || 'other'}">
-      <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-        <span style="font-size: 12px; color: #666;">[${new Date(event.timestamp).toLocaleTimeString()}]</span>
-        <span style="font-size: 10px; background: #007bff; color: white; padding: 2px 6px; border-radius: 3px;">
-          ${escapeHtml(event.type || 'Event')}
-        </span>
-      </div>
-      <div style="font-size: 13px; color: #333;">
-        ${escapeHtml(JSON.stringify(event.event).substring(0, 100) + (JSON.stringify(event.event).length > 100 ? '...' : ''))}
-      </div>
-    </div>
-  `).join('');
+  try {
+    eventLog.innerHTML = events.slice(-20).reverse().map(event => {
+      // Safely handle event data
+      let eventDisplay = 'Event data';
+      try {
+        if (event.event) {
+          eventDisplay = JSON.stringify(event.event).substring(0, 100);
+          if (JSON.stringify(event.event).length > 100) {
+            eventDisplay += '...';
+          }
+        } else if (typeof event === 'object') {
+          eventDisplay = JSON.stringify(event).substring(0, 100);
+          if (JSON.stringify(event).length > 100) {
+            eventDisplay += '...';
+          }
+        }
+      } catch (e) {
+        eventDisplay = 'Event data (unable to stringify)';
+      }
+      
+      return `
+        <div class="event-item" data-event-type="${event.category || 'other'}">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <span style="font-size: 12px; color: #666;">[${new Date(event.timestamp || Date.now()).toLocaleTimeString()}]</span>
+            <span style="font-size: 10px; background: #007bff; color: white; padding: 2px 6px; border-radius: 3px;">
+              ${escapeHtml(event.type || 'Event')}
+            </span>
+          </div>
+          <div style="font-size: 13px; color: #333;">
+            ${escapeHtml(eventDisplay)}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (error) {
+    console.error('❌ Error rendering events:', error);
+    eventLog.innerHTML = '<div class="event-item empty-state">Error rendering events</div>';
+  }
 }
 
 function filterEvents(category) {

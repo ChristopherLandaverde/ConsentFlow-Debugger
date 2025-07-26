@@ -241,26 +241,50 @@ if (window.ConsentInspector) {
     },
     
     getEvents: function() {
-      // Simple event logging - capture recent dataLayer events
+      // Enhanced event logging - capture recent dataLayer events
       const events = [];
       
-      if (window.dataLayer && Array.isArray(window.dataLayer)) {
-        // Get last 20 events from dataLayer
-        const recentEvents = window.dataLayer.slice(-20);
+      try {
+        if (window.dataLayer && Array.isArray(window.dataLayer)) {
+          console.log('📊 dataLayer found with', window.dataLayer.length, 'events');
+          
+          // Get last 20 events from dataLayer
+          const recentEvents = window.dataLayer.slice(-20);
+          
+          recentEvents.forEach((event, index) => {
+            if (event && typeof event === 'object') {
+              let eventType = 'object';
+              
+              // Determine event type
+              if (Array.isArray(event)) {
+                eventType = event[0] || 'array';
+              } else if (event.event) {
+                eventType = event.event;
+              } else if (event['gtm.start']) {
+                eventType = 'gtm.start';
+              } else if (event.consent) {
+                eventType = 'consent';
+              }
+              
+              events.push({
+                timestamp: Date.now() - (recentEvents.length - index) * 100, // Approximate timing
+                event: event,
+                type: eventType,
+                source: 'dataLayer'
+              });
+            }
+          });
+        } else {
+          console.log('📊 No dataLayer found or dataLayer is not an array');
+        }
         
-        recentEvents.forEach((event, index) => {
-          if (event && typeof event === 'object') {
-            events.push({
-              timestamp: Date.now() - (recentEvents.length - index) * 100, // Approximate timing
-              event: event,
-              type: Array.isArray(event) ? event[0] : 'object',
-              source: 'dataLayer'
-            });
-          }
-        });
+        console.log('📊 Returning', events.length, 'events');
+        return events;
+        
+      } catch (error) {
+        console.error('❌ Error in getEvents:', error);
+        return [];
       }
-      
-      return events;
     }
   };
   
