@@ -127,10 +127,14 @@
     return new Promise((resolve, reject) => {
       const messageId = Date.now() + Math.random();
       
+      console.log('📤 Sending message to page:', { action, data, messageId });
+      
       // Listen for response from page
       const messageListener = (event) => {
+        console.log('📥 Received message from page:', event.data);
         if (event.data && event.data.source === 'gtm-inspector-page' && event.data.id === messageId) {
           window.removeEventListener('message', messageListener);
+          console.log('✅ Message matched, resolving with:', event.data.result);
           if (event.data.error) {
             reject(new Error(event.data.error));
           } else {
@@ -149,9 +153,12 @@
         id: messageId
       }, '*');
       
+      console.log('📤 Message sent, waiting for response...');
+      
       // Timeout after 5 seconds
       setTimeout(() => {
         window.removeEventListener('message', messageListener);
+        console.error('⏰ Message timeout for action:', action);
         reject(new Error('Message timeout'));
       }, 5000);
     });

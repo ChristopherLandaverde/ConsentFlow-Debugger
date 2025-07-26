@@ -2,9 +2,9 @@
 
 // Prevent multiple injections
 if (window.ConsentInspector) {
-  // ConsentInspector already exists, skipping...
+  console.log('🔧 ConsentInspector already exists, skipping injection...');
 } else {
-  // Creating ConsentInspector...
+  console.log('🔧 Creating ConsentInspector...');
   
   // Create ConsentInspector in page context
   window.ConsentInspector = {
@@ -293,36 +293,48 @@ if (window.ConsentInspector) {
 
 // Listen for messages from content script
 window.addEventListener('message', function(event) {
+  console.log('📥 Injected script received message:', event.data);
+  
   if (event.data && event.data.source === 'gtm-inspector-content') {
     
     const { action, data, id } = event.data;
+    console.log('🔧 Processing action:', action, 'with data:', data);
+    
     let result = null;
     let error = null;
     
     try {
       switch (action) {
         case 'detectGTM':
+          console.log('🔍 Calling detectGTM...');
           result = window.ConsentInspector.detectGTM();
           break;
           
         case 'getTagInfo':
+          console.log('🏷️ Calling getTagInfo...');
           result = window.ConsentInspector.getTagInfo();
           break;
           
         case 'updateConsent':
+          console.log('🔐 Calling updateConsent...');
           result = window.ConsentInspector.updateConsent(data);
           break;
           
         case 'getEvents':
+          console.log('📊 Calling getEvents...');
           result = window.ConsentInspector.getEvents();
           break;
           
         default:
           error = 'Unknown action: ' + action;
+          console.error('❌ Unknown action:', action);
       }
     } catch (err) {
       error = err.message;
+      console.error('❌ Error processing action:', action, 'Error:', err);
     }
+    
+    console.log('📤 Sending response:', { result, error });
     
     // Send response back to content script
     window.postMessage({
@@ -333,3 +345,7 @@ window.addEventListener('message', function(event) {
     }, '*');
   }
 });
+
+console.log('🔧 GTM Inspector injected script loaded successfully');
+console.log('🔧 ConsentInspector available:', !!window.ConsentInspector);
+console.log('🔧 Message listener attached');
