@@ -443,35 +443,41 @@ function updateEventDisplay(events) {
   
   try {
     eventLog.innerHTML = events.slice(-20).reverse().map(event => {
-      // Safely handle event data
-      let eventDisplay = 'Event data';
-      try {
-        if (event.event) {
-          eventDisplay = JSON.stringify(event.event).substring(0, 100);
-          if (JSON.stringify(event.event).length > 100) {
-            eventDisplay += '...';
-          }
-        } else if (typeof event === 'object') {
-          eventDisplay = JSON.stringify(event).substring(0, 100);
-          if (JSON.stringify(event).length > 100) {
-            eventDisplay += '...';
-          }
-        }
-      } catch (e) {
-        eventDisplay = 'Event data (unable to stringify)';
+      // Handle tag-focused event display
+      let eventDisplay = '';
+      let statusColor = '#007bff';
+      
+      if (event.source === 'tag-detection') {
+        // Tag detection events
+        eventDisplay = `${event.tagName} (${event.tagType})`;
+        statusColor = event.allowed ? '#28a745' : '#dc3545';
+      } else if (event.source === 'consent-state') {
+        // Consent state events
+        eventDisplay = `Consent Mode: ${Object.entries(event.consentState || {}).map(([k,v]) => `${k}=${v}`).join(', ')}`;
+        statusColor = '#ffc107';
+      } else if (event.source === 'gtm-detection') {
+        // GTM container events
+        eventDisplay = `GTM Container: ${event.gtmId || 'Unknown'}`;
+        statusColor = '#17a2b8';
+      } else {
+        // Fallback for other events
+        eventDisplay = event.tagName || 'Unknown event';
       }
       
       return `
-        <div class="event-item" data-event-type="${event.category || 'other'}">
+        <div class="event-item" data-event-type="${event.tagType || 'other'}">
           <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
             <span style="font-size: 12px; color: #666;">[${new Date(event.timestamp || Date.now()).toLocaleTimeString()}]</span>
-            <span style="font-size: 10px; background: #007bff; color: white; padding: 2px 6px; border-radius: 3px;">
-              ${escapeHtml(event.type || 'Event')}
+            <span style="font-size: 10px; background: ${statusColor}; color: white; padding: 2px 6px; border-radius: 3px;">
+              ${escapeHtml(event.status || 'Event')}
             </span>
           </div>
-          <div style="font-size: 13px; color: #333;">
+          <div style="font-size: 13px; color: #333; font-weight: 600;">
             ${escapeHtml(eventDisplay)}
           </div>
+          ${event.reason ? `<div style="font-size: 11px; color: #666; margin-top: 2px;">
+            ${escapeHtml(event.reason)}
+          </div>` : ''}
         </div>
       `;
     }).join('');

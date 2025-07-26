@@ -241,61 +241,68 @@ if (window.ConsentInspector) {
     },
     
     getEvents: function() {
-      // Enhanced event logging - capture recent dataLayer events
+      // Enhanced event logging - focus on tag behavior and consent impact
       const events = [];
+      const consentState = this.getCurrentConsentState();
       
       try {
-        if (window.dataLayer && Array.isArray(window.dataLayer)) {
-          console.log('📊 dataLayer found with', window.dataLayer.length, 'events');
+        // Get detected tags and their consent requirements
+        const detectedTags = this.getTagInfo();
+        console.log('📊 Detected tags:', detectedTags);
+        
+        // Create tag firing events based on detected tags and consent state
+        detectedTags.forEach(tag => {
+          const event = {
+            timestamp: Date.now(),
+            tagName: tag.name,
+            tagType: tag.type,
+            consentType: tag.consentType,
+            allowed: tag.allowed,
+            reason: tag.reason,
+            status: tag.allowed ? 'ALLOWED ✅' : 'BLOCKED ❌',
+            source: 'tag-detection'
+          };
           
-          // Get last 20 events from dataLayer
-          const recentEvents = window.dataLayer.slice(-20);
+          events.push(event);
+        });
+        
+        // Add consent state change events if consent mode is active
+        if (this.detectConsentMode()) {
+          const consentEvent = {
+            timestamp: Date.now(),
+            tagName: 'Consent Mode',
+            tagType: 'consent',
+            consentType: 'all',
+            allowed: true,
+            reason: 'Current consent state',
+            status: 'ACTIVE 🔐',
+            consentState: consentState,
+            source: 'consent-state'
+          };
           
-          recentEvents.forEach((event, index) => {
-            if (event && typeof event === 'object') {
-              let eventType = 'object';
-              
-              // Determine event type
-              if (Array.isArray(event)) {
-                eventType = event[0] || 'array';
-              } else if (event.event) {
-                eventType = event.event;
-              } else if (event['gtm.start']) {
-                eventType = 'gtm.start';
-              } else if (event.consent) {
-                eventType = 'consent';
-              }
-              
-              // Create a serializable event object
-              const serializableEvent = {
-                timestamp: Date.now() - (recentEvents.length - index) * 100, // Approximate timing
-                type: eventType,
-                source: 'dataLayer'
-              };
-              
-              // Safely serialize the event data
-              try {
-                // Try to JSON.stringify to ensure it's serializable
-                const eventString = JSON.stringify(event);
-                serializableEvent.event = JSON.parse(eventString);
-              } catch (serializeError) {
-                // If serialization fails, create a simplified version
-                console.warn('⚠️ Event not serializable, creating simplified version:', serializeError);
-                serializableEvent.event = {
-                  _error: 'Event data not serializable',
-                  _type: typeof event,
-                  _keys: Object.keys(event || {}).slice(0, 5) // First 5 keys as hint
-                };
-              }
-              
-              events.push(serializableEvent);
-            }
-          });
-        } else {
-          console.log('📊 No dataLayer found or dataLayer is not an array');
+          events.push(consentEvent);
         }
         
-        console.log('📊 Returning', events.length, 'events');
+        // Add GTM container info
+        const gtmInfo = this.detectGTM();
+        if (gtmInfo.hasGTM) {
+          const gtmEvent = {
+            timestamp: Date.now(),
+            tagName: 'GTM Container',
+            tagType: 'container',
+            consentType: 'none',
+            allowed: true,
+            reason: 'GTM container detected',
+            status: 'ACTIVE 🏗️',
+            gtmId: gtmInfo.gtmId,
+            containers: gtmInfo.containers,
+            source: 'gtm-detection'
+          };
+          
+          events.push(gtmEvent);
+        }
+        
+        console.log('📊 Returning', events.length, 'tag-related events');
         return events;
         
       } catch (error) {
