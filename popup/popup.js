@@ -257,7 +257,7 @@ function updateOverviewTab(result) {
       result.tags.filter(tag => !tag.allowed).length : 0;
     document.getElementById('totalTagsBlocked').textContent = blockedTags;
   }
-}s
+}
 
 function enableConsentSimulator(enabled) {
   const consentTab = document.getElementById('consent-tab');
@@ -415,7 +415,7 @@ function updateEventDisplay(events) {
         </span>
       </div>
       <div style="font-size: 13px; color: #333;">
-        ${escapeHtml(event.details || event.eventName || 'Event')}
+        ${escapeHtml(JSON.stringify(event.event).substring(0, 100) + (JSON.stringify(event.event).length > 100 ? '...' : ''))}
       </div>
     </div>
   `).join('');

@@ -21,7 +21,55 @@ if (window.ConsentInspector) {
         timestamp: Date.now()
       };
     
-      // ... existing GTM detection code ...
+      // Method 1: Check for GTM script tags
+      const gtmScripts = document.querySelectorAll('script[src*="googletagmanager.com"]');
+      if (gtmScripts.length > 0) {
+        result.hasGTM = true;
+        result.detectionMethods.scriptTags = true;
+        
+        // Extract GTM IDs from script URLs
+        gtmScripts.forEach(script => {
+          const match = script.src.match(/gtm\.js\?id=([^&]+)/);
+          if (match && match[1]) {
+            const gtmId = match[1];
+            if (!result.containers.includes(gtmId)) {
+              result.containers.push(gtmId);
+            }
+          }
+        });
+        
+        if (result.containers.length > 0) {
+          result.gtmId = result.containers[0]; // Use first container as primary
+        }
+      }
+      
+      // Method 2: Check for dataLayer
+      if (window.dataLayer && Array.isArray(window.dataLayer)) {
+        result.hasGTM = true;
+        result.detectionMethods.dataLayer = true;
+        
+        // Look for GTM container ID in dataLayer
+        for (let i = 0; i < window.dataLayer.length; i++) {
+          const item = window.dataLayer[i];
+          if (item && typeof item === 'object' && item.gtm_id) {
+            if (!result.containers.includes(item.gtm_id)) {
+              result.containers.push(item.gtm_id);
+            }
+          }
+        }
+      }
+      
+      // Method 3: Check for gtag function
+      if (window.gtag && typeof window.gtag === 'function') {
+        result.hasGTM = true;
+        result.detectionMethods.gtag = true;
+      }
+      
+      // Method 4: Check for Google Tag Manager object
+      if (window.google_tag_manager) {
+        result.hasGTM = true;
+        result.detectionMethods.gtmObject = true;
+      }
     
       // BETTER consent mode detection
       result.hasConsentMode = this.detectConsentMode();
@@ -74,21 +122,7 @@ if (window.ConsentInspector) {
       return false;
     },
     
-    detectConsentMode: function() {
-      // Check gtag function
-      if (window.gtag && typeof window.gtag === 'function') {
-        return true;
-      }
-      
-      // Check for consent events in dataLayer
-      if (window.dataLayer && Array.isArray(window.dataLayer)) {
-        return window.dataLayer.some(item => 
-          Array.isArray(item) && item[0] === 'consent'
-        );
-      }
-      
-      return false;
-    },
+
     
     getCurrentConsentState: function() {
       const defaultState = {
@@ -113,55 +147,74 @@ if (window.ConsentInspector) {
     },
     
     getTagInfo: function() {
-      
       const tags = [];
       const consentState = this.getCurrentConsentState();
       
-      // Comprehensive tag detection
-      const detectors = [
+      // Simple tag detection - check for common tracking scripts
+      const tagDetectors = [
         {
           name: 'Google Analytics 4',
           type: 'analytics',
           consentType: 'analytics_storage',
-          check: () => window.gtag || document.querySelector('script[src*="gtag/js"]') || document.querySelector('script[src*="googletagmanager.com"]')
+          check: () => {
+            return window.gtag || 
+                   document.querySelector('script[src*="gtag/js"]') ||
+                   document.querySelector('script[src*="googletagmanager.com"]');
+          }
         },
         {
           name: 'Universal Analytics',
-          type: 'analytics',
+          type: 'analytics', 
           consentType: 'analytics_storage',
-          check: () => window.ga || document.querySelector('script[src*="google-analytics.com"]')
+          check: () => {
+            return window.ga || 
+                   document.querySelector('script[src*="google-analytics.com"]');
+          }
         },
         {
           name: 'Facebook Pixel',
           type: 'advertising',
-          consentType: 'ad_storage',
-          check: () => window.fbq || document.querySelector('script[src*="connect.facebook.net"]')
+          consentType: 'ad_storage', 
+          check: () => {
+            return window.fbq || 
+                   document.querySelector('script[src*="connect.facebook.net"]');
+          }
         },
         {
           name: 'Google Ads',
           type: 'advertising',
           consentType: 'ad_storage',
-          check: () => document.querySelector('script[src*="googleadservices.com"]') || document.querySelector('script[src*="googlesyndication.com"]')
+          check: () => {
+            return document.querySelector('script[src*="googleadservices.com"]') ||
+                   document.querySelector('script[src*="googlesyndication.com"]');
+          }
         },
         {
           name: 'Hotjar',
           type: 'analytics',
           consentType: 'analytics_storage',
-          check: () => window.hj || document.querySelector('script[src*="hotjar.com"]')
+          check: () => {
+            return window.hj || 
+                   document.querySelector('script[src*="hotjar.com"]');
+          }
         }
       ];
       
-      detectors.forEach(detector => {
-        if (detector.check()) {
-          const allowed = consentState[detector.consentType] === 'granted';
-          tags.push({
-            name: detector.name,
-            type: detector.type,
-            consentType: detector.consentType,
-            allowed: allowed,
-            reason: `${detector.consentType}: ${consentState[detector.consentType]}`
-          });
-          
+      // Check each detector
+      tagDetectors.forEach(detector => {
+        try {
+          if (detector.check()) {
+            const allowed = consentState[detector.consentType] === 'granted';
+            tags.push({
+              name: detector.name,
+              type: detector.type,
+              consentType: detector.consentType,
+              allowed: allowed,
+              reason: `${detector.consentType}: ${consentState[detector.consentType]}`
+            });
+          }
+        } catch (error) {
+          console.log('Error checking detector:', detector.name, error);
         }
       });
       
@@ -188,7 +241,26 @@ if (window.ConsentInspector) {
     },
     
     getEvents: function() {
-      return [];
+      // Simple event logging - capture recent dataLayer events
+      const events = [];
+      
+      if (window.dataLayer && Array.isArray(window.dataLayer)) {
+        // Get last 20 events from dataLayer
+        const recentEvents = window.dataLayer.slice(-20);
+        
+        recentEvents.forEach((event, index) => {
+          if (event && typeof event === 'object') {
+            events.push({
+              timestamp: Date.now() - (recentEvents.length - index) * 100, // Approximate timing
+              event: event,
+              type: Array.isArray(event) ? event[0] : 'object',
+              source: 'dataLayer'
+            });
+          }
+        });
+      }
+      
+      return events;
     }
   };
   
