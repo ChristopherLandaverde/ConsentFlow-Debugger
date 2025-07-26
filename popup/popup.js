@@ -397,6 +397,15 @@ async function refreshEvents() {
     console.log('🔄 Fetching events...');
     const events = await ContentScriptInterface.sendMessage('getEventLog');
     console.log('📊 Events received:', events);
+    console.log('📊 Events type:', typeof events, 'Is array:', Array.isArray(events));
+    
+    // Handle case where we get an error object instead of events
+    if (events && typeof events === 'object' && events.error) {
+      console.error('❌ Received error object:', events.error);
+      eventLog.innerHTML = `<div class="event-item empty-state">Error: ${escapeHtml(events.error)}</div>`;
+      return;
+    }
+    
     updateEventDisplay(events || []);
   } catch (error) {
     console.error('❌ Error loading events:', error);
@@ -408,6 +417,24 @@ function updateEventDisplay(events) {
   const eventLog = document.getElementById('eventLog');
   
   console.log('📋 Updating event display with:', events);
+  console.log('📋 Events type:', typeof events, 'Is array:', Array.isArray(events));
+  
+  // Ensure events is an array
+  if (!Array.isArray(events)) {
+    console.warn('⚠️ Events is not an array, converting or showing error');
+    if (events && typeof events === 'object') {
+      // If it's an object with an error, show the error
+      if (events.error) {
+        eventLog.innerHTML = `<div class="event-item empty-state">Error: ${escapeHtml(events.error)}</div>`;
+        return;
+      }
+      // If it's some other object, try to convert it
+      events = [events];
+    } else {
+      eventLog.innerHTML = '<div class="event-item empty-state">No events data received</div>';
+      return;
+    }
+  }
   
   if (!events || events.length === 0) {
     eventLog.innerHTML = '<div class="event-item empty-state">No events recorded yet. Try triggering some events on the page.</div>';
