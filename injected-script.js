@@ -18,6 +18,7 @@ if (window.ConsentInspector) {
         hasConsentMode: false,
         consentState: {},
         detectionMethods: {},
+        cmpInfo: {},
         timestamp: Date.now()
       };
     
@@ -76,6 +77,7 @@ if (window.ConsentInspector) {
       
       if (result.hasConsentMode) {
         result.consentState = this.getCurrentConsentState();
+        result.cmpInfo = this.detectCMP();
       } else {
         // No consent mode - all storage granted by default
         result.consentState = {
@@ -114,12 +116,88 @@ if (window.ConsentInspector) {
         }
       }
       
-      // Method 3: Check for CMP implementations
+      // Method 3: Enhanced CMP detection
       if (window.__tcfapi || window.OneTrust || window.Cookiebot) {
         return true;
       }
       
+      // Method 4: Check for Cookiebot script tag
+      const cookiebotScript = document.querySelector('script[id="Cookiebot"], script[src*="cookiebot.com"]');
+      if (cookiebotScript) {
+        return true;
+      }
+      
       return false;
+    },
+    
+    detectCMP: function() {
+      const cmpInfo = {
+        type: 'none',
+        name: 'None',
+        version: null,
+        details: {}
+      };
+      
+      // Check for Cookiebot
+      if (window.Cookiebot) {
+        cmpInfo.type = 'cookiebot';
+        cmpInfo.name = 'Cookiebot';
+        cmpInfo.version = window.Cookiebot.version || 'unknown';
+        cmpInfo.details = {
+          consent: window.Cookiebot.consent ? 'available' : 'not_available',
+          banner: window.Cookiebot.show ? 'available' : 'not_available',
+          domain: window.Cookiebot.domain || 'unknown'
+        };
+        return cmpInfo;
+      }
+      
+      // Check for OneTrust
+      if (window.OneTrust) {
+        cmpInfo.type = 'onetrust';
+        cmpInfo.name = 'OneTrust';
+        cmpInfo.version = window.OneTrust.version || 'unknown';
+        cmpInfo.details = {
+          domainData: window.OneTrust.GetDomainData ? 'available' : 'not_available',
+          groups: window.OneTrust.GetDomainData ? 'available' : 'not_available'
+        };
+        return cmpInfo;
+      }
+      
+      // Check for IAB TCF
+      if (window.__tcfapi) {
+        cmpInfo.type = 'iab_tcf';
+        cmpInfo.name = 'IAB TCF';
+        cmpInfo.version = '2.0';
+        cmpInfo.details = {
+          api: 'available',
+          gdpr: window.__tcfapi ? 'available' : 'not_available'
+        };
+        return cmpInfo;
+      }
+      
+      // Check for script tags
+      const cookiebotScript = document.querySelector('script[id="Cookiebot"], script[src*="cookiebot.com"]');
+      if (cookiebotScript) {
+        cmpInfo.type = 'cookiebot_script';
+        cmpInfo.name = 'Cookiebot (Script Tag)';
+        cmpInfo.details = {
+          scriptSrc: cookiebotScript.src || 'inline',
+          scriptId: cookiebotScript.id || 'none'
+        };
+        return cmpInfo;
+      }
+      
+      const oneTrustScript = document.querySelector('script[src*="onetrust.com"], script[src*="cdn.cookielaw.org"]');
+      if (oneTrustScript) {
+        cmpInfo.type = 'onetrust_script';
+        cmpInfo.name = 'OneTrust (Script Tag)';
+        cmpInfo.details = {
+          scriptSrc: oneTrustScript.src || 'inline'
+        };
+        return cmpInfo;
+      }
+      
+      return cmpInfo;
     },
     
 
@@ -133,6 +211,7 @@ if (window.ConsentInspector) {
         security_storage: 'granted'
       };
       
+      // Method 1: Check Google Consent Mode in dataLayer
       if (window.dataLayer && Array.isArray(window.dataLayer)) {
         for (let i = window.dataLayer.length - 1; i >= 0; i--) {
           const item = window.dataLayer[i];
@@ -140,6 +219,39 @@ if (window.ConsentInspector) {
               (item[1] === 'default' || item[1] === 'update') && item[2]) {
             return { ...defaultState, ...item[2] };
           }
+        }
+      }
+      
+      // Method 2: Check Cookiebot consent state
+      if (window.Cookiebot && window.Cookiebot.consent) {
+        const cookiebotConsent = window.Cookiebot.consent;
+        return {
+          analytics_storage: cookiebotConsent.analytics ? 'granted' : 'denied',
+          ad_storage: cookiebotConsent.advertising ? 'granted' : 'denied',
+          functionality_storage: cookiebotConsent.functionality ? 'granted' : 'denied',
+          personalization_storage: cookiebotConsent.personalization ? 'granted' : 'denied',
+          security_storage: cookiebotConsent.necessary ? 'granted' : 'denied',
+          _cookiebot: true
+        };
+      }
+      
+      // Method 3: Check OneTrust consent state
+      if (window.OneTrust && window.OneTrust.GetDomainData) {
+        try {
+          const oneTrustData = window.OneTrust.GetDomainData();
+          if (oneTrustData && oneTrustData.Groups) {
+            const groups = oneTrustData.Groups;
+            return {
+              analytics_storage: groups.find(g => g.CustomGroupId === 'analytics')?.Status === 'true' ? 'granted' : 'denied',
+              ad_storage: groups.find(g => g.CustomGroupId === 'advertising')?.Status === 'true' ? 'granted' : 'denied',
+              functionality_storage: groups.find(g => g.CustomGroupId === 'functionality')?.Status === 'true' ? 'granted' : 'denied',
+              personalization_storage: groups.find(g => g.CustomGroupId === 'personalization')?.Status === 'true' ? 'granted' : 'denied',
+              security_storage: 'granted', // Necessary cookies are always granted
+              _oneTrust: true
+            };
+          }
+        } catch (error) {
+          console.log('OneTrust consent check failed:', error);
         }
       }
       

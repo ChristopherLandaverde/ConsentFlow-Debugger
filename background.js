@@ -114,5 +114,45 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     
     return true;
   }
+  
+  // Handle Cookiebot consent change notifications
+  if (request.action === 'cookiebotConsentChange') {
+    console.log('🍪 Cookiebot consent change received in background:', request.data);
+    
+    // Store the consent change data
+    chrome.storage.local.set({
+      lastCookiebotConsentChange: {
+        ...request.data,
+        timestamp: Date.now()
+      }
+    });
+    
+    // Show notification to user
+    showCookiebotNotification(request.data);
+    
+    sendResponse({ success: true });
+    return true;
+  }
+  
+  // Handle popup opening request
+  if (request.action === 'openPopup') {
+    // This will be handled by the popup when it opens
+    sendResponse({ success: true });
+    return true;
+  }
 });
+
+// Show notification for Cookiebot consent changes
+function showCookiebotNotification(consentData) {
+  const actionText = consentData.action === 'accept' ? 'accepted' : 'rejected';
+  const icon = consentData.action === 'accept' ? '✅' : '❌';
+  
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: 'icon48.png', // You'll need to add this icon
+    title: 'GTM Consent Inspector',
+    message: `${consentData.website}: Cookies ${actionText} ${icon}`,
+    priority: 1
+  });
+}
 

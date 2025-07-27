@@ -219,11 +219,18 @@ function updateStatusDisplay(result) {
     gtmStatus.textContent = `✅ GTM Found: ${result.gtmId}`;
     gtmStatus.className = 'status found';
     
-    // FIXED: Better consent mode handling
+    // Enhanced consent mode handling with CMP info
     if (result.hasConsentMode) {
       const analytics = result.consentState?.analytics_storage || 'unknown';
       const ads = result.consentState?.ad_storage || 'unknown';
-      consentModeStatus.textContent = `✅ Consent Mode: Analytics=${analytics}, Ads=${ads}`;
+      
+      // Add CMP information if available
+      let cmpInfo = '';
+      if (result.cmpInfo && result.cmpInfo.type !== 'none') {
+        cmpInfo = ` (${result.cmpInfo.name})`;
+      }
+      
+      consentModeStatus.textContent = `✅ Consent Mode${cmpInfo}: Analytics=${analytics}, Ads=${ads}`;
       consentModeStatus.className = 'status found';
       
       // Enable consent simulator
@@ -250,9 +257,13 @@ function updateStatusDisplay(result) {
 function updateOverviewTab(result) {
   document.getElementById('gtmContainerValue').textContent = result?.gtmId || 'Not detected';
   
-  // Better consent mode display
+  // Enhanced consent mode display with CMP info
   if (result?.hasConsentMode) {
-    document.getElementById('overviewConsentValue').textContent = 'Active';
+    let consentText = 'Active';
+    if (result.cmpInfo && result.cmpInfo.type !== 'none') {
+      consentText = `Active (${result.cmpInfo.name})`;
+    }
+    document.getElementById('overviewConsentValue').textContent = consentText;
     document.getElementById('overviewConsentValue').className = 'value detected';
   } else if (result?.hasGTM) {
     document.getElementById('overviewConsentValue').textContent = 'Not Implemented';
