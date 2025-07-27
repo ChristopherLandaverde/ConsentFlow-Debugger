@@ -94,12 +94,18 @@ if (window.ConsentInspector) {
     },
     
     detectConsentMode: function() {
+      console.log('🔍 detectConsentMode called');
+      console.log('🔍 dataLayer available:', !!window.dataLayer);
+      console.log('🔍 dataLayer length:', window.dataLayer ? window.dataLayer.length : 0);
+      console.log('🔍 dataLayer contents:', window.dataLayer ? JSON.stringify(window.dataLayer, null, 2) : 'null');
+      
       // Method 1: Check for actual consent events in dataLayer
       if (window.dataLayer && Array.isArray(window.dataLayer)) {
         const hasConsentEvents = window.dataLayer.some(item => 
           Array.isArray(item) && item[0] === 'consent' && 
           (item[1] === 'default' || item[1] === 'update')
         );
+        console.log('🔍 Method 1 - hasConsentEvents:', hasConsentEvents);
         if (hasConsentEvents) {
           return true;
         }
@@ -107,26 +113,35 @@ if (window.ConsentInspector) {
       
       // Method 2: Check if gtag with consent is used
       if (window.gtag && typeof window.gtag === 'function') {
+        console.log('🔍 Method 2 - gtag function available');
         // Look for gtag consent calls in dataLayer
         if (window.dataLayer) {
           const hasGtagConsent = window.dataLayer.some(item =>
             Array.isArray(item) && item[0] === 'consent'
           );
+          console.log('🔍 Method 2 - hasGtagConsent:', hasGtagConsent);
           return hasGtagConsent;
         }
       }
       
       // Method 3: Enhanced CMP detection
+      console.log('🔍 Method 3 - CMP detection');
+      console.log('🔍 __tcfapi available:', !!window.__tcfapi);
+      console.log('🔍 OneTrust available:', !!window.OneTrust);
+      console.log('🔍 Cookiebot available:', !!window.Cookiebot);
       if (window.__tcfapi || window.OneTrust || window.Cookiebot) {
+        console.log('🔍 Method 3 - CMP detected, returning true');
         return true;
       }
       
       // Method 4: Check for Cookiebot script tag
       const cookiebotScript = document.querySelector('script[id="Cookiebot"], script[src*="cookiebot.com"]');
+      console.log('🔍 Method 4 - Cookiebot script found:', !!cookiebotScript);
       if (cookiebotScript) {
         return true;
       }
       
+      console.log('🔍 No consent mode detected');
       return false;
     },
     
