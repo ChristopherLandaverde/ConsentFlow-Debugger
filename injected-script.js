@@ -101,10 +101,16 @@ if (window.ConsentInspector) {
       
       // Method 1: Check for actual consent events in dataLayer
       if (window.dataLayer && Array.isArray(window.dataLayer)) {
-        const hasConsentEvents = window.dataLayer.some(item => 
-          Array.isArray(item) && item[0] === 'consent' && 
-          (item[1] === 'default' || item[1] === 'update')
-        );
+        const hasConsentEvents = window.dataLayer.some(item => {
+          // Handle both array and object formats
+          if (Array.isArray(item)) {
+            return item[0] === 'consent' && (item[1] === 'default' || item[1] === 'update');
+          } else if (item && typeof item === 'object') {
+            // Handle object format with numeric keys
+            return item['0'] === 'consent' && (item['1'] === 'default' || item['1'] === 'update');
+          }
+          return false;
+        });
         console.log('🔍 Method 1 - hasConsentEvents:', hasConsentEvents);
         if (hasConsentEvents) {
           return true;
@@ -116,9 +122,15 @@ if (window.ConsentInspector) {
         console.log('🔍 Method 2 - gtag function available');
         // Look for gtag consent calls in dataLayer
         if (window.dataLayer) {
-          const hasGtagConsent = window.dataLayer.some(item =>
-            Array.isArray(item) && item[0] === 'consent'
-          );
+          const hasGtagConsent = window.dataLayer.some(item => {
+            // Handle both array and object formats
+            if (Array.isArray(item)) {
+              return item[0] === 'consent';
+            } else if (item && typeof item === 'object') {
+              return item['0'] === 'consent';
+            }
+            return false;
+          });
           console.log('🔍 Method 2 - hasGtagConsent:', hasGtagConsent);
           return hasGtagConsent;
         }
@@ -230,9 +242,13 @@ if (window.ConsentInspector) {
       if (window.dataLayer && Array.isArray(window.dataLayer)) {
         for (let i = window.dataLayer.length - 1; i >= 0; i--) {
           const item = window.dataLayer[i];
+          // Handle both array and object formats
           if (Array.isArray(item) && item[0] === 'consent' && 
               (item[1] === 'default' || item[1] === 'update') && item[2]) {
             return { ...defaultState, ...item[2] };
+          } else if (item && typeof item === 'object' && item['0'] === 'consent' && 
+                     (item['1'] === 'default' || item['1'] === 'update') && item['2']) {
+            return { ...defaultState, ...item['2'] };
           }
         }
       }
