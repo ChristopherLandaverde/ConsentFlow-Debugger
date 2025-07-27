@@ -230,8 +230,20 @@ function updateStatusDisplay(result) {
         cmpInfo = ` (${result.cmpInfo.name})`;
       }
       
-      consentModeStatus.textContent = `✅ Consent Mode${cmpInfo}: Analytics=${analytics}, Ads=${ads}`;
-      consentModeStatus.className = 'status found';
+      // Determine status based on consent state
+      const hasRestrictedConsent = analytics === 'denied' || ads === 'denied';
+      const hasFullConsent = analytics === 'granted' && ads === 'granted';
+      
+      if (hasRestrictedConsent) {
+        consentModeStatus.textContent = `⚠️ Consent Mode${cmpInfo}: Analytics=${analytics}, Ads=${ads}`;
+        consentModeStatus.className = 'status restricted';
+      } else if (hasFullConsent) {
+        consentModeStatus.textContent = `✅ Consent Mode${cmpInfo}: Analytics=${analytics}, Ads=${ads}`;
+        consentModeStatus.className = 'status found';
+      } else {
+        consentModeStatus.textContent = `ℹ️ Consent Mode${cmpInfo}: Analytics=${analytics}, Ads=${ads}`;
+        consentModeStatus.className = 'status found';
+      }
       
       // Enable consent simulator
       enableConsentSimulator(true);

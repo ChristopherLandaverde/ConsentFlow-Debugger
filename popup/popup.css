@@ -231,6 +231,17 @@ header h1 {
   background: var(--color-success);
 }
 
+.status.restricted {
+  background: linear-gradient(135deg, #fef3c7 0%, #fffbeb 100%);
+  border-color: #f59e0b;
+  color: #d97706;
+}
+
+.status.restricted::before {
+  background: #f59e0b;
+  content: "⚠️";
+}
+
 .status.not-found {
   background: linear-gradient(135deg, var(--color-error-light) 0%, #fef2f2 100%);
   border-color: var(--color-error-border);
