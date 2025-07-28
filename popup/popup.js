@@ -255,16 +255,29 @@ let simulationManager;
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
-  // Initialize simulation manager first
-  simulationManager = new SimulationManager();
-  
-  // Then initialize other components
-  initializeTabs();
-  initializeButtons();
-  
-  // Load initial data
-  checkGTMStatus();
-  refreshEvents();
+  try {
+    // Initialize simulation manager first
+    simulationManager = new SimulationManager();
+    
+    // Then initialize other components
+    initializeTabs();
+    initializeButtons();
+    
+    // Load initial data
+    checkGTMStatus();
+    refreshEvents();
+  } catch (error) {
+    console.error('Error during popup initialization:', error);
+    // Show a user-friendly error message
+    const statusContainer = document.querySelector('.status-container');
+    if (statusContainer) {
+      statusContainer.innerHTML = `
+        <div class="status error">
+          ❌ Error: Failed to initialize extension. Please refresh the popup.
+        </div>
+      `;
+    }
+  }
 });
 
 function initializeTabs() {
@@ -552,10 +565,17 @@ function enableConsentSimulator(enabled) {
   const consentSelects = document.querySelectorAll('.consent-select');
   const presetButtons = document.querySelectorAll('.dropdown-item[data-preset]');
   
+  if (!consentTab) {
+    console.warn('Consent tab not found, cannot enable/disable simulator');
+    return;
+  }
+  
   if (enabled) {
     // Remove disabled overlay if it exists
     const overlay = consentTab.querySelector('.disabled-overlay');
-    if (overlay) overlay.remove();
+    if (overlay && overlay.parentNode) {
+      overlay.remove();
+    }
     
     // Enable controls
     if (applyButton) {
@@ -564,13 +584,17 @@ function enableConsentSimulator(enabled) {
     }
     
     consentSelects.forEach(select => {
-      select.disabled = false;
-      select.style.opacity = '1';
+      if (select) {
+        select.disabled = false;
+        select.style.opacity = '1';
+      }
     });
     
     presetButtons.forEach(button => {
-      button.disabled = false;
-      button.style.opacity = '1';
+      if (button) {
+        button.disabled = false;
+        button.style.opacity = '1';
+      }
     });
     
   } else {
@@ -581,13 +605,17 @@ function enableConsentSimulator(enabled) {
     }
     
     consentSelects.forEach(select => {
-      select.disabled = true;
-      select.style.opacity = '0.5';
+      if (select) {
+        select.disabled = true;
+        select.style.opacity = '0.5';
+      }
     });
     
     presetButtons.forEach(button => {
-      button.disabled = true;
-      button.style.opacity = '0.5';
+      if (button) {
+        button.disabled = true;
+        button.style.opacity = '0.5';
+      }
     });
   }
 }
@@ -636,18 +664,30 @@ function showConsentModeUnavailable() {
 
 async function refreshTags() {
   const tagList = document.getElementById('tagList');
+  if (!tagList) {
+    console.warn('Tag list element not found, cannot refresh tags');
+    return;
+  }
+  
   tagList.innerHTML = '<div class="loading-spinner"><div class="spinner"></div></div>';
   
   try {
     const result = await ContentScriptInterface.sendMessage('getTagStatus');
     updateTagDisplay(result || []);
   } catch (error) {
-    tagList.innerHTML = '<div class="tag-item empty-state">Error loading tags</div>';
+    if (tagList) {
+      tagList.innerHTML = '<div class="tag-item empty-state">Error loading tags</div>';
+    }
   }
 }
 
 function updateTagDisplay(tags) {
   const tagList = document.getElementById('tagList');
+  
+  if (!tagList) {
+    console.warn('Tag list element not found, cannot update tag display');
+    return;
+  }
   
   if (!tags || tags.length === 0) {
     tagList.innerHTML = '<div class="tag-item empty-state">No tags detected</div>';
@@ -1002,6 +1042,13 @@ async function runDiagnostics() {
 function displayDiagnosticResults(diagnostics) {
   // Create diagnostic results display
   const overviewTab = document.getElementById('overview-tab');
+  
+  // Check if overview tab exists
+  if (!overviewTab) {
+    console.warn('Overview tab not found, cannot display diagnostic results');
+    showNotification('Cannot display diagnostic results - overview tab not found', 'error');
+    return;
+  }
   
   // Remove existing diagnostic results if any
   const existingResults = overviewTab.querySelector('.diagnostic-results');

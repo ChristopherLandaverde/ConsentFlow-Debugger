@@ -17,13 +17,20 @@
     }
     
     try {
+      // Check if document is ready
+      if (!document.head && !document.documentElement) {
+        console.warn('Document not ready for script injection');
+        return false;
+      }
       
       const script = document.createElement('script');
       script.src = chrome.runtime.getURL('injected-script.js');
       
       return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
-          script.remove();
+          if (script.parentNode) {
+            script.parentNode.removeChild(script);
+          }
           reject(new Error('Script injection timeout'));
         }, 10000);
         
@@ -43,14 +50,23 @@
         
         script.onerror = (error) => {
           clearTimeout(timeout);
-          script.remove();
+          if (script.parentNode) {
+            script.parentNode.removeChild(script);
+          }
           reject(new Error('Script loading failed'));
         };
         
-        (document.head || document.documentElement).appendChild(script);
+        // Find the best insertion point
+        const insertionPoint = document.head || document.documentElement;
+        if (insertionPoint) {
+          insertionPoint.appendChild(script);
+        } else {
+          reject(new Error('No valid insertion point found'));
+        }
       });
       
     } catch (error) {
+      console.error('Script injection error:', error);
       return false;
     }
   }
