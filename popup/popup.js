@@ -271,6 +271,11 @@ function initializeTabs() {
   const tabButtons = document.querySelectorAll('.tab-button');
   const tabContents = document.querySelectorAll('.tab-content');
   
+  if (tabButtons.length === 0 || tabContents.length === 0) {
+    console.warn('Tab elements not found, skipping tab initialization');
+    return;
+  }
+  
   tabButtons.forEach(button => {
     button.addEventListener('click', function() {
       const tabName = this.getAttribute('data-tab');
@@ -293,11 +298,27 @@ function initializeTabs() {
 
 function initializeButtons() {
   // Overview tab buttons
-  document.getElementById('refreshOverview').addEventListener('click', checkGTMStatus);
-  document.getElementById('diagnoseTab').addEventListener('click', runDiagnostics);
+  const refreshOverviewBtn = document.getElementById('refreshOverview');
+  const diagnoseTabBtn = document.getElementById('diagnoseTab');
+  const refreshTagsBtn = document.getElementById('refreshTags');
+  const clearLogBtn = document.getElementById('clearLog');
+  const exportLogBtn = document.getElementById('exportLog');
   
-  // Tags tab buttons  
-  document.getElementById('refreshTags').addEventListener('click', refreshTags);
+  if (refreshOverviewBtn) {
+    refreshOverviewBtn.addEventListener('click', checkGTMStatus);
+  }
+  if (diagnoseTabBtn) {
+    diagnoseTabBtn.addEventListener('click', runDiagnostics);
+  }
+  if (refreshTagsBtn) {
+    refreshTagsBtn.addEventListener('click', refreshTags);
+  }
+  if (clearLogBtn) {
+    clearLogBtn.addEventListener('click', clearEventLog);
+  }
+  if (exportLogBtn) {
+    exportLogBtn.addEventListener('click', exportEventLog);
+  }
   
   // Filter buttons
   initializeTagFilters();
@@ -305,10 +326,6 @@ function initializeButtons() {
   
   // Consent tab buttons
   initializeConsentSimulator();
-  
-  // Event tab buttons
-  document.getElementById('clearLog').addEventListener('click', clearEventLog);
-  document.getElementById('exportLog').addEventListener('click', exportEventLog);
 }
 
 function initializeTagFilters() {
@@ -347,43 +364,47 @@ function initializeEventFilters() {
 
 function initializeConsentSimulator() {
   // Apply button
-  document.getElementById('applyConsent').addEventListener('click', async function() {
-    this.disabled = true;
-    this.textContent = '⚡ Applying...';
-    
-    try {
-      const settings = getConsentSettings();
-      const result = await ContentScriptInterface.sendMessage('applyConsent', settings);
+  const applyConsentBtn = document.getElementById('applyConsent');
+  if (applyConsentBtn) {
+    applyConsentBtn.addEventListener('click', async function() {
+      this.disabled = true;
+      this.textContent = '⚡ Applying...';
       
-      if (result && result.success) {
-        // Show detailed success message with methods used
-        let successMessage = '✅ Consent applied!';
-        if (result.methods && result.methods.length > 0) {
-          const methods = result.methods.map(m => m.method).join(', ');
-          successMessage = `✅ Consent applied via: ${methods}`;
+      try {
+        const settings = getConsentSettings();
+        const result = await ContentScriptInterface.sendMessage('applyConsent', settings);
+        
+        if (result && result.success) {
+          // Show detailed success message with methods used
+          let successMessage = '✅ Consent applied!';
+          if (result.methods && result.methods.length > 0) {
+            const methods = result.methods.map(m => m.method).join(', ');
+            successMessage = `✅ Consent applied via: ${methods}`;
+          }
+          
+          showNotification(successMessage, 'success');
+          
+          // Refresh data after a short delay
+          setTimeout(() => {
+            checkGTMStatus();
+            refreshTags();
+          }, 1000);
+        } else {
+          const errorMsg = result?.error || 'Unknown error';
+          showNotification(`❌ Failed to apply consent: ${errorMsg}`, 'error');
         }
-        
-        showNotification(successMessage, 'success');
-        
-        // Refresh data after a short delay
-        setTimeout(() => {
-          checkGTMStatus();
-          refreshTags();
-        }, 1000);
-      } else {
-        const errorMsg = result?.error || 'Unknown error';
-        showNotification(`❌ Failed to apply consent: ${errorMsg}`, 'error');
+      } catch (error) {
+        showNotification('❌ Error applying consent: ' + error.message, 'error');
+      } finally {
+        this.disabled = false;
+        this.textContent = '⚡ Apply Settings';
       }
-    } catch (error) {
-      showNotification('❌ Error applying consent: ' + error.message, 'error');
-    } finally {
-      this.disabled = false;
-      this.textContent = '⚡ Apply Settings';
-    }
-  });
+    });
+  }
   
   // Preset buttons
-  document.querySelectorAll('.dropdown-item[data-preset]').forEach(item => {
+  const presetItems = document.querySelectorAll('.dropdown-item[data-preset]');
+  presetItems.forEach(item => {
     item.addEventListener('click', function() {
       const preset = this.getAttribute('data-preset');
       applyConsentPreset(preset);
@@ -593,7 +614,14 @@ function showConsentModeUnavailable() {
       The consent simulator is disabled because it won't affect tag behavior.
     `;
     
-    consentTab.insertBefore(warningMsg, consentTab.querySelector('.consent-categories'));
+    // Fix: Check if the target element exists before using insertBefore
+    const targetElement = consentTab.querySelector('.consent-categories');
+    if (targetElement) {
+      consentTab.insertBefore(warningMsg, targetElement);
+    } else {
+      // Fallback: append to the end of the consent tab
+      consentTab.appendChild(warningMsg);
+    }
   }
   
   // Set all selects to "granted" since that's the reality
