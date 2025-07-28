@@ -263,8 +263,7 @@ document.addEventListener('DOMContentLoaded', function() {
   initializeButtons();
   
   // Load initial data
-  loadGTMData();
-  loadConsentData();
+  checkGTMStatus();
   refreshEvents();
 });
 
@@ -670,8 +669,9 @@ function refreshEvents() {
           return;
         }
         
-        if (response && response.success) {
-          const events = response.events || [];
+        if (response && response.success !== false) {
+          // Handle both array format and object format
+          const events = Array.isArray(response) ? response : (response.events || []);
           console.log('📋 Processing events:', events);
           updateEventDisplay(events);
         } else {
@@ -688,7 +688,7 @@ function refreshEvents() {
 
 // Enhanced event logging with simulation support
 function updateEventDisplay(events) {
-  const eventList = document.getElementById('eventList');
+  const eventList = document.getElementById('eventLog');
   if (!eventList) return;
   
   eventList.innerHTML = '';
@@ -709,14 +709,17 @@ function createEventElement(event) {
   eventDiv.className = 'event-item';
   
   const timestamp = new Date(event.timestamp).toLocaleTimeString();
-  const eventType = event.type || 'unknown';
-  const eventData = event.data || {};
+  
+  // Handle different event formats
+  let eventType = event.type || event.tagType || 'unknown';
+  let eventName = event.tagName || event.name || 'Event';
+  let eventData = event.data || event;
   
   // Determine if this is a consent or GTM event
   let category = 'other';
-  if (eventType.includes('consent') || eventType.includes('Cookiebot')) {
+  if (eventType.includes('consent') || eventType.includes('Cookiebot') || event.source === 'consent_state') {
     category = 'consent';
-  } else if (eventType.includes('gtag') || eventType.includes('dataLayer') || eventType.includes('tag')) {
+  } else if (eventType.includes('gtag') || eventType.includes('dataLayer') || eventType.includes('tag') || event.source === 'tag_detection') {
     category = 'gtm';
   }
   
@@ -729,11 +732,17 @@ function createEventElement(event) {
   eventDiv.innerHTML = `
     <div class="event-header">
       <span class="event-time">${timestamp}</span>
-      <span class="event-type ${category}">${eventType}</span>
+      <span class="event-type ${category}">${eventName}</span>
       ${simulationAnalysis}
     </div>
     <div class="event-details">
-      <pre>${JSON.stringify(eventData, null, 2)}</pre>
+      <div class="event-info">
+        <strong>Type:</strong> ${eventType}<br>
+        <strong>Status:</strong> ${event.status || 'N/A'}<br>
+        ${event.reason ? `<strong>Reason:</strong> ${event.reason}<br>` : ''}
+        ${event.consentType ? `<strong>Consent Type:</strong> ${event.consentType}<br>` : ''}
+        ${event.allowed !== undefined ? `<strong>Allowed:</strong> ${event.allowed ? 'Yes' : 'No'}<br>` : ''}
+      </div>
     </div>
   `;
   
@@ -744,25 +753,21 @@ function analyzeEventInSimulation(event) {
   const simulatedConsent = simulationManager.getCurrentConsentState();
   if (!simulatedConsent) return '';
   
-  // Analyze GTM events for consent requirements
-  if (event.type === 'gtag_consent_update' || event.type === 'dataLayer_consent') {
-    const consentData = event.data;
-    const wouldFire = checkConsentRequirements(consentData, simulatedConsent);
-    
+  // Analyze consent events
+  if (event.tagType === 'consent_change' || event.tagType === 'consent_status' || event.source === 'consent_state') {
     return `
       <div class="simulation-analysis">
         <span class="simulation-label">🧪 Simulation:</span>
-        <span class="simulation-result ${wouldFire ? 'would-fire' : 'would-block'}">
-          ${wouldFire ? '🟢 Would Fire' : '🔴 Would Be Blocked'}
+        <span class="simulation-result would-fire">
+          🟢 Consent Event
         </span>
       </div>
     `;
   }
   
-  // Analyze tag firing events
-  if (event.type === 'tag_fired' || event.type === 'gtag_event') {
-    const tagData = event.data;
-    const consentRequired = getTagConsentRequirements(tagData);
+  // Analyze tag detection events
+  if (event.source === 'tag_detection' || event.tagType === 'analytics' || event.tagType === 'advertising') {
+    const consentRequired = getTagConsentRequirements(event);
     const wouldFire = checkConsentRequirements(consentRequired, simulatedConsent);
     
     return `
@@ -793,15 +798,16 @@ function checkConsentRequirements(required, available) {
 
 function getTagConsentRequirements(tagData) {
   // Default consent requirements based on tag type
-  // This is a simplified version - you can enhance this based on your needs
-  const tagType = tagData.event_name || tagData.event || 'unknown';
+  const tagType = tagData.tagType || tagData.type || 'unknown';
   
-  if (tagType.includes('purchase') || tagType.includes('conversion')) {
-    return { analytics_storage: 'granted', ad_storage: 'granted' };
-  } else if (tagType.includes('page_view') || tagType.includes('view')) {
+  if (tagType === 'analytics' || tagType.includes('analytics')) {
     return { analytics_storage: 'granted' };
-  } else if (tagType.includes('click') || tagType.includes('engagement')) {
-    return { analytics_storage: 'granted', ad_storage: 'granted' };
+  } else if (tagType === 'advertising' || tagType.includes('advertising') || tagType.includes('marketing')) {
+    return { ad_storage: 'granted' };
+  } else if (tagType === 'functionality' || tagType.includes('functionality')) {
+    return { functionality_storage: 'granted' };
+  } else if (tagType === 'personalization' || tagType.includes('personalization')) {
+    return { personalization_storage: 'granted' };
   }
   
   // Default to analytics only
