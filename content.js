@@ -110,6 +110,16 @@
             sendResponse(Array.isArray(eventResult) ? eventResult : []);
             break;
             
+          case 'getTagManagerInteractions':
+            // Ensure script is injected first
+            if (!scriptInjected) {
+              await injectScript();
+            }
+            // Use postMessage to communicate with page context
+            const interactionResult = await sendMessageToPage('getTagManagerInteractions');
+            sendResponse(Array.isArray(interactionResult) ? interactionResult : []);
+            break;
+            
           default:
             sendResponse({ error: 'Unknown action: ' + request.action });
         }
@@ -205,12 +215,142 @@
     // Update extension state
     updateExtensionState(consentData);
     
+    // Enhanced monitoring: Track Tag Manager interaction
+    monitorTagManagerInteraction(consentData);
+    
     // Send notification to background script
     chrome.runtime.sendMessage({
       action: 'cookiebotConsentChange',
       data: consentData
     }).catch(error => {
       console.log('Background script not available:', error);
+    });
+  }
+  
+  // Enhanced monitoring of Tag Manager interaction with Cookiebot
+  function monitorTagManagerInteraction(consentData) {
+    console.log('🔍 Monitoring Tag Manager interaction with Cookiebot consent change:', consentData);
+    
+    // Monitor gtag consent calls
+    if (window.gtag && typeof window.gtag === 'function') {
+      const originalGtag = window.gtag;
+      window.gtag = function(...args) {
+        // Check if this is a consent call
+        if (args[0] === 'consent') {
+          console.log('🍪 GTM Consent call detected:', args);
+          logTagManagerInteraction('gtag_consent_call', {
+            method: 'gtag',
+            action: args[1],
+            settings: args[2],
+            cookiebotTrigger: consentData,
+            timestamp: Date.now()
+          });
+        }
+        
+        return originalGtag.apply(this, args);
+      };
+    }
+    
+    // Enhanced dataLayer monitoring for consent events
+    if (window.dataLayer) {
+      const originalPush = window.dataLayer.push;
+      window.dataLayer.push = function(...args) {
+        const result = originalPush.apply(this, args);
+        
+        // Check for consent-related events
+        if (args[0] && typeof args[0] === 'object') {
+          const event = args[0];
+          
+          // Check for consent events
+          if (event.event === 'consent' || 
+              (Array.isArray(args) && args[0] === 'consent')) {
+            console.log('🍪 DataLayer consent event detected:', args);
+            logTagManagerInteraction('datalayer_consent_event', {
+              method: 'dataLayer',
+              event: event,
+              args: args,
+              cookiebotTrigger: consentData,
+              timestamp: Date.now()
+            });
+          }
+          
+          // Check for tag firing events that might be consent-dependent
+          if (event.event && (event.event.includes('gtm.') || event.event.includes('consent'))) {
+            console.log('🍪 Potential consent-dependent tag event:', event);
+            logTagManagerInteraction('potential_consent_tag', {
+              method: 'dataLayer',
+              event: event,
+              cookiebotTrigger: consentData,
+              timestamp: Date.now()
+            });
+          }
+        }
+        
+        return result;
+      };
+    }
+    
+    // Monitor for Google Tag Manager object changes
+    if (window.google_tag_manager) {
+      // Store initial state
+      const initialGTMState = {
+        containers: Object.keys(window.google_tag_manager || {}),
+        timestamp: Date.now()
+      };
+      
+      // Check for changes after a delay
+      setTimeout(() => {
+        const currentGTMState = {
+          containers: Object.keys(window.google_tag_manager || {}),
+          timestamp: Date.now()
+        };
+        
+        if (JSON.stringify(initialGTMState.containers) !== JSON.stringify(currentGTMState.containers)) {
+          console.log('🍪 GTM container state changed after consent:', {
+            before: initialGTMState,
+            after: currentGTMState
+          });
+          logTagManagerInteraction('gtm_container_change', {
+            before: initialGTMState,
+            after: currentGTMState,
+            cookiebotTrigger: consentData,
+            timestamp: Date.now()
+          });
+        }
+      }, 2000);
+    }
+  }
+  
+  // Log Tag Manager interactions for analysis
+  function logTagManagerInteraction(type, data) {
+    // Store interaction data
+    if (!window.gtmInspectorInteractions) {
+      window.gtmInspectorInteractions = [];
+    }
+    
+    const interaction = {
+      id: Date.now() + Math.random(),
+      type: type,
+      data: data,
+      url: window.location.href,
+      timestamp: Date.now()
+    };
+    
+    window.gtmInspectorInteractions.push(interaction);
+    
+    // Keep only last 50 interactions
+    if (window.gtmInspectorInteractions.length > 50) {
+      window.gtmInspectorInteractions = window.gtmInspectorInteractions.slice(-50);
+    }
+    
+    console.log('📊 Tag Manager Interaction Logged:', interaction);
+    
+    // Send to background script for storage
+    chrome.runtime.sendMessage({
+      action: 'logTagManagerInteraction',
+      data: interaction
+    }).catch(error => {
+      console.log('Could not send interaction to background:', error);
     });
   }
   

@@ -140,6 +140,40 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: true });
     return true;
   }
+  
+  // Handle Tag Manager interaction logging
+  if (request.action === 'logTagManagerInteraction') {
+    console.log('📊 Tag Manager interaction logged:', request.data);
+    
+    // Store the interaction data
+    chrome.storage.local.get(['tagManagerInteractions'], (result) => {
+      const interactions = result.tagManagerInteractions || [];
+      interactions.push(request.data);
+      
+      // Keep only last 100 interactions
+      if (interactions.length > 100) {
+        interactions.splice(0, interactions.length - 100);
+      }
+      
+      chrome.storage.local.set({
+        tagManagerInteractions: interactions
+      });
+    });
+    
+    sendResponse({ success: true });
+    return true;
+  }
+  
+  // Handle request for Tag Manager interaction history
+  if (request.action === 'getTagManagerInteractions') {
+    chrome.storage.local.get(['tagManagerInteractions'], (result) => {
+      sendResponse({
+        success: true,
+        interactions: result.tagManagerInteractions || []
+      });
+    });
+    return true;
+  }
 });
 
 // Show notification for Cookiebot consent changes

@@ -384,33 +384,82 @@ if (window.ConsentInspector) {
     },
     
     getEvents: function() {
-      // Simple event logging - avoid complex function calls that might timeout
+      // Enhanced event logging with Tag Manager interactions
       const events = [];
       
       try {
-        console.log('📊 Getting simple events...');
+        console.log('📊 Getting enhanced events with Tag Manager interactions...');
         
-        // Just return a simple status event to test communication
-        const statusEvent = {
-          timestamp: Date.now(),
-          tagName: 'Event Log Test',
-          tagType: 'test',
-          consentType: 'none',
-          allowed: true,
-          reason: 'Testing event log communication',
-          status: 'WORKING ✅',
-          source: 'test'
-        };
+        // Get Tag Manager interactions from page context
+        const interactions = window.gtmInspectorInteractions || [];
         
-        events.push(statusEvent);
+        // Convert interactions to event format
+        interactions.forEach(interaction => {
+          const event = {
+            timestamp: interaction.timestamp,
+            tagName: `Tag Manager Interaction: ${interaction.type}`,
+            tagType: 'interaction',
+            consentType: 'monitoring',
+            allowed: true,
+            reason: `Monitored interaction between Cookiebot and Tag Manager`,
+            status: 'MONITORED ✅',
+            source: 'tag_manager_interaction',
+            details: {
+              type: interaction.type,
+              data: interaction.data,
+              url: interaction.url
+            }
+          };
+          events.push(event);
+        });
         
-        console.log('📊 Returning', events.length, 'test events');
+        // Add a summary event
+        if (interactions.length > 0) {
+          const summaryEvent = {
+            timestamp: Date.now(),
+            tagName: 'Tag Manager Interaction Summary',
+            tagType: 'summary',
+            consentType: 'monitoring',
+            allowed: true,
+            reason: `Found ${interactions.length} Tag Manager interactions`,
+            status: 'SUMMARY 📊',
+            source: 'interaction_summary',
+            details: {
+              totalInteractions: interactions.length,
+              interactionTypes: [...new Set(interactions.map(i => i.type))],
+              lastInteraction: interactions[interactions.length - 1]?.timestamp
+            }
+          };
+          events.push(summaryEvent);
+        }
+        
+        // Add test event if no interactions found
+        if (events.length === 0) {
+          const statusEvent = {
+            timestamp: Date.now(),
+            tagName: 'Event Log Test',
+            tagType: 'test',
+            consentType: 'none',
+            allowed: true,
+            reason: 'Testing event log communication - no Tag Manager interactions detected yet',
+            status: 'WORKING ✅',
+            source: 'test'
+          };
+          events.push(statusEvent);
+        }
+        
+        console.log('📊 Returning', events.length, 'enhanced events');
         return events;
         
       } catch (error) {
         console.error('❌ Error in getEvents:', error);
         return [];
       }
+    },
+    
+    getTagManagerInteractions: function() {
+      // Return raw interaction data for detailed analysis
+      return window.gtmInspectorInteractions || [];
     }
   };
   
@@ -461,6 +510,11 @@ window.addEventListener('message', function(event) {
         case 'getEvents':
           console.log('📊 Calling getEvents...');
           result = window.ConsentInspector.getEvents();
+          break;
+          
+        case 'getTagManagerInteractions':
+          console.log('📊 Calling getTagManagerInteractions...');
+          result = window.ConsentInspector.getTagManagerInteractions();
           break;
           
         default:
