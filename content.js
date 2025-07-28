@@ -190,6 +190,46 @@
       handleCookiebotConsentChange(event.detail);
     });
     
+    // Listen for actual Cookiebot events
+    window.addEventListener('CookiebotOnAccept', (event) => {
+      console.log('🍪 Cookiebot accept event fired:', event);
+      const consentData = {
+        action: 'accept',
+        website: document.title || window.location.hostname,
+        url: window.location.href,
+        consent: window.Cookiebot?.consent || {},
+        timestamp: Date.now()
+      };
+      handleCookiebotConsentChange(consentData);
+    });
+    
+    window.addEventListener('CookiebotOnDecline', (event) => {
+      console.log('🍪 Cookiebot decline event fired:', event);
+      const consentData = {
+        action: 'decline',
+        website: document.title || window.location.hostname,
+        url: window.location.href,
+        consent: window.Cookiebot?.consent || {},
+        timestamp: Date.now()
+      };
+      handleCookiebotConsentChange(consentData);
+    });
+    
+    window.addEventListener('CookiebotOnConsentReady', (event) => {
+      console.log('🍪 Cookiebot consent ready event fired:', event);
+      const consentData = {
+        action: 'ready',
+        website: document.title || window.location.hostname,
+        url: window.location.href,
+        consent: window.Cookiebot?.consent || {},
+        timestamp: Date.now()
+      };
+      handleCookiebotConsentChange(consentData);
+    });
+    
+    // Set up immediate monitoring of gtag and dataLayer
+    setupImmediateMonitoring();
+    
     // Listen for dataLayer events
     if (window.dataLayer) {
       const originalPush = window.dataLayer.push;
@@ -200,6 +240,81 @@
         if (args[0] && args[0].event === 'cookiebot_consent_change') {
           console.log('🍪 Cookiebot consent change in dataLayer:', args[0]);
           handleCookiebotConsentChange(args[0].consent_data);
+        }
+        
+        return result;
+      };
+    }
+  }
+  
+  // Set up immediate monitoring of gtag and dataLayer consent calls
+  function setupImmediateMonitoring() {
+    console.log('🔍 Setting up immediate monitoring of Tag Manager consent calls...');
+    
+    // Monitor gtag consent calls immediately
+    if (window.gtag && typeof window.gtag === 'function') {
+      const originalGtag = window.gtag;
+      window.gtag = function(...args) {
+        // Check if this is a consent call
+        if (args[0] === 'consent') {
+          console.log('🍪 GTM Consent call detected:', args);
+          logTagManagerInteraction('gtag_consent_call', {
+            method: 'gtag',
+            action: args[1],
+            settings: args[2],
+            timestamp: Date.now(),
+            trigger: 'immediate_monitoring'
+          });
+        }
+        
+        return originalGtag.apply(this, args);
+      };
+    }
+    
+    // Enhanced dataLayer monitoring for consent events immediately
+    if (window.dataLayer) {
+      const originalPush = window.dataLayer.push;
+      window.dataLayer.push = function(...args) {
+        const result = originalPush.apply(this, args);
+        
+        // Check for consent-related events
+        if (args[0] && typeof args[0] === 'object') {
+          const event = args[0];
+          
+          // Check for consent events
+          if (event.event === 'consent' || 
+              (Array.isArray(args) && args[0] === 'consent')) {
+            console.log('🍪 DataLayer consent event detected:', args);
+            logTagManagerInteraction('datalayer_consent_event', {
+              method: 'dataLayer',
+              event: event,
+              args: args,
+              timestamp: Date.now(),
+              trigger: 'immediate_monitoring'
+            });
+          }
+          
+          // Check for tag firing events that might be consent-dependent
+          if (event.event && (event.event.includes('gtm.') || event.event.includes('consent'))) {
+            console.log('🍪 Potential consent-dependent tag event:', event);
+            logTagManagerInteraction('potential_consent_tag', {
+              method: 'dataLayer',
+              event: event,
+              timestamp: Date.now(),
+              trigger: 'immediate_monitoring'
+            });
+          }
+        }
+        
+        // Also check for array format consent events
+        if (Array.isArray(args) && args[0] === 'consent') {
+          console.log('🍪 DataLayer consent event (array format) detected:', args);
+          logTagManagerInteraction('datalayer_consent_event', {
+            method: 'dataLayer',
+            args: args,
+            timestamp: Date.now(),
+            trigger: 'immediate_monitoring'
+          });
         }
         
         return result;
@@ -492,6 +607,9 @@
     // Setup Cookiebot listeners
     setupCookiebotListeners();
     
+    // Start periodic consent monitoring
+    startPeriodicConsentMonitoring();
+    
     // Inject script when page is ready
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
@@ -502,6 +620,92 @@
     }
   }
   
+  // Periodic monitoring of consent changes
+  function startPeriodicConsentMonitoring() {
+    let lastConsentState = null;
+    
+    // Check for initial consent state
+    if (window.Cookiebot && window.Cookiebot.consent) {
+      lastConsentState = JSON.stringify(window.Cookiebot.consent);
+    }
+    
+    // Monitor every 2 seconds
+    setInterval(() => {
+      if (window.Cookiebot && window.Cookiebot.consent) {
+        const currentConsentState = JSON.stringify(window.Cookiebot.consent);
+        
+        if (lastConsentState !== null && lastConsentState !== currentConsentState) {
+          console.log('🍪 Consent state change detected via periodic monitoring');
+          const consentData = {
+            action: 'periodic_detection',
+            website: document.title || window.location.hostname,
+            url: window.location.href,
+            consent: window.Cookiebot.consent,
+            timestamp: Date.now()
+          };
+          handleCookiebotConsentChange(consentData);
+        }
+        
+        lastConsentState = currentConsentState;
+      }
+    }, 2000);
+  }
+  
   // Start initialization
   initialize();
+  
+  // Expose manual testing functions globally
+  window.GTMInspectorTest = {
+    // Manually trigger consent change detection
+    triggerConsentChange: function(action = 'manual_test') {
+      const consentData = {
+        action: action,
+        website: document.title || window.location.hostname,
+        url: window.location.href,
+        consent: window.Cookiebot?.consent || {},
+        timestamp: Date.now()
+      };
+      handleCookiebotConsentChange(consentData);
+      console.log('🍪 Manual consent change triggered:', consentData);
+    },
+    
+    // Get current interaction data
+    getInteractions: function() {
+      return window.gtmInspectorInteractions || [];
+    },
+    
+    // Clear interaction data
+    clearInteractions: function() {
+      window.gtmInspectorInteractions = [];
+      console.log('🍪 Interaction data cleared');
+    },
+    
+    // Test gtag consent call
+    testGtagConsent: function() {
+      if (window.gtag) {
+        window.gtag('consent', 'update', {
+          analytics_storage: 'granted',
+          ad_storage: 'denied'
+        });
+        console.log('🍪 Test gtag consent call made');
+      } else {
+        console.log('❌ gtag not available');
+      }
+    },
+    
+    // Test dataLayer consent event
+    testDataLayerConsent: function() {
+      if (window.dataLayer) {
+        window.dataLayer.push(['consent', 'update', {
+          analytics_storage: 'granted',
+          ad_storage: 'denied'
+        }]);
+        console.log('🍪 Test dataLayer consent event pushed');
+      } else {
+        console.log('❌ dataLayer not available');
+      }
+    }
+  };
+  
+  console.log('🔧 GTM Inspector initialized with manual testing functions available at window.GTMInspectorTest');
 })();
