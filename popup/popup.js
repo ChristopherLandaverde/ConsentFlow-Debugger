@@ -709,64 +709,66 @@ function displayDiagnosticResults(diagnostics) {
   resultsDiv.style.cssText = `
     margin-top: 20px;
     padding: 15px;
-    background: #f8f9fa;
+    background: #2d3748;
+    color: #e2e8f0;
     border-radius: 8px;
     border-left: 4px solid #007bff;
+    font-size: 13px;
   `;
   
-  let resultsHTML = '<h3>🔍 Diagnostic Results</h3>';
+  let resultsHTML = '<h3 style="margin: 0 0 15px 0; color: #ffffff;">🔍 Diagnostic Results</h3>';
   
   // GTM Diagnostics
-  resultsHTML += '<div style="margin-bottom: 15px;"><strong>GTM Status:</strong><ul>';
+  resultsHTML += '<div style="margin-bottom: 15px;"><strong style="color: #ffffff;">GTM Status:</strong><ul style="margin: 5px 0; padding-left: 20px;">';
   if (diagnostics.gtm) {
-    resultsHTML += `<li>✅ GTM Container: ${diagnostics.gtm.containerId || 'Not found'}</li>`;
-    resultsHTML += `<li>✅ DataLayer: ${diagnostics.gtm.dataLayer ? 'Available' : 'Not found'}</li>`;
-    resultsHTML += `<li>✅ gtag Function: ${diagnostics.gtm.gtag ? 'Available' : 'Not found'}</li>`;
-    resultsHTML += `<li>✅ GTM Object: ${diagnostics.gtm.gtmObject ? 'Available' : 'Not found'}</li>`;
+    resultsHTML += `<li style="margin: 3px 0;">✅ GTM Container: ${diagnostics.gtm.containerId || 'Not found'}</li>`;
+    resultsHTML += `<li style="margin: 3px 0;">✅ DataLayer: ${diagnostics.gtm.dataLayer ? 'Available' : 'Not found'}</li>`;
+    resultsHTML += `<li style="margin: 3px 0;">✅ gtag Function: ${diagnostics.gtm.gtag ? 'Available' : 'Not found'}</li>`;
+    resultsHTML += `<li style="margin: 3px 0;">✅ GTM Object: ${diagnostics.gtm.gtmObject ? 'Available' : 'Not found'}</li>`;
   } else {
-    resultsHTML += '<li>❌ GTM not detected</li>';
+    resultsHTML += '<li style="margin: 3px 0;">❌ GTM not detected</li>';
   }
   resultsHTML += '</ul></div>';
   
   // Consent Mode Diagnostics
-  resultsHTML += '<div style="margin-bottom: 15px;"><strong>Consent Mode:</strong><ul>';
+  resultsHTML += '<div style="margin-bottom: 15px;"><strong style="color: #ffffff;">Consent Mode:</strong><ul style="margin: 5px 0; padding-left: 20px;">';
   if (diagnostics.consent) {
-    resultsHTML += `<li>✅ Consent Mode: ${diagnostics.consent.enabled ? 'Enabled' : 'Disabled'}</li>`;
+    resultsHTML += `<li style="margin: 3px 0;">✅ Consent Mode: ${diagnostics.consent.enabled ? 'Enabled' : 'Disabled'}</li>`;
     if (diagnostics.consent.cmp) {
-      resultsHTML += `<li>✅ CMP Detected: ${diagnostics.consent.cmp.name} (${diagnostics.consent.cmp.type})</li>`;
+      resultsHTML += `<li style="margin: 3px 0;">✅ CMP Detected: ${diagnostics.consent.cmp.name} (${diagnostics.consent.cmp.type})</li>`;
     }
     if (diagnostics.consent.state) {
-      resultsHTML += `<li>✅ Current State: Analytics=${diagnostics.consent.state.analytics_storage}, Ads=${diagnostics.consent.state.ad_storage}</li>`;
+      resultsHTML += `<li style="margin: 3px 0;">✅ Current State: Analytics=${diagnostics.consent.state.analytics_storage}, Ads=${diagnostics.consent.state.ad_storage}</li>`;
     }
   } else {
-    resultsHTML += '<li>❌ Consent Mode not detected</li>';
+    resultsHTML += '<li style="margin: 3px 0;">❌ Consent Mode not detected</li>';
   }
   resultsHTML += '</ul></div>';
   
   // Tag Diagnostics
-  resultsHTML += '<div style="margin-bottom: 15px;"><strong>Tags Found:</strong><ul>';
+  resultsHTML += '<div style="margin-bottom: 15px;"><strong style="color: #ffffff;">Tags Found:</strong><ul style="margin: 5px 0; padding-left: 20px;">';
   if (diagnostics.tags && diagnostics.tags.length > 0) {
     diagnostics.tags.forEach(tag => {
       const status = tag.allowed ? '✅' : '❌';
-      resultsHTML += `<li>${status} ${tag.name} (${tag.type}) - ${tag.allowed ? 'Allowed' : 'Blocked'}</li>`;
+      resultsHTML += `<li style="margin: 3px 0;">${status} ${tag.name} (${tag.type}) - ${tag.allowed ? 'Allowed' : 'Blocked'}</li>`;
     });
   } else {
-    resultsHTML += '<li>❌ No tags detected</li>';
+    resultsHTML += '<li style="margin: 3px 0;">❌ No tags detected</li>';
   }
   resultsHTML += '</ul></div>';
   
   // Issues and Recommendations
-  resultsHTML += '<div style="margin-bottom: 15px;"><strong>Issues & Recommendations:</strong><ul>';
+  resultsHTML += '<div style="margin-bottom: 15px;"><strong style="color: #ffffff;">Issues & Recommendations:</strong><ul style="margin: 5px 0; padding-left: 20px;">';
   if (diagnostics.issues && diagnostics.issues.length > 0) {
     diagnostics.issues.forEach(issue => {
-      resultsHTML += `<li>⚠️ ${issue}</li>`;
+      resultsHTML += `<li style="margin: 3px 0; color: #fbbf24;">⚠️ ${issue}</li>`;
     });
   } else {
-    resultsHTML += '<li>✅ No issues detected</li>';
+    resultsHTML += '<li style="margin: 3px 0; color: #10b981;">✅ No issues detected</li>';
   }
   resultsHTML += '</ul></div>';
   
-  resultsHTML += `<div style="font-size: 12px; color: #666; margin-top: 10px;">
+  resultsHTML += `<div style="font-size: 11px; color: #a0aec0; margin-top: 10px; border-top: 1px solid #4a5568; padding-top: 10px;">
     Diagnostic run at: ${new Date().toLocaleTimeString()}
   </div>`;
   
