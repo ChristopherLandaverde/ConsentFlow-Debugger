@@ -98,6 +98,7 @@
         <button class="test-button" onclick="acceptNecessaryOnly()">Accept Necessary Only</button>
         <button class="test-button" onclick="checkConsentStatus()">Check Current Status</button>
         <button class="test-button" onclick="triggerGTMEvents()">Trigger GTM Events</button>
+        <button class="test-button" onclick="testExtensionSync()">Test Extension Sync</button>
     </div>
 
     <div class="test-section">
@@ -307,8 +308,11 @@
             checkConsentStatus();
         });
 
-        window.addEventListener('CookiebotOnAccept', function() {
+        window.addEventListener('CookiebotOnAccept', function(event) {
             logEvent('Cookiebot accept event fired', 'success');
+            if (event.detail && event.detail.consent) {
+                logEvent(`Cookiebot consent updated: ${JSON.stringify(event.detail.consent)}`, 'info');
+            }
             checkConsentStatus();
         });
 
@@ -316,6 +320,37 @@
             logEvent('Cookiebot decline event fired', 'success');
             checkConsentStatus();
         });
+
+        // Listen for custom consent events from extension
+        window.addEventListener('CookiebotOnAccept', function(event) {
+            logEvent('Extension triggered Cookiebot consent update', 'success');
+            checkConsentStatus();
+        });
+
+        function testExtensionSync() {
+            logEvent('Testing extension sync functionality...', 'info');
+            
+            // Simulate what the extension would do
+            if (window.Cookiebot && window.Cookiebot.consent) {
+                const originalAnalytics = window.Cookiebot.consent.analytics;
+                
+                // Toggle analytics consent
+                window.Cookiebot.consent.analytics = !originalAnalytics;
+                
+                // Trigger the event that the extension would trigger
+                const consentEvent = new CustomEvent('CookiebotOnAccept', {
+                    detail: { consent: window.Cookiebot.consent }
+                });
+                window.dispatchEvent(consentEvent);
+                
+                logEvent(`Toggled analytics consent: ${originalAnalytics} → ${window.Cookiebot.consent.analytics}`, 'success');
+                
+                // Update display
+                updateConsentDisplay();
+            } else {
+                logEvent('Cookiebot not available for sync test', 'warning');
+            }
+        }
     </script>
 </body>
 </html> 

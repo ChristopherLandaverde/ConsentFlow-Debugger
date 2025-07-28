@@ -142,16 +142,26 @@ function initializeConsentSimulator() {
       const result = await ContentScriptInterface.sendMessage('applyConsent', settings);
       
       if (result && result.success) {
-        showNotification('✅ Consent applied!', 'success');
+        // Show detailed success message with methods used
+        let successMessage = '✅ Consent applied!';
+        if (result.methods && result.methods.length > 0) {
+          const methods = result.methods.map(m => m.method).join(', ');
+          successMessage = `✅ Consent applied via: ${methods}`;
+        }
+        
+        showNotification(successMessage, 'success');
+        
+        // Refresh data after a short delay
         setTimeout(() => {
           checkGTMStatus();
           refreshTags();
         }, 1000);
       } else {
-        showNotification('❌ Failed to apply consent', 'error');
+        const errorMsg = result?.error || 'Unknown error';
+        showNotification(`❌ Failed to apply consent: ${errorMsg}`, 'error');
       }
     } catch (error) {
-      showNotification('❌ Error applying consent', 'error');
+      showNotification('❌ Error applying consent: ' + error.message, 'error');
     } finally {
       this.disabled = false;
       this.textContent = '⚡ Apply Settings';

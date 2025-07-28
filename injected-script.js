@@ -367,17 +367,121 @@ if (window.ConsentInspector) {
     updateConsent: function(settings) {
       
       try {
+        const results = [];
+        
+        // Method 1: Update Google Consent Mode
         if (window.gtag && typeof window.gtag === 'function') {
           window.gtag('consent', 'update', settings);
-          return { success: true, method: 'gtag' };
+          results.push({ method: 'gtag', success: true });
         }
         
         if (window.dataLayer && Array.isArray(window.dataLayer)) {
           window.dataLayer.push(['consent', 'update', settings]);
-          return { success: true, method: 'dataLayer' };
+          results.push({ method: 'dataLayer', success: true });
         }
         
-        return { success: false, error: 'No consent mechanism available' };
+        // Method 2: Update Cookiebot consent state
+        if (window.Cookiebot && window.Cookiebot.consent) {
+          const cookiebotConsent = window.Cookiebot.consent;
+          
+          // Map Google Consent Mode settings to Cookiebot settings
+          if (settings.analytics_storage !== undefined) {
+            cookiebotConsent.analytics = settings.analytics_storage === 'granted';
+          }
+          if (settings.ad_storage !== undefined) {
+            cookiebotConsent.advertising = settings.ad_storage === 'granted';
+          }
+          if (settings.functionality_storage !== undefined) {
+            cookiebotConsent.functionality = settings.functionality_storage === 'granted';
+          }
+          if (settings.personalization_storage !== undefined) {
+            cookiebotConsent.personalization = settings.personalization_storage === 'granted';
+          }
+          if (settings.security_storage !== undefined) {
+            cookiebotConsent.necessary = settings.security_storage === 'granted';
+          }
+          
+          // Trigger Cookiebot consent update event
+          if (window.Cookiebot.callback && typeof window.Cookiebot.callback === 'function') {
+            window.Cookiebot.callback();
+          }
+          
+          // Dispatch custom event for Cookiebot
+          const consentEvent = new CustomEvent('CookiebotOnAccept', {
+            detail: { consent: cookiebotConsent }
+          });
+          window.dispatchEvent(consentEvent);
+          
+          results.push({ method: 'cookiebot', success: true });
+        }
+        
+        // Method 3: Update OneTrust consent state
+        if (window.OneTrust && window.OneTrust.SetDomainData) {
+          try {
+            const oneTrustData = window.OneTrust.GetDomainData();
+            if (oneTrustData && oneTrustData.Groups) {
+              const groups = oneTrustData.Groups;
+              
+              // Update group statuses based on consent settings
+              if (settings.analytics_storage !== undefined) {
+                const analyticsGroup = groups.find(g => g.CustomGroupId === 'analytics');
+                if (analyticsGroup) {
+                  analyticsGroup.Status = settings.analytics_storage === 'granted' ? 'true' : 'false';
+                }
+              }
+              if (settings.ad_storage !== undefined) {
+                const advertisingGroup = groups.find(g => g.CustomGroupId === 'advertising');
+                if (advertisingGroup) {
+                  advertisingGroup.Status = settings.ad_storage === 'granted' ? 'true' : 'false';
+                }
+              }
+              if (settings.functionality_storage !== undefined) {
+                const functionalityGroup = groups.find(g => g.CustomGroupId === 'functionality');
+                if (functionalityGroup) {
+                  functionalityGroup.Status = settings.functionality_storage === 'granted' ? 'true' : 'false';
+                }
+              }
+              if (settings.personalization_storage !== undefined) {
+                const personalizationGroup = groups.find(g => g.CustomGroupId === 'personalization');
+                if (personalizationGroup) {
+                  personalizationGroup.Status = settings.personalization_storage === 'granted' ? 'true' : 'false';
+                }
+              }
+              
+              // Update OneTrust data
+              window.OneTrust.SetDomainData(oneTrustData);
+              
+              // Trigger OneTrust events
+              if (window.OneTrust.OnConsentChanged) {
+                window.OneTrust.OnConsentChanged();
+              }
+              
+              results.push({ method: 'onetrust', success: true });
+            }
+          } catch (error) {
+            console.log('OneTrust consent update failed:', error);
+            results.push({ method: 'onetrust', success: false, error: error.message });
+          }
+        }
+        
+        // Log the consent update event
+        this.addEvent({
+          timestamp: Date.now(),
+          tagName: 'Consent Update',
+          tagType: 'consent_update',
+          consentType: 'manual',
+          allowed: true,
+          reason: `Updated via extension: ${JSON.stringify(settings)}`,
+          status: 'UPDATED 🔄',
+          source: 'extension_update'
+        });
+        
+        return { 
+          success: results.length > 0, 
+          methods: results,
+          settings: settings
+        };
+        
       } catch (error) {
         return { success: false, error: error.message };
       }
