@@ -46,11 +46,226 @@ const ContentScriptInterface = {
   }
 };
 
+// Simulation Mode State Management
+class SimulationManager {
+  constructor() {
+    this.simulationMode = false;
+    this.simulatedConsent = {
+      analytics_storage: 'granted',
+      ad_storage: 'granted',
+      functionality_storage: 'granted',
+      personalization_storage: 'granted',
+      security_storage: 'granted'
+    };
+    
+    this.presets = {
+      'all-granted': {
+        analytics_storage: 'granted',
+        ad_storage: 'granted',
+        functionality_storage: 'granted',
+        personalization_storage: 'granted',
+        security_storage: 'granted'
+      },
+      'all-denied': {
+        analytics_storage: 'denied',
+        ad_storage: 'denied',
+        functionality_storage: 'denied',
+        personalization_storage: 'denied',
+        security_storage: 'granted'
+      },
+      'analytics-only': {
+        analytics_storage: 'granted',
+        ad_storage: 'denied',
+        functionality_storage: 'granted',
+        personalization_storage: 'denied',
+        security_storage: 'granted'
+      },
+      'marketing-only': {
+        analytics_storage: 'denied',
+        ad_storage: 'granted',
+        functionality_storage: 'granted',
+        personalization_storage: 'denied',
+        security_storage: 'granted'
+      },
+      'essential-only': {
+        analytics_storage: 'denied',
+        ad_storage: 'denied',
+        functionality_storage: 'granted',
+        personalization_storage: 'denied',
+        security_storage: 'granted'
+      }
+    };
+    
+    this.init();
+  }
+  
+  async init() {
+    // Load saved state
+    await this.loadState();
+    
+    // Setup event listeners
+    this.setupEventListeners();
+    
+    // Update UI
+    this.updateUI();
+  }
+  
+  async loadState() {
+    try {
+      const result = await chrome.storage.local.get(['simulationMode', 'simulatedConsent']);
+      this.simulationMode = result.simulationMode || false;
+      this.simulatedConsent = { ...this.simulatedConsent, ...result.simulatedConsent };
+    } catch (error) {
+      console.error('Failed to load simulation state:', error);
+    }
+  }
+  
+  async saveState() {
+    try {
+      await chrome.storage.local.set({
+        simulationMode: this.simulationMode,
+        simulatedConsent: this.simulatedConsent
+      });
+    } catch (error) {
+      console.error('Failed to save simulation state:', error);
+    }
+  }
+  
+  setupEventListeners() {
+    // Simulation mode toggle
+    const simulationToggle = document.getElementById('simulationMode');
+    if (simulationToggle) {
+      simulationToggle.addEventListener('change', (e) => {
+        this.simulationMode = e.target.checked;
+        this.updateUI();
+        this.saveState();
+        this.notifyContentScript();
+      });
+    }
+    
+    // Simulated consent toggles
+    const consentToggles = [
+      'sim_analytics_storage',
+      'sim_ad_storage', 
+      'sim_functionality_storage',
+      'sim_personalization_storage'
+    ];
+    
+    consentToggles.forEach(id => {
+      const toggle = document.getElementById(id);
+      if (toggle) {
+        toggle.addEventListener('change', (e) => {
+          const consentType = id.replace('sim_', '');
+          this.simulatedConsent[consentType] = e.target.checked ? 'granted' : 'denied';
+          this.saveState();
+          this.notifyContentScript();
+        });
+      }
+    });
+    
+    // Preset buttons
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const preset = e.currentTarget.dataset.preset;
+        this.applyPreset(preset);
+      });
+    });
+  }
+  
+  updateUI() {
+    // Update simulation mode toggle
+    const simulationToggle = document.getElementById('simulationMode');
+    const simulationStatus = document.getElementById('simulationStatus');
+    const simulatedControls = document.getElementById('simulatedConsentControls');
+    const realControls = document.getElementById('realConsentControls');
+    
+    if (simulationToggle) {
+      simulationToggle.checked = this.simulationMode;
+    }
+    
+    if (simulationStatus) {
+      simulationStatus.textContent = this.simulationMode ? 'ON' : 'OFF';
+      simulationStatus.className = this.simulationMode ? 'simulation-status active' : 'simulation-status';
+    }
+    
+    // Show/hide controls based on mode
+    if (simulatedControls) {
+      simulatedControls.style.display = this.simulationMode ? 'block' : 'none';
+    }
+    
+    if (realControls) {
+      realControls.style.display = this.simulationMode ? 'none' : 'block';
+    }
+    
+    // Update simulated consent toggles
+    Object.entries(this.simulatedConsent).forEach(([key, value]) => {
+      const toggle = document.getElementById(`sim_${key}`);
+      if (toggle && key !== 'security_storage') {
+        toggle.checked = value === 'granted';
+      }
+    });
+  }
+  
+  applyPreset(presetName) {
+    const preset = this.presets[presetName];
+    if (!preset) return;
+    
+    this.simulatedConsent = { ...preset };
+    this.updateUI();
+    this.saveState();
+    this.notifyContentScript();
+    
+    // Show feedback
+    this.showNotification(`Applied preset: ${presetName}`, 'success');
+  }
+  
+  getCurrentConsentState() {
+    return this.simulationMode ? this.simulatedConsent : null;
+  }
+  
+  isSimulationMode() {
+    return this.simulationMode;
+  }
+  
+  async notifyContentScript() {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab) {
+        await chrome.tabs.sendMessage(tab.id, {
+          action: 'updateSimulationMode',
+          data: {
+            simulationMode: this.simulationMode,
+            simulatedConsent: this.simulatedConsent
+          }
+        });
+      }
+    } catch (error) {
+      console.log('Content script not available for simulation update:', error);
+    }
+  }
+  
+  showNotification(message, type) {
+    // Simple notification - you can enhance this
+    console.log(`${type}: ${message}`);
+  }
+}
+
+// Initialize simulation manager
+let simulationManager;
+
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
+  // Initialize simulation manager first
+  simulationManager = new SimulationManager();
+  
+  // Then initialize other components
   initializeTabs();
   initializeButtons();
-  checkGTMStatus();
+  
+  // Load initial data
+  loadGTMData();
+  loadConsentData();
+  refreshEvents();
 });
 
 function initializeTabs() {
@@ -441,110 +656,156 @@ function filterTags(category) {
   });
 }
 
-async function refreshEvents() {
-  const eventLog = document.getElementById('eventLog');
-  eventLog.innerHTML = '<div class="event-item empty-state">🔄 Loading events...</div>';
+function refreshEvents() {
+  console.log('🔄 Refreshing events...');
   
-  try {
-    console.log('🔄 Fetching events...');
-    const events = await ContentScriptInterface.sendMessage('getEventLog');
-    console.log('📊 Events received:', events);
-    console.log('📊 Events type:', typeof events, 'Is array:', Array.isArray(events));
-    
-    // Handle case where we get an error object instead of events
-    if (events && typeof events === 'object' && events.error) {
-      console.error('❌ Received error object:', events.error);
-      eventLog.innerHTML = `<div class="event-item empty-state">Error: ${escapeHtml(events.error)}</div>`;
-      return;
+  chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+    if (tabs[0]) {
+      chrome.tabs.sendMessage(tabs[0].id, { action: 'getEvents' }, function(response) {
+        console.log('📋 Events response:', response);
+        
+        if (chrome.runtime.lastError) {
+          console.error('❌ Error getting events:', chrome.runtime.lastError);
+          updateEventDisplay([]);
+          return;
+        }
+        
+        if (response && response.success) {
+          const events = response.events || [];
+          console.log('📋 Processing events:', events);
+          updateEventDisplay(events);
+        } else {
+          console.warn('⚠️ No events data received');
+          updateEventDisplay([]);
+        }
+      });
+    } else {
+      console.error('❌ No active tab found');
+      updateEventDisplay([]);
     }
-    
-    updateEventDisplay(events || []);
-  } catch (error) {
-    console.error('❌ Error loading events:', error);
-    eventLog.innerHTML = `<div class="event-item empty-state">Error loading events: ${error.message}</div>`;
-  }
+  });
 }
 
+// Enhanced event logging with simulation support
 function updateEventDisplay(events) {
-  const eventLog = document.getElementById('eventLog');
+  const eventList = document.getElementById('eventList');
+  if (!eventList) return;
   
-  console.log('📋 Updating event display with:', events);
-  console.log('📋 Events type:', typeof events, 'Is array:', Array.isArray(events));
-  
-  // Ensure events is an array
-  if (!Array.isArray(events)) {
-    console.warn('⚠️ Events is not an array, converting or showing error');
-    if (events && typeof events === 'object') {
-      // If it's an object with an error, show the error
-      if (events.error) {
-        eventLog.innerHTML = `<div class="event-item empty-state">Error: ${escapeHtml(events.error)}</div>`;
-        return;
-      }
-      // If it's some other object, try to convert it
-      events = [events];
-    } else {
-      eventLog.innerHTML = '<div class="event-item empty-state">No events data received</div>';
-      return;
-    }
-  }
+  eventList.innerHTML = '';
   
   if (!events || events.length === 0) {
-    eventLog.innerHTML = '<div class="event-item empty-state">No events recorded yet. Try triggering some events on the page.</div>';
+    eventList.innerHTML = '<div class="no-events">No events logged yet</div>';
     return;
   }
   
-  try {
-    eventLog.innerHTML = events.slice(-20).reverse().map(event => {
-      // Determine event category for filtering
-      let eventCategory = 'other';
-      let eventDisplay = '';
-      let statusColor = '#007bff';
-      
-      if (event.source === 'consent_state' || event.source === 'cookiebot' || event.tagType === 'consent_change' || event.tagType === 'consent_status') {
-        eventCategory = 'consent';
-        eventDisplay = event.tagName || 'Consent Event';
-        statusColor = '#ffc107';
-      } else if (event.source === 'tag_detection' || event.source === 'tag_manager' || event.tagType === 'analytics' || event.tagType === 'advertising' || event.tagType === 'ecommerce' || event.tagType === 'behavioral') {
-        eventCategory = 'gtm';
-        eventDisplay = event.tagName || 'GTM Event';
-        statusColor = event.allowed ? '#28a745' : '#dc3545';
-      } else if (event.source === 'system' || event.tagType === 'system') {
-        eventCategory = 'other';
-        eventDisplay = event.tagName || 'System Event';
-        statusColor = '#6c757d';
-      } else {
-        // Default categorization
-        if (event.tagName && event.tagName.toLowerCase().includes('consent')) {
-          eventCategory = 'consent';
-          statusColor = '#ffc107';
-        } else if (event.tagName && (event.tagName.toLowerCase().includes('gtm') || event.tagName.toLowerCase().includes('tag'))) {
-          eventCategory = 'gtm';
-          statusColor = '#17a2b8';
-        }
-        eventDisplay = event.tagName || 'Event';
-      }
-      
-      return `
-        <div class="event-item" data-event-type="${eventCategory}">
-          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-            <span style="font-size: 12px; color: #666;">[${new Date(event.timestamp || Date.now()).toLocaleTimeString()}]</span>
-            <span style="font-size: 10px; background: ${statusColor}; color: white; padding: 2px 6px; border-radius: 3px;">
-              ${escapeHtml(event.status || 'Event')}
-            </span>
-          </div>
-          <div style="font-size: 13px; color: #333; font-weight: 600;">
-            ${escapeHtml(eventDisplay)}
-          </div>
-          ${event.reason ? `<div style="font-size: 11px; color: #666; margin-top: 2px;">
-            ${escapeHtml(event.reason)}
-          </div>` : ''}
-        </div>
-      `;
-    }).join('');
-  } catch (error) {
-    console.error('❌ Error rendering events:', error);
-    eventLog.innerHTML = '<div class="event-item empty-state">Error rendering events</div>';
+  events.forEach(event => {
+    const eventElement = createEventElement(event);
+    eventList.appendChild(eventElement);
+  });
+}
+
+function createEventElement(event) {
+  const eventDiv = document.createElement('div');
+  eventDiv.className = 'event-item';
+  
+  const timestamp = new Date(event.timestamp).toLocaleTimeString();
+  const eventType = event.type || 'unknown';
+  const eventData = event.data || {};
+  
+  // Determine if this is a consent or GTM event
+  let category = 'other';
+  if (eventType.includes('consent') || eventType.includes('Cookiebot')) {
+    category = 'consent';
+  } else if (eventType.includes('gtag') || eventType.includes('dataLayer') || eventType.includes('tag')) {
+    category = 'gtm';
   }
+  
+  // Add simulation analysis if in simulation mode
+  let simulationAnalysis = '';
+  if (simulationManager && simulationManager.isSimulationMode()) {
+    simulationAnalysis = analyzeEventInSimulation(event);
+  }
+  
+  eventDiv.innerHTML = `
+    <div class="event-header">
+      <span class="event-time">${timestamp}</span>
+      <span class="event-type ${category}">${eventType}</span>
+      ${simulationAnalysis}
+    </div>
+    <div class="event-details">
+      <pre>${JSON.stringify(eventData, null, 2)}</pre>
+    </div>
+  `;
+  
+  return eventDiv;
+}
+
+function analyzeEventInSimulation(event) {
+  const simulatedConsent = simulationManager.getCurrentConsentState();
+  if (!simulatedConsent) return '';
+  
+  // Analyze GTM events for consent requirements
+  if (event.type === 'gtag_consent_update' || event.type === 'dataLayer_consent') {
+    const consentData = event.data;
+    const wouldFire = checkConsentRequirements(consentData, simulatedConsent);
+    
+    return `
+      <div class="simulation-analysis">
+        <span class="simulation-label">🧪 Simulation:</span>
+        <span class="simulation-result ${wouldFire ? 'would-fire' : 'would-block'}">
+          ${wouldFire ? '🟢 Would Fire' : '🔴 Would Be Blocked'}
+        </span>
+      </div>
+    `;
+  }
+  
+  // Analyze tag firing events
+  if (event.type === 'tag_fired' || event.type === 'gtag_event') {
+    const tagData = event.data;
+    const consentRequired = getTagConsentRequirements(tagData);
+    const wouldFire = checkConsentRequirements(consentRequired, simulatedConsent);
+    
+    return `
+      <div class="simulation-analysis">
+        <span class="simulation-label">🧪 Simulation:</span>
+        <span class="simulation-result ${wouldFire ? 'would-fire' : 'would-block'}">
+          ${wouldFire ? '🟢 Would Fire' : '🔴 Would Be Blocked'}
+        </span>
+        <span class="consent-requirements">
+          Requires: ${Object.entries(consentRequired).map(([k, v]) => `${k}: ${v}`).join(', ')}
+        </span>
+      </div>
+    `;
+  }
+  
+  return '';
+}
+
+function checkConsentRequirements(required, available) {
+  // Check if all required consent types are granted
+  for (const [consentType, requiredValue] of Object.entries(required)) {
+    if (requiredValue === 'granted' && available[consentType] !== 'granted') {
+      return false;
+    }
+  }
+  return true;
+}
+
+function getTagConsentRequirements(tagData) {
+  // Default consent requirements based on tag type
+  // This is a simplified version - you can enhance this based on your needs
+  const tagType = tagData.event_name || tagData.event || 'unknown';
+  
+  if (tagType.includes('purchase') || tagType.includes('conversion')) {
+    return { analytics_storage: 'granted', ad_storage: 'granted' };
+  } else if (tagType.includes('page_view') || tagType.includes('view')) {
+    return { analytics_storage: 'granted' };
+  } else if (tagType.includes('click') || tagType.includes('engagement')) {
+    return { analytics_storage: 'granted', ad_storage: 'granted' };
+  }
+  
+  // Default to analytics only
+  return { analytics_storage: 'granted' };
 }
 
 function filterEvents(category) {

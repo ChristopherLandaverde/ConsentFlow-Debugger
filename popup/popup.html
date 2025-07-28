@@ -73,59 +73,160 @@
   <div id="consent-tab" class="tab-content">
     <h2>Consent Simulator</h2>
     
-    <div class="consent-categories">
-      <div class="consent-category">
-        <label for="analytics_storage">analytics_storage:</label>
-        <select id="analytics_storage" class="consent-select">
-          <option value="granted">Granted</option>
-          <option value="denied">Denied</option>
-        </select>
+    <!-- Simulation Mode Toggle -->
+    <div class="simulation-mode-container">
+      <div class="simulation-toggle">
+        <label class="toggle-switch">
+          <input type="checkbox" id="simulationMode">
+          <span class="toggle-slider"></span>
+        </label>
+        <div class="simulation-label">
+          <span class="simulation-icon">🧪</span>
+          <span class="simulation-text">Simulation Mode</span>
+          <span class="simulation-status" id="simulationStatus">OFF</span>
+        </div>
+      </div>
+      <div class="simulation-description">
+        When enabled, the extension uses simulated consent values instead of real CMP values for event logging.
+      </div>
+    </div>
+    
+    <!-- Simulated Consent Controls (shown when simulation mode is ON) -->
+    <div id="simulatedConsentControls" class="simulated-consent-controls" style="display: none;">
+      <h3>Simulated Consent State</h3>
+      <div class="consent-categories">
+        <div class="consent-category">
+          <label class="consent-toggle">
+            <input type="checkbox" id="sim_analytics_storage" checked>
+            <span class="toggle-slider"></span>
+          </label>
+          <div class="consent-info">
+            <span class="consent-name">Analytics Storage</span>
+            <span class="consent-description">Required for analytics and performance measurement</span>
+          </div>
+        </div>
+        
+        <div class="consent-category">
+          <label class="consent-toggle">
+            <input type="checkbox" id="sim_ad_storage" checked>
+            <span class="toggle-slider"></span>
+          </label>
+          <div class="consent-info">
+            <span class="consent-name">Ad Storage</span>
+            <span class="consent-description">Required for advertising and marketing</span>
+          </div>
+        </div>
+        
+        <div class="consent-category">
+          <label class="consent-toggle">
+            <input type="checkbox" id="sim_functionality_storage" checked>
+            <span class="toggle-slider"></span>
+          </label>
+          <div class="consent-info">
+            <span class="consent-name">Functionality Storage</span>
+            <span class="consent-description">Required for enhanced functionality</span>
+          </div>
+        </div>
+        
+        <div class="consent-category">
+          <label class="consent-toggle">
+            <input type="checkbox" id="sim_personalization_storage" checked>
+            <span class="toggle-slider"></span>
+          </label>
+          <div class="consent-info">
+            <span class="consent-name">Personalization Storage</span>
+            <span class="consent-description">Required for content personalization</span>
+          </div>
+        </div>
+        
+        <div class="consent-category">
+          <label class="consent-toggle">
+            <input type="checkbox" id="sim_security_storage" checked disabled>
+            <span class="toggle-slider"></span>
+          </label>
+          <div class="consent-info">
+            <span class="consent-name">Security Storage</span>
+            <span class="consent-description">Always granted for security purposes</span>
+          </div>
+        </div>
       </div>
       
-      <div class="consent-category">
-        <label for="ad_storage">ad_storage:</label>
-        <select id="ad_storage" class="consent-select">
-          <option value="granted">Granted</option>
-          <option value="denied">Denied</option>
-        </select>
+      <!-- Quick Preset Buttons -->
+      <div class="simulation-presets">
+        <h4>Quick Presets</h4>
+        <div class="preset-buttons">
+          <button class="preset-btn" data-preset="all-granted">✅ All Granted</button>
+          <button class="preset-btn" data-preset="all-denied">❌ All Denied</button>
+          <button class="preset-btn" data-preset="analytics-only">📊 Analytics Only</button>
+          <button class="preset-btn" data-preset="marketing-only">📢 Marketing Only</button>
+          <button class="preset-btn" data-preset="essential-only">🔒 Essential Only</button>
+        </div>
       </div>
-      
-      <div class="consent-category">
-        <label for="functionality_storage">functionality_storage:</label>
-        <select id="functionality_storage" class="consent-select">
-          <option value="granted">Granted</option>
-          <option value="denied">Denied</option>
-        </select>
-      </div>
-      
-      <div class="consent-category">
-        <label for="personalization_storage">personalization_storage:</label>
-        <select id="personalization_storage" class="consent-select">
-          <option value="granted">Granted</option>
-          <option value="denied">Denied</option>
-        </select>
-      </div>
-      
-      <div class="consent-category">
-        <label for="security_storage">security_storage:</label>
-        <select id="security_storage" class="consent-select">
-          <option value="granted">Granted</option>
-          <option value="denied">Denied</option>
-        </select>
+    </div>
+    
+    <!-- Original Consent Controls (shown when simulation mode is OFF) -->
+    <div id="realConsentControls" class="real-consent-controls">
+      <h3>Current Consent State</h3>
+      <div class="consent-categories">
+        <div class="consent-category">
+          <label class="consent-toggle">
+            <input type="checkbox" id="analytics_storage" disabled>
+            <span class="toggle-slider"></span>
+          </label>
+          <div class="consent-info">
+            <span class="consent-name">Analytics Storage</span>
+            <span class="consent-description">Current CMP setting</span>
+          </div>
+        </div>
+        
+        <div class="consent-category">
+          <label class="consent-toggle">
+            <input type="checkbox" id="ad_storage" disabled>
+            <span class="toggle-slider"></span>
+          </label>
+          <div class="consent-info">
+            <span class="consent-name">Ad Storage</span>
+            <span class="consent-description">Current CMP setting</span>
+          </div>
+        </div>
+        
+        <div class="consent-category">
+          <label class="consent-toggle">
+            <input type="checkbox" id="functionality_storage" disabled>
+            <span class="toggle-slider"></span>
+          </label>
+          <div class="consent-info">
+            <span class="consent-name">Functionality Storage</span>
+            <span class="consent-description">Current CMP setting</span>
+          </div>
+        </div>
+        
+        <div class="consent-category">
+          <label class="consent-toggle">
+            <input type="checkbox" id="personalization_storage" disabled>
+            <span class="toggle-slider"></span>
+          </label>
+          <div class="consent-info">
+            <span class="consent-name">Personalization Storage</span>
+            <span class="consent-description">Current CMP setting</span>
+          </div>
+        </div>
+        
+        <div class="consent-category">
+          <label class="consent-toggle">
+            <input type="checkbox" id="security_storage" checked disabled>
+            <span class="toggle-slider"></span>
+          </label>
+          <div class="consent-info">
+            <span class="consent-name">Security Storage</span>
+            <span class="consent-description">Always granted</span>
+          </div>
+        </div>
       </div>
     </div>
     
     <div class="action-buttons">
-      <button id="applyConsent" class="action-button primary">⚡ Apply Settings</button>
-      <div class="dropdown">
-        <button class="dropdown-toggle action-button">📋 Presets</button>
-        <div class="dropdown-menu">
-          <button class="dropdown-item" data-preset="all-granted">All Granted</button>
-          <button class="dropdown-item" data-preset="all-denied">All Denied</button>
-          <button class="dropdown-item" data-preset="analytics-only">Analytics Only</button>
-          <button class="dropdown-item" data-preset="functional-only">Functional Only</button>
-        </div>
-      </div>
+      <button id="applyConsent" class="btn btn-primary">⚡ Apply Settings</button>
     </div>
   </div>
 

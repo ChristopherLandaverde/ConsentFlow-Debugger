@@ -150,6 +150,16 @@
             sendResponse(exportResult);
             break;
             
+          case 'updateSimulationMode':
+            // Ensure script is injected first
+            if (!scriptInjected) {
+              await injectScript();
+            }
+            // Use postMessage to communicate with page context
+            const simulationResult = await sendMessageToPage('updateSimulationMode', request.data);
+            sendResponse(simulationResult);
+            break;
+            
           default:
             sendResponse({ error: 'Unknown action: ' + request.action });
         }

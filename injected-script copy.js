@@ -1,15 +1,318 @@
-// injected-script.js - FIXED GTM container detection
+// injected-script.js - Enhanced with bidirectional sync
 
 // Prevent multiple injections
 if (window.ConsentInspector) {
   console.log('🔧 ConsentInspector already exists, skipping injection...');
 } else {
-  console.log('🔧 Creating ConsentInspector...');
+  console.log('🔧 Creating ConsentInspector with bidirectional sync...');
   
-  // Create ConsentInspector in page context
+  // Create ConsentInspector in page context with bidirectional sync
   window.ConsentInspector = {
-    version: 'external-v2-fixed',
+    version: 'bidirectional-v1',
     
+    // Shared consent state
+    sharedConsentState: {
+      analytics_storage: 'denied',
+      ad_storage: 'denied',
+      functionality_storage: 'denied',
+      personalization_storage: 'denied',
+      security_storage: 'granted',
+      lastUpdatedBy: null,
+      timestamp: null
+    },
+    
+    // Initialize bidirectional sync
+    initBidirectionalSync: function() {
+      console.log('🔄 Initializing bidirectional consent sync...');
+      
+      // Listen for Cookiebot changes
+      this.setupCookiebotListeners();
+      
+      // Listen for extension changes
+      this.setupExtensionListeners();
+      
+      // Sync initial state
+      this.syncInitialState();
+      
+      // Set up periodic sync check
+      this.setupPeriodicSync();
+    },
+    
+    // Setup Cookiebot listeners
+    setupCookiebotListeners: function() {
+      // Listen for all Cookiebot events
+      ['CookiebotOnConsentReady', 'CookiebotOnAccept', 'CookiebotOnDecline', 'CookiebotOnConsentChange'].forEach(eventName => {
+        window.addEventListener(eventName, () => {
+          console.log(`🍪 Cookiebot event: ${eventName}`);
+          this.handleCookiebotChange('cookiebot-event');
+        });
+      });
+      
+      // Also monitor Cookiebot object directly
+      if (window.Cookiebot) {
+        // Override Cookiebot's internal consent update method
+        const originalUpdate = window.Cookiebot.updateConsentState;
+        if (originalUpdate) {
+          window.Cookiebot.updateConsentState = (...args) => {
+            const result = originalUpdate.apply(window.Cookiebot, args);
+            this.handleCookiebotChange('cookiebot-internal');
+            return result;
+          };
+        }
+      }
+    },
+    
+    // Handle Cookiebot consent changes
+    handleCookiebotChange: function(source) {
+      if (!window.Cookiebot || !window.Cookiebot.consent) return;
+      
+      const cookiebotConsent = window.Cookiebot.consent;
+      const newState = {
+        analytics_storage: cookiebotConsent.statistics ? 'granted' : 'denied',
+        ad_storage: cookiebotConsent.marketing ? 'granted' : 'denied',
+        functionality_storage: cookiebotConsent.necessary ? 'granted' : 'denied',
+        personalization_storage: cookiebotConsent.preferences ? 'granted' : 'denied',
+        security_storage: 'granted',
+        lastUpdatedBy: 'cookiebot',
+        timestamp: Date.now()
+      };
+      
+      // Check if state actually changed
+      if (!this.isStateEqual(this.sharedConsentState, newState)) {
+        console.log('🔄 Cookiebot changed consent, syncing to extension...');
+        this.updateSharedState(newState);
+        this.notifyExtension('cookiebot-change', newState);
+        this.updateGTM(newState);
+      }
+    },
+    
+    // Setup extension listeners
+    setupExtensionListeners: function() {
+      // Listen for consent updates from extension
+      window.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'EXTENSION_CONSENT_UPDATE') {
+          console.log('📥 Extension consent update received:', event.data);
+          this.handleExtensionChange(event.data.consent);
+        }
+      });
+    },
+    
+    // Handle extension consent changes
+    handleExtensionChange: function(newConsent) {
+      const newState = {
+        ...newConsent,
+        lastUpdatedBy: 'extension',
+        timestamp: Date.now()
+      };
+      
+      // Update shared state
+      this.updateSharedState(newState);
+      
+      // Sync to Cookiebot
+      this.syncToCookiebot(newState);
+      
+      // Update GTM
+      this.updateGTM(newState);
+    },
+    
+    // Sync consent state to Cookiebot
+    syncToCookiebot: function(consentState) {
+      if (!window.Cookiebot || !window.Cookiebot.consent) {
+        console.warn('⚠️ Cookiebot not available for sync');
+        return;
+      }
+      
+      console.log('🔄 Syncing to Cookiebot:', consentState);
+      
+      // Update Cookiebot's consent object
+      window.Cookiebot.consent.statistics = consentState.analytics_storage === 'granted';
+      window.Cookiebot.consent.marketing = consentState.ad_storage === 'granted';
+      window.Cookiebot.consent.preferences = consentState.personalization_storage === 'granted';
+      window.Cookiebot.consent.necessary = consentState.functionality_storage === 'granted';
+      
+      // Update Cookiebot's internal state
+      if (window.Cookiebot.updateConsentUI) {
+        window.Cookiebot.updateConsentUI();
+      }
+      
+      // Force Cookiebot to save the new consent
+      if (window.Cookiebot.submitConsent) {
+        window.Cookiebot.submitConsent();
+      }
+      
+      // Update the Cookiebot cookie directly as fallback
+      this.updateCookiebotCookie(consentState);
+    },
+    
+    // Update Cookiebot cookie directly
+    updateCookiebotCookie: function(consentState) {
+      const consentData = {
+        stamp: new Date().toISOString(),
+        necessary: true,
+        preferences: consentState.personalization_storage === 'granted',
+        statistics: consentState.analytics_storage === 'granted',
+        marketing: consentState.ad_storage === 'granted',
+        method: 'explicit',
+        ver: 4
+      };
+      
+      // Encode and set the cookie
+      const cookieValue = encodeURIComponent(JSON.stringify(consentData));
+      document.cookie = `CookieConsent=${cookieValue}; path=/; max-age=31536000; SameSite=Lax`;
+    },
+    
+    // Notify extension of changes
+    notifyExtension: function(source, consentState) {
+      // Send to content script via postMessage
+      window.postMessage({
+        type: 'COOKIEBOT_SYNC_UPDATE',
+        source: source,
+        consent: consentState,
+        timestamp: Date.now()
+      }, '*');
+      
+      // Also dispatch custom event
+      const event = new CustomEvent('consentSyncUpdate', {
+        detail: {
+          source: source,
+          consent: consentState
+        }
+      });
+      window.dispatchEvent(event);
+    },
+    
+    // Update GTM with new consent state
+    updateGTM: function(consentState) {
+      if (typeof gtag !== 'undefined') {
+        gtag('consent', 'update', {
+          analytics_storage: consentState.analytics_storage,
+          ad_storage: consentState.ad_storage,
+          functionality_storage: consentState.functionality_storage,
+          personalization_storage: consentState.personalization_storage,
+          security_storage: consentState.security_storage
+        });
+        console.log('✅ GTM consent updated:', consentState);
+      }
+    },
+    
+    // Enhanced updateConsent method for extension control
+    updateConsent: function(settings) {
+      console.log('🎮 Extension updating consent:', settings);
+      
+      // Create new state from settings
+      const newState = {
+        ...this.sharedConsentState,
+        ...settings,
+        lastUpdatedBy: 'extension',
+        timestamp: Date.now()
+      };
+      
+      // Update everything
+      this.updateSharedState(newState);
+      this.syncToCookiebot(newState);
+      this.updateGTM(newState);
+      
+      return { success: true, state: newState };
+    },
+    
+    // Helper methods
+    updateSharedState: function(newState) {
+      this.sharedConsentState = { ...newState };
+      console.log('📊 Shared state updated:', this.sharedConsentState);
+    },
+    
+    isStateEqual: function(state1, state2) {
+      const keys = ['analytics_storage', 'ad_storage', 'functionality_storage', 'personalization_storage'];
+      return keys.every(key => state1[key] === state2[key]);
+    },
+    
+    syncInitialState: function() {
+      // Try to get initial state from Cookiebot
+      if (window.Cookiebot && window.Cookiebot.consent) {
+        this.handleCookiebotChange('initial-sync');
+      } else {
+        // Get from dataLayer if available
+        const gtmState = this.getCurrentConsentState();
+        this.updateSharedState({
+          ...gtmState,
+          lastUpdatedBy: 'initial',
+          timestamp: Date.now()
+        });
+      }
+    },
+    
+    setupPeriodicSync: function() {
+      // Check for sync issues every 5 seconds
+      setInterval(() => {
+        this.checkSyncIntegrity();
+      }, 5000);
+    },
+    
+    checkSyncIntegrity: function() {
+      // Get current states from all sources
+      const cookiebotState = this.getCookiebotState();
+      const gtmState = this.getGTMState();
+      const sharedState = this.sharedConsentState;
+      
+      // Check if they're in sync
+      const inSync = this.isStateEqual(cookiebotState, sharedState) && 
+                    this.isStateEqual(gtmState, sharedState);
+      
+      if (!inSync) {
+        console.warn('⚠️ Consent sync mismatch detected, resyncing...');
+        // Use shared state as source of truth
+        this.syncToCookiebot(sharedState);
+        this.updateGTM(sharedState);
+      }
+    },
+    
+    getCookiebotState: function() {
+      if (!window.Cookiebot || !window.Cookiebot.consent) {
+        return this.sharedConsentState;
+      }
+      
+      return {
+        analytics_storage: window.Cookiebot.consent.statistics ? 'granted' : 'denied',
+        ad_storage: window.Cookiebot.consent.marketing ? 'granted' : 'denied',
+        functionality_storage: window.Cookiebot.consent.necessary ? 'granted' : 'denied',
+        personalization_storage: window.Cookiebot.consent.preferences ? 'granted' : 'denied',
+        security_storage: 'granted'
+      };
+    },
+    
+    getGTMState: function() {
+      // This is harder to get directly, so we'll use our shared state
+      return this.sharedConsentState;
+    },
+    
+    // Get sync status for UI
+    getSyncStatus: function() {
+      const cookiebotState = this.getCookiebotState();
+      const gtmState = this.getGTMState();
+      const sharedState = this.sharedConsentState;
+      
+      const inSync = this.isStateEqual(cookiebotState, sharedState) && 
+                    this.isStateEqual(gtmState, sharedState);
+      
+      return {
+        inSync: inSync,
+        cookiebot: cookiebotState,
+        gtm: gtmState,
+        extension: sharedState,
+        lastUpdatedBy: sharedState.lastUpdatedBy,
+        timestamp: sharedState.timestamp
+      };
+    },
+    
+    // Force sync
+    forceSync: function() {
+      console.log('🔄 Force syncing all consent states...');
+      this.syncToCookiebot(this.sharedConsentState);
+      this.updateGTM(this.sharedConsentState);
+      return { success: true, status: this.getSyncStatus() };
+    },
+    
+    // Original methods (preserved for compatibility)
     detectGTM: function() {
       const result = {
         hasGTM: false,
@@ -82,7 +385,7 @@ if (window.ConsentInspector) {
         // No consent mode - all storage granted by default
         result.consentState = {
           analytics_storage: 'granted',
-          ad_storage: 'granted',
+          ad_storage: 'granted', 
           functionality_storage: 'granted',
           personalization_storage: 'granted',
           security_storage: 'granted',
@@ -227,49 +530,66 @@ if (window.ConsentInspector) {
       return cmpInfo;
     },
     
-    // Simulation mode state
-    simulationMode: false,
-    simulatedConsent: {
-      analytics_storage: 'granted',
-      ad_storage: 'granted',
-      functionality_storage: 'granted',
-      personalization_storage: 'granted',
-      security_storage: 'granted'
-    },
+
     
-    // Update simulation mode
-    updateSimulationMode: function(data) {
-      this.simulationMode = data.simulationMode;
-      this.simulatedConsent = { ...this.simulatedConsent, ...data.simulatedConsent };
-      console.log('🧪 Simulation mode updated:', this.simulationMode, this.simulatedConsent);
-      return { success: true };
-    },
-    
-    // Get current consent state (real or simulated)
     getCurrentConsentState: function() {
-      if (this.simulationMode) {
-        return this.simulatedConsent;
-      }
-      
-      // Return real consent state
-      if (window.Cookiebot && window.Cookiebot.consent) {
-        return {
-          analytics_storage: window.Cookiebot.consent.statistics ? 'granted' : 'denied',
-          ad_storage: window.Cookiebot.consent.marketing ? 'granted' : 'denied',
-          functionality_storage: window.Cookiebot.consent.necessary ? 'granted' : 'denied',
-          personalization_storage: window.Cookiebot.consent.preferences ? 'granted' : 'denied',
-          security_storage: 'granted'
-        };
-      }
-      
-      // Fallback to default granted state
-      return {
+      const defaultState = {
         analytics_storage: 'granted',
         ad_storage: 'granted',
         functionality_storage: 'granted',
         personalization_storage: 'granted',
         security_storage: 'granted'
       };
+      
+      // Method 1: Check Google Consent Mode in dataLayer
+      if (window.dataLayer && Array.isArray(window.dataLayer)) {
+        for (let i = window.dataLayer.length - 1; i >= 0; i--) {
+          const item = window.dataLayer[i];
+          // Handle both array and object formats
+          if (Array.isArray(item) && item[0] === 'consent' && 
+              (item[1] === 'default' || item[1] === 'update') && item[2]) {
+            return { ...defaultState, ...item[2] };
+          } else if (item && typeof item === 'object' && item['0'] === 'consent' && 
+                     (item['1'] === 'default' || item['1'] === 'update') && item['2']) {
+            return { ...defaultState, ...item['2'] };
+          }
+        }
+      }
+      
+      // Method 2: Check Cookiebot consent state
+      if (window.Cookiebot && window.Cookiebot.consent) {
+        const cookiebotConsent = window.Cookiebot.consent;
+        return {
+          analytics_storage: cookiebotConsent.analytics ? 'granted' : 'denied',
+          ad_storage: cookiebotConsent.advertising ? 'granted' : 'denied',
+          functionality_storage: cookiebotConsent.functionality ? 'granted' : 'denied',
+          personalization_storage: cookiebotConsent.personalization ? 'granted' : 'denied',
+          security_storage: cookiebotConsent.necessary ? 'granted' : 'denied',
+          _cookiebot: true
+        };
+      }
+      
+      // Method 3: Check OneTrust consent state
+      if (window.OneTrust && window.OneTrust.GetDomainData) {
+        try {
+          const oneTrustData = window.OneTrust.GetDomainData();
+          if (oneTrustData && oneTrustData.Groups) {
+            const groups = oneTrustData.Groups;
+            return {
+              analytics_storage: groups.find(g => g.CustomGroupId === 'analytics')?.Status === 'true' ? 'granted' : 'denied',
+              ad_storage: groups.find(g => g.CustomGroupId === 'advertising')?.Status === 'true' ? 'granted' : 'denied',
+              functionality_storage: groups.find(g => g.CustomGroupId === 'functionality')?.Status === 'true' ? 'granted' : 'denied',
+              personalization_storage: groups.find(g => g.CustomGroupId === 'personalization')?.Status === 'true' ? 'granted' : 'denied',
+              security_storage: 'granted', // Necessary cookies are always granted
+              _oneTrust: true
+            };
+          }
+        } catch (error) {
+          console.log('OneTrust consent check failed:', error);
+        }
+      }
+      
+      return defaultState;
     },
     
     getTagInfo: function() {
@@ -670,6 +990,8 @@ if (window.ConsentInspector) {
     }
   };
   
+  // Initialize bidirectional sync
+  window.ConsentInspector.initBidirectionalSync();
 
 }
 
@@ -744,9 +1066,19 @@ window.addEventListener('message', function(event) {
           result = window.ConsentInspector.runDiagnostics();
           break;
           
-        case 'updateSimulationMode':
-          console.log('🧪 Calling updateSimulationMode...');
-          result = window.ConsentInspector.updateSimulationMode(data);
+        case 'getSyncStatus':
+          console.log('🔄 Calling getSyncStatus...');
+          result = window.ConsentInspector.getSyncStatus();
+          break;
+          
+        case 'forceSync':
+          console.log('🔄 Calling forceSync...');
+          result = window.ConsentInspector.forceSync();
+          break;
+          
+        case 'applyConsentWithSync':
+          console.log('🔄 Calling applyConsentWithSync...');
+          result = window.ConsentInspector.updateConsent(data.settings);
           break;
           
         default:
@@ -788,3 +1120,8 @@ window.addEventListener('message', function(event) {
 console.log('🔧 GTM Inspector injected script loaded successfully');
 console.log('🔧 ConsentInspector available:', !!window.ConsentInspector);
 console.log('🔧 Message listener attached');
+
+// Initialize bidirectional sync
+if (window.ConsentInspector) {
+  window.ConsentInspector.initBidirectionalSync();
+}
