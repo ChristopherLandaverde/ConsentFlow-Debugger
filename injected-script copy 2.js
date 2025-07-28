@@ -596,8 +596,9 @@ if (window.ConsentInspector) {
       const tags = [];
       const consentState = this.getCurrentConsentState();
       
-      // Simple tag detection - check for common tracking scripts
+      // Comprehensive tag detection - check for common tracking scripts
       const tagDetectors = [
+        // Analytics Tags
         {
           name: 'Google Analytics 4',
           type: 'analytics',
@@ -618,6 +619,63 @@ if (window.ConsentInspector) {
           }
         },
         {
+          name: 'Adobe Analytics',
+          type: 'analytics',
+          consentType: 'analytics_storage',
+          check: () => {
+            return window.s || 
+                   document.querySelector('script[src*="omtrdc.net"]') ||
+                   document.querySelector('script[src*="adobe.com/analytics"]');
+          }
+        },
+        {
+          name: 'Mixpanel',
+          type: 'analytics',
+          consentType: 'analytics_storage',
+          check: () => {
+            return window.mixpanel || 
+                   document.querySelector('script[src*="mixpanel.com"]');
+          }
+        },
+        {
+          name: 'Amplitude',
+          type: 'analytics',
+          consentType: 'analytics_storage',
+          check: () => {
+            return window.amplitude || 
+                   document.querySelector('script[src*="amplitude.com"]');
+          }
+        },
+        {
+          name: 'Segment',
+          type: 'analytics',
+          consentType: 'analytics_storage',
+          check: () => {
+            return window.analytics || 
+                   document.querySelector('script[src*="segment.com"]');
+          }
+        },
+        {
+          name: 'Hotjar',
+          type: 'analytics',
+          consentType: 'analytics_storage',
+          check: () => {
+            return window.hj || 
+                   document.querySelector('script[src*="hotjar.com"]');
+          }
+        },
+        {
+          name: 'FullStory',
+          type: 'analytics',
+          consentType: 'analytics_storage',
+          check: () => {
+            return window.FS || 
+                   document.querySelector('script[src*="fullstory.com"]');
+          }
+        },
+        
+        // Advertising/Marketing Tags
+        {
           name: 'Facebook Pixel',
           type: 'advertising',
           consentType: 'ad_storage', 
@@ -636,12 +694,95 @@ if (window.ConsentInspector) {
           }
         },
         {
-          name: 'Hotjar',
-          type: 'analytics',
-          consentType: 'analytics_storage',
+          name: 'LinkedIn Insight Tag',
+          type: 'advertising',
+          consentType: 'ad_storage',
           check: () => {
-            return window.hj || 
-                   document.querySelector('script[src*="hotjar.com"]');
+            return window.lintrk || 
+                   document.querySelector('script[src*="snap.licdn.com"]');
+          }
+        },
+        {
+          name: 'Twitter Pixel',
+          type: 'advertising',
+          consentType: 'ad_storage',
+          check: () => {
+            return window.twq || 
+                   document.querySelector('script[src*="static.ads-twitter.com"]');
+          }
+        },
+        {
+          name: 'TikTok Pixel',
+          type: 'advertising',
+          consentType: 'ad_storage',
+          check: () => {
+            return window.ttq || 
+                   document.querySelector('script[src*="analytics.tiktok.com"]');
+          }
+        },
+        {
+          name: 'Pinterest Tag',
+          type: 'advertising',
+          consentType: 'ad_storage',
+          check: () => {
+            return window.pintrk || 
+                   document.querySelector('script[src*="s.pinimg.com"]');
+          }
+        },
+        {
+          name: 'Microsoft Ads (Bing)',
+          type: 'advertising',
+          consentType: 'ad_storage',
+          check: () => {
+            return window.uetq || 
+                   document.querySelector('script[src*="bat.bing.com"]');
+          }
+        },
+        
+        // Functionality/Personalization Tags
+        {
+          name: 'Optimizely',
+          type: 'functionality',
+          consentType: 'functionality_storage',
+          check: () => {
+            return window.optimizely || 
+                   document.querySelector('script[src*="optimizely.com"]');
+          }
+        },
+        {
+          name: 'VWO (Visual Website Optimizer)',
+          type: 'functionality',
+          consentType: 'functionality_storage',
+          check: () => {
+            return window._vwo_code || 
+                   document.querySelector('script[src*="dev.visualwebsiteoptimizer.com"]');
+          }
+        },
+        {
+          name: 'Crazy Egg',
+          type: 'functionality',
+          consentType: 'functionality_storage',
+          check: () => {
+            return window.CE_SNAPPY_CREATED || 
+                   document.querySelector('script[src*="crazyegg.com"]');
+          }
+        },
+        {
+          name: 'Mouseflow',
+          type: 'functionality',
+          consentType: 'functionality_storage',
+          check: () => {
+            return window._mfq || 
+                   document.querySelector('script[src*="mouseflow.com"]');
+          }
+        },
+        {
+          name: 'Lucky Orange',
+          type: 'functionality',
+          consentType: 'functionality_storage',
+          check: () => {
+            return window.__lo_site_id || 
+                   document.querySelector('script[src*="luckyorange.com"]');
           }
         }
       ];
