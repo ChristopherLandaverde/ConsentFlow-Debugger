@@ -82,7 +82,7 @@ if (window.ConsentInspector) {
         // No consent mode - all storage granted by default
         result.consentState = {
           analytics_storage: 'granted',
-          ad_storage: 'granted', 
+          ad_storage: 'granted',
           functionality_storage: 'granted',
           personalization_storage: 'granted',
           security_storage: 'granted',
@@ -369,18 +369,23 @@ if (window.ConsentInspector) {
       try {
         const results = [];
         
-        // Method 1: Update Google Consent Mode
+        // Temporarily disable Cookiebot events to prevent conflicts
+        const cookiebotDisabled = this.disableCookiebotEvents();
+        
+        // Method 1: Update Google Consent Mode (Primary method)
         if (window.gtag && typeof window.gtag === 'function') {
           window.gtag('consent', 'update', settings);
           results.push({ method: 'gtag', success: true });
+          console.log('🍪 Updated consent via gtag:', settings);
         }
         
         if (window.dataLayer && Array.isArray(window.dataLayer)) {
           window.dataLayer.push(['consent', 'update', settings]);
           results.push({ method: 'dataLayer', success: true });
+          console.log('🍪 Updated consent via dataLayer:', settings);
         }
         
-        // Method 2: Update Cookiebot consent state
+        // Method 2: Update Cookiebot consent state (if available, but don't trigger events)
         if (window.Cookiebot && window.Cookiebot.consent) {
           const cookiebotConsent = window.Cookiebot.consent;
           
@@ -401,79 +406,24 @@ if (window.ConsentInspector) {
             cookiebotConsent.necessary = settings.security_storage === 'granted';
           }
           
-          // Trigger Cookiebot consent update event
-          if (window.Cookiebot.callback && typeof window.Cookiebot.callback === 'function') {
-            window.Cookiebot.callback();
-          }
-          
-          // Dispatch custom event for Cookiebot
-          const consentEvent = new CustomEvent('CookiebotOnAccept', {
-            detail: { consent: cookiebotConsent }
-          });
-          window.dispatchEvent(consentEvent);
-          
-          results.push({ method: 'cookiebot', success: true });
+          results.push({ method: 'cookiebot_silent', success: true });
+          console.log('🍪 Updated Cookiebot consent silently:', cookiebotConsent);
         }
         
-        // Method 3: Update OneTrust consent state
-        if (window.OneTrust && window.OneTrust.SetDomainData) {
-          try {
-            const oneTrustData = window.OneTrust.GetDomainData();
-            if (oneTrustData && oneTrustData.Groups) {
-              const groups = oneTrustData.Groups;
-              
-              // Update group statuses based on consent settings
-              if (settings.analytics_storage !== undefined) {
-                const analyticsGroup = groups.find(g => g.CustomGroupId === 'analytics');
-                if (analyticsGroup) {
-                  analyticsGroup.Status = settings.analytics_storage === 'granted' ? 'true' : 'false';
-                }
-              }
-              if (settings.ad_storage !== undefined) {
-                const advertisingGroup = groups.find(g => g.CustomGroupId === 'advertising');
-                if (advertisingGroup) {
-                  advertisingGroup.Status = settings.ad_storage === 'granted' ? 'true' : 'false';
-                }
-              }
-              if (settings.functionality_storage !== undefined) {
-                const functionalityGroup = groups.find(g => g.CustomGroupId === 'functionality');
-                if (functionalityGroup) {
-                  functionalityGroup.Status = settings.functionality_storage === 'granted' ? 'true' : 'false';
-                }
-              }
-              if (settings.personalization_storage !== undefined) {
-                const personalizationGroup = groups.find(g => g.CustomGroupId === 'personalization');
-                if (personalizationGroup) {
-                  personalizationGroup.Status = settings.personalization_storage === 'granted' ? 'true' : 'false';
-                }
-              }
-              
-              // Update OneTrust data
-              window.OneTrust.SetDomainData(oneTrustData);
-              
-              // Trigger OneTrust events
-              if (window.OneTrust.OnConsentChanged) {
-                window.OneTrust.OnConsentChanged();
-              }
-              
-              results.push({ method: 'onetrust', success: true });
-            }
-          } catch (error) {
-            console.log('OneTrust consent update failed:', error);
-            results.push({ method: 'onetrust', success: false, error: error.message });
-          }
+        // Re-enable Cookiebot events after a short delay
+        if (cookiebotDisabled) {
+          setTimeout(() => {
+            this.enableCookiebotEvents();
+          }, 1000);
         }
         
-        // Log the consent update event
-        this.addEvent({
-          timestamp: Date.now(),
-          tagName: 'Consent Update',
-          tagType: 'consent_update',
-          consentType: 'manual',
-          allowed: true,
-          reason: `Updated via extension: ${JSON.stringify(settings)}`,
-          status: 'UPDATED 🔄',
-          source: 'extension_update'
+        // Log the consent change to our event log
+        this.logConsentChange('simulator_update', {
+          action: 'simulator_update',
+          website: document.title || window.location.hostname,
+          url: window.location.href,
+          consent: settings,
+          timestamp: Date.now()
         });
         
         return { 
@@ -483,6 +433,7 @@ if (window.ConsentInspector) {
         };
         
       } catch (error) {
+        console.error('Error updating consent:', error);
         return { success: false, error: error.message };
       }
     },
@@ -612,6 +563,39 @@ if (window.ConsentInspector) {
     clearEventLog: function() {
       window.gtmInspectorEventLog = [];
       console.log('📊 Event log cleared');
+    },
+    
+    // Temporarily disable Cookiebot event listeners to prevent conflicts
+    disableCookiebotEvents: function() {
+      if (window.Cookiebot) {
+        // Store original event listeners
+        if (!window.gtmInspectorOriginalCookiebotEvents) {
+          window.gtmInspectorOriginalCookiebotEvents = {
+            onAccept: window.Cookiebot.callback,
+            onDecline: window.Cookiebot.callback,
+            onConsentReady: window.Cookiebot.callback
+          };
+        }
+        
+        // Temporarily disable callbacks
+        window.Cookiebot.callback = null;
+        
+        console.log('🍪 Temporarily disabled Cookiebot event listeners');
+        return true;
+      }
+      return false;
+    },
+    
+    // Re-enable Cookiebot event listeners
+    enableCookiebotEvents: function() {
+      if (window.Cookiebot && window.gtmInspectorOriginalCookiebotEvents) {
+        // Restore original event listeners
+        window.Cookiebot.callback = window.gtmInspectorOriginalCookiebotEvents.onAccept;
+        
+        console.log('🍪 Re-enabled Cookiebot event listeners');
+        return true;
+      }
+      return false;
     },
     
     // Run comprehensive diagnostics
