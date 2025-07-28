@@ -120,6 +120,26 @@
             sendResponse(Array.isArray(interactionResult) ? interactionResult : []);
             break;
             
+          case 'clearEventLog':
+            // Ensure script is injected first
+            if (!scriptInjected) {
+              await injectScript();
+            }
+            // Use postMessage to communicate with page context
+            const clearResult = await sendMessageToPage('clearEventLog');
+            sendResponse(clearResult);
+            break;
+            
+          case 'exportLog':
+            // Ensure script is injected first
+            if (!scriptInjected) {
+              await injectScript();
+            }
+            // Use postMessage to communicate with page context
+            const exportResult = await sendMessageToPage('exportLog');
+            sendResponse(exportResult);
+            break;
+            
           default:
             sendResponse({ error: 'Unknown action: ' + request.action });
         }

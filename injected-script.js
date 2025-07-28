@@ -580,6 +580,11 @@ window.addEventListener('message', function(event) {
           result = window.ConsentInspector.logTagFiring(data.tagName, data.tagType, data.consentType, data.allowed, data.reason);
           break;
           
+        case 'clearEventLog':
+          console.log('📊 Calling clearEventLog...');
+          result = window.ConsentInspector.clearEventLog();
+          break;
+          
         default:
           error = 'Unknown action: ' + action;
           console.error('❌ Unknown action:', action);

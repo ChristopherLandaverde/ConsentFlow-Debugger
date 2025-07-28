@@ -485,29 +485,37 @@ function updateEventDisplay(events) {
   
   try {
     eventLog.innerHTML = events.slice(-20).reverse().map(event => {
-      // Handle tag-focused event display
+      // Determine event category for filtering
+      let eventCategory = 'other';
       let eventDisplay = '';
       let statusColor = '#007bff';
       
-      if (event.source === 'tag-detection') {
-        // Tag detection events
-        eventDisplay = `${event.tagName} (${event.tagType})`;
-        statusColor = event.allowed ? '#28a745' : '#dc3545';
-      } else if (event.source === 'consent-state') {
-        // Consent state events
-        eventDisplay = `Consent Mode: ${Object.entries(event.consentState || {}).map(([k,v]) => `${k}=${v}`).join(', ')}`;
+      if (event.source === 'consent_state' || event.source === 'cookiebot' || event.tagType === 'consent_change' || event.tagType === 'consent_status') {
+        eventCategory = 'consent';
+        eventDisplay = event.tagName || 'Consent Event';
         statusColor = '#ffc107';
-      } else if (event.source === 'gtm-detection') {
-        // GTM container events
-        eventDisplay = `GTM Container: ${event.gtmId || 'Unknown'}`;
-        statusColor = '#17a2b8';
+      } else if (event.source === 'tag_detection' || event.source === 'tag_manager' || event.tagType === 'analytics' || event.tagType === 'advertising' || event.tagType === 'ecommerce' || event.tagType === 'behavioral') {
+        eventCategory = 'gtm';
+        eventDisplay = event.tagName || 'GTM Event';
+        statusColor = event.allowed ? '#28a745' : '#dc3545';
+      } else if (event.source === 'system' || event.tagType === 'system') {
+        eventCategory = 'other';
+        eventDisplay = event.tagName || 'System Event';
+        statusColor = '#6c757d';
       } else {
-        // Fallback for other events
-        eventDisplay = event.tagName || 'Unknown event';
+        // Default categorization
+        if (event.tagName && event.tagName.toLowerCase().includes('consent')) {
+          eventCategory = 'consent';
+          statusColor = '#ffc107';
+        } else if (event.tagName && (event.tagName.toLowerCase().includes('gtm') || event.tagName.toLowerCase().includes('tag'))) {
+          eventCategory = 'gtm';
+          statusColor = '#17a2b8';
+        }
+        eventDisplay = event.tagName || 'Event';
       }
       
       return `
-        <div class="event-item" data-event-type="${event.tagType || 'other'}">
+        <div class="event-item" data-event-type="${eventCategory}">
           <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
             <span style="font-size: 12px; color: #666;">[${new Date(event.timestamp || Date.now()).toLocaleTimeString()}]</span>
             <span style="font-size: 10px; background: ${statusColor}; color: white; padding: 2px 6px; border-radius: 3px;">
@@ -610,7 +618,50 @@ async function clearEventLog() {
 }
 
 function exportEventLog() {
-  showNotification('Export functionality would be implemented here', 'info');
+  // Get current events from the display
+  const eventItems = document.querySelectorAll('#eventLog .event-item:not(.empty-state)');
+  
+  if (eventItems.length === 0) {
+    showNotification('No events to export', 'info');
+    return;
+  }
+  
+  // Convert displayed events to data
+  const eventsToExport = Array.from(eventItems).map(item => {
+    const timestamp = item.querySelector('span[style*="color: #666"]')?.textContent?.replace(/[\[\]]/g, '') || new Date().toLocaleTimeString();
+    const status = item.querySelector('span[style*="background"]')?.textContent || 'Event';
+    const name = item.querySelector('div[style*="font-weight: 600"]')?.textContent || 'Unknown Event';
+    const reason = item.querySelector('div[style*="color: #666"]')?.textContent || '';
+    
+    return {
+      timestamp: timestamp,
+      status: status,
+      name: name,
+      reason: reason,
+      category: item.dataset.eventType || 'other'
+    };
+  });
+  
+  // Create export data
+  const exportData = {
+    exportDate: new Date().toISOString(),
+    website: window.location.href,
+    totalEvents: eventsToExport.length,
+    events: eventsToExport
+  };
+  
+  // Create and download file
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `gtm-consent-events-${new Date().toISOString().split('T')[0]}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  showNotification('Event log exported successfully!', 'success');
 }
 
 async function runDiagnostics() {
