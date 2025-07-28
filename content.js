@@ -371,9 +371,6 @@
   
   // Handle Cookiebot consent changes
   function handleCookiebotConsentChange(consentData) {
-    // Show notification to user
-    showConsentChangeNotification(consentData);
-    
     // Update extension state
     updateExtensionState(consentData);
     
@@ -530,121 +527,7 @@
     });
   }
   
-  // Show notification to user
-  function showConsentChangeNotification(consentData) {
-    // Create notification element
-    const notification = document.createElement('div');
-    notification.id = 'gtm-inspector-consent-notification';
-    notification.style.cssText = `
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 20px;
-      border-radius: 12px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-      z-index: 10001;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      font-size: 14px;
-      max-width: 350px;
-      animation: gtmInspectorSlideIn 0.4s ease-out;
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255,255,255,0.2);
-    `;
-    
-    const actionIcon = consentData.action === 'accept' ? '✅' : '❌';
-    const actionText = consentData.action === 'accept' ? 'Accepted' : 'Rejected';
-    
-    notification.innerHTML = `
-      <div style="display: flex; align-items: flex-start; gap: 12px;">
-        <div style="font-size: 24px;">🍪</div>
-        <div style="flex: 1;">
-          <div style="font-weight: 600; margin-bottom: 4px; font-size: 16px;">
-            ${consentData.website}
-          </div>
-          <div style="margin-bottom: 8px; opacity: 0.9;">
-            Cookies ${actionText} ${actionIcon}
-          </div>
-          <div style="font-size: 12px; opacity: 0.8; margin-bottom: 12px;">
-            GTM Consent Inspector detected this change
-          </div>
-          <div style="display: flex; gap: 8px;">
-            <button id="gtm-inspector-view-details" style="
-              background: rgba(255,255,255,0.2);
-              border: 1px solid rgba(255,255,255,0.3);
-              color: white;
-              padding: 6px 12px;
-              border-radius: 6px;
-              font-size: 12px;
-              cursor: pointer;
-              transition: all 0.2s;
-            ">View Details</button>
-            <button id="gtm-inspector-dismiss" style="
-              background: transparent;
-              border: 1px solid rgba(255,255,255,0.3);
-              color: white;
-              padding: 6px 12px;
-              border-radius: 6px;
-              font-size: 12px;
-              cursor: pointer;
-              transition: all 0.2s;
-            ">Dismiss</button>
-          </div>
-        </div>
-      </div>
-    `;
-    
-    // Add CSS animation
-    const style = document.createElement('style');
-    style.textContent = `
-      @keyframes gtmInspectorSlideIn {
-        from { transform: translateX(100%); opacity: 0; }
-        to { transform: translateX(0); opacity: 1; }
-      }
-      @keyframes gtmInspectorSlideOut {
-        from { transform: translateX(0); opacity: 1; }
-        to { transform: translateX(100%); opacity: 0; }
-      }
-    `;
-    document.head.appendChild(style);
-    
-    document.body.appendChild(notification);
-    
-    // Add event listeners
-    document.getElementById('gtm-inspector-view-details').addEventListener('click', () => {
-      // Open extension popup or show detailed view
-      chrome.runtime.sendMessage({
-        action: 'openPopup',
-        data: consentData
-      }).catch(error => {
-        console.log('Could not open popup:', error);
-        // Fallback: show details in console
-        console.log('🍪 Cookiebot Consent Details:', consentData);
-      });
-    });
-    
-    document.getElementById('gtm-inspector-dismiss').addEventListener('click', () => {
-      notification.style.animation = 'gtmInspectorSlideOut 0.3s ease-in';
-      setTimeout(() => {
-        if (notification.parentNode) {
-          notification.remove();
-        }
-      }, 300);
-    });
-    
-    // Auto-remove after 10 seconds
-    setTimeout(() => {
-      if (notification.parentNode) {
-        notification.style.animation = 'gtmInspectorSlideOut 0.3s ease-in';
-        setTimeout(() => {
-          if (notification.parentNode) {
-            notification.remove();
-          }
-        }, 300);
-      }
-    }, 10000);
-  }
+
   
   // Update extension state
   function updateExtensionState(consentData) {
