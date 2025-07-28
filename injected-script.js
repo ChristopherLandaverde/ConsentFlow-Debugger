@@ -384,77 +384,130 @@ if (window.ConsentInspector) {
     },
     
     getEvents: function() {
-      // Enhanced event logging with Tag Manager interactions
+      // Real event logging - capture actual consent activity and tag firing
       const events = [];
       
       try {
-        console.log('📊 Getting enhanced events with Tag Manager interactions...');
+        console.log('📊 Getting real consent and tag events...');
         
-        // Get Tag Manager interactions from page context
-        const interactions = window.gtmInspectorInteractions || [];
+        // Get stored events from page context
+        const storedEvents = window.gtmInspectorEventLog || [];
         
-        // Convert interactions to event format
-        interactions.forEach(interaction => {
-          const event = {
-            timestamp: interaction.timestamp,
-            tagName: `Tag Manager Interaction: ${interaction.type}`,
-            tagType: 'interaction',
-            consentType: 'monitoring',
-            allowed: true,
-            reason: `Monitored interaction between Cookiebot and Tag Manager`,
-            status: 'MONITORED ✅',
-            source: 'tag_manager_interaction',
-            details: {
-              type: interaction.type,
-              data: interaction.data,
-              url: interaction.url
-            }
-          };
-          events.push(event);
-        });
+        // Add stored events to the list
+        events.push(...storedEvents);
         
-        // Add a summary event
-        if (interactions.length > 0) {
-          const summaryEvent = {
+        // Get current consent state and add as event if it exists
+        const currentConsent = this.getCurrentConsentState();
+        if (currentConsent && !currentConsent._noConsentMode) {
+          const consentEvent = {
             timestamp: Date.now(),
-            tagName: 'Tag Manager Interaction Summary',
-            tagType: 'summary',
-            consentType: 'monitoring',
+            tagName: 'Current Consent State',
+            tagType: 'consent_status',
+            consentType: 'current',
             allowed: true,
-            reason: `Found ${interactions.length} Tag Manager interactions`,
-            status: 'SUMMARY 📊',
-            source: 'interaction_summary',
-            details: {
-              totalInteractions: interactions.length,
-              interactionTypes: [...new Set(interactions.map(i => i.type))],
-              lastInteraction: interactions[interactions.length - 1]?.timestamp
-            }
+            reason: `Analytics: ${currentConsent.analytics_storage}, Ads: ${currentConsent.ad_storage}, Functionality: ${currentConsent.functionality_storage}`,
+            status: 'ACTIVE 📊',
+            source: 'consent_state'
           };
-          events.push(summaryEvent);
+          events.push(consentEvent);
         }
         
-        // Add test event if no interactions found
+        // Get detected tags and their consent status
+        const detectedTags = this.getTagInfo();
+        detectedTags.forEach(tag => {
+          const tagEvent = {
+            timestamp: Date.now(),
+            tagName: tag.name,
+            tagType: tag.type,
+            consentType: tag.consentType,
+            allowed: tag.allowed,
+            reason: tag.reason,
+            status: tag.allowed ? 'ALLOWED ✅' : 'BLOCKED ❌',
+            source: 'tag_detection'
+          };
+          events.push(tagEvent);
+        });
+        
+        // Add test event if no events found
         if (events.length === 0) {
           const statusEvent = {
             timestamp: Date.now(),
-            tagName: 'Event Log Test',
-            tagType: 'test',
+            tagName: 'Event Log Ready',
+            tagType: 'system',
             consentType: 'none',
             allowed: true,
-            reason: 'Testing event log communication - no Tag Manager interactions detected yet',
-            status: 'WORKING ✅',
-            source: 'test'
+            reason: 'Event log is ready to capture consent activity and tag events',
+            status: 'READY ✅',
+            source: 'system'
           };
           events.push(statusEvent);
         }
         
-        console.log('📊 Returning', events.length, 'enhanced events');
+        console.log('📊 Returning', events.length, 'real events');
         return events;
         
       } catch (error) {
         console.error('❌ Error in getEvents:', error);
         return [];
       }
+    },
+    
+    // Add event to the log
+    addEvent: function(eventData) {
+      if (!window.gtmInspectorEventLog) {
+        window.gtmInspectorEventLog = [];
+      }
+      
+      const event = {
+        timestamp: Date.now(),
+        ...eventData
+      };
+      
+      window.gtmInspectorEventLog.push(event);
+      
+      // Keep only last 100 events
+      if (window.gtmInspectorEventLog.length > 100) {
+        window.gtmInspectorEventLog = window.gtmInspectorEventLog.slice(-100);
+      }
+      
+      console.log('📊 Event logged:', event);
+    },
+    
+    // Log consent change event
+    logConsentChange: function(action, consentData) {
+      const eventData = {
+        tagName: `Consent ${action.charAt(0).toUpperCase() + action.slice(1)}`,
+        tagType: 'consent_change',
+        consentType: 'user_action',
+        allowed: true,
+        reason: `User ${action} cookies - Analytics: ${consentData.analytics}, Marketing: ${consentData.advertising}, Functionality: ${consentData.functionality}`,
+        status: action === 'accept' ? 'ACCEPTED ✅' : 'DENIED ❌',
+        source: 'cookiebot',
+        details: consentData
+      };
+      
+      this.addEvent(eventData);
+    },
+    
+    // Log tag firing event
+    logTagFiring: function(tagName, tagType, consentType, allowed, reason) {
+      const eventData = {
+        tagName: tagName,
+        tagType: tagType,
+        consentType: consentType,
+        allowed: allowed,
+        reason: reason,
+        status: allowed ? 'FIRED ✅' : 'BLOCKED ❌',
+        source: 'tag_manager'
+      };
+      
+      this.addEvent(eventData);
+    },
+    
+    // Clear event log
+    clearEventLog: function() {
+      window.gtmInspectorEventLog = [];
+      console.log('📊 Event log cleared');
     },
     
     getTagManagerInteractions: function() {
@@ -515,6 +568,16 @@ window.addEventListener('message', function(event) {
         case 'getTagManagerInteractions':
           console.log('📊 Calling getTagManagerInteractions...');
           result = window.ConsentInspector.getTagManagerInteractions();
+          break;
+          
+        case 'logConsentChange':
+          console.log('📊 Calling logConsentChange...');
+          result = window.ConsentInspector.logConsentChange(data.action, data.consentData);
+          break;
+          
+        case 'logTagFiring':
+          console.log('📊 Calling logTagFiring...');
+          result = window.ConsentInspector.logTagFiring(data.tagName, data.tagType, data.consentType, data.allowed, data.reason);
           break;
           
         default:

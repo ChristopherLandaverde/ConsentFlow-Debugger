@@ -190,6 +190,43 @@
       handleCookiebotConsentChange(event.detail);
     });
     
+    // Listen for actual Cookiebot events
+    window.addEventListener('CookiebotOnAccept', (event) => {
+      console.log('🍪 Cookiebot accept event fired:', event);
+      const consentData = {
+        action: 'accept',
+        website: document.title || window.location.hostname,
+        url: window.location.href,
+        consent: window.Cookiebot?.consent || {},
+        timestamp: Date.now()
+      };
+      handleCookiebotConsentChange(consentData);
+    });
+    
+    window.addEventListener('CookiebotOnDecline', (event) => {
+      console.log('🍪 Cookiebot decline event fired:', event);
+      const consentData = {
+        action: 'decline',
+        website: document.title || window.location.hostname,
+        url: window.location.href,
+        consent: window.Cookiebot?.consent || {},
+        timestamp: Date.now()
+      };
+      handleCookiebotConsentChange(consentData);
+    });
+    
+    window.addEventListener('CookiebotOnConsentReady', (event) => {
+      console.log('🍪 Cookiebot consent ready event fired:', event);
+      const consentData = {
+        action: 'ready',
+        website: document.title || window.location.hostname,
+        url: window.location.href,
+        consent: window.Cookiebot?.consent || {},
+        timestamp: Date.now()
+      };
+      handleCookiebotConsentChange(consentData);
+    });
+    
     // Listen for dataLayer events
     if (window.dataLayer) {
       const originalPush = window.dataLayer.push;
@@ -200,6 +237,54 @@
         if (args[0] && args[0].event === 'cookiebot_consent_change') {
           console.log('🍪 Cookiebot consent change in dataLayer:', args[0]);
           handleCookiebotConsentChange(args[0].consent_data);
+        }
+        
+        // Monitor for tag firing events
+        if (args[0] && typeof args[0] === 'object' && args[0].event) {
+          const event = args[0];
+          
+          // Check for common tag events
+          if (event.event === 'gtm.js' || 
+              event.event === 'gtm.dom' || 
+              event.event === 'gtm.load' ||
+              event.event === 'page_view' ||
+              event.event === 'purchase' ||
+              event.event === 'add_to_cart' ||
+              event.event === 'begin_checkout' ||
+              event.event === 'view_item' ||
+              event.event === 'select_item' ||
+              event.event === 'add_to_wishlist' ||
+              event.event === 'view_cart' ||
+              event.event === 'remove_from_cart' ||
+              event.event === 'add_shipping_info' ||
+              event.event === 'add_payment_info' ||
+              event.event === 'purchase' ||
+              event.event === 'refund' ||
+              event.event === 'login' ||
+              event.event === 'sign_up' ||
+              event.event === 'search' ||
+              event.event === 'view_search_results' ||
+              event.event === 'select_content' ||
+              event.event === 'share' ||
+              event.event === 'generate_lead' ||
+              event.event === 'download' ||
+              event.event === 'file_download' ||
+              event.event === 'video_start' ||
+              event.event === 'video_progress' ||
+              event.event === 'video_complete' ||
+              event.event === 'scroll' ||
+              event.event === 'timer' ||
+              event.event === 'exception' ||
+              event.event === 'user_engagement' ||
+              event.event === 'form_start' ||
+              event.event === 'form_submit' ||
+              event.event === 'form_progress' ||
+              event.event === 'click' ||
+              event.event === 'custom_event') {
+            
+            console.log('🏷️ Tag event detected:', event);
+            logTagEventToEventLog(event);
+          }
         }
         
         return result;
@@ -215,6 +300,9 @@
     // Update extension state
     updateExtensionState(consentData);
     
+    // Log consent change to event log
+    logConsentChangeToEventLog(consentData);
+    
     // Enhanced monitoring: Track Tag Manager interaction
     monitorTagManagerInteraction(consentData);
     
@@ -224,6 +312,17 @@
       data: consentData
     }).catch(error => {
       console.log('Background script not available:', error);
+    });
+  }
+  
+  // Log consent change to event log
+  function logConsentChangeToEventLog(consentData) {
+    // Use postMessage to communicate with page context
+    sendMessageToPage('logConsentChange', {
+      action: consentData.action,
+      consentData: consentData
+    }).catch(error => {
+      console.log('Could not log consent change to event log:', error);
     });
   }
   
