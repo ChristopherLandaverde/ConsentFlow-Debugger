@@ -665,7 +665,7 @@ function exportEventLog() {
 }
 
 async function runDiagnostics() {
-  showNotification('Running diagnostics...', 'info');
+  showNotification('Running comprehensive diagnostics...', 'info');
   
   chrome.tabs.query({active: true, currentWindow: true}, async (tabs) => {
     if (tabs[0]) {
@@ -677,20 +677,101 @@ async function runDiagnostics() {
       }
       
       try {
-        const injectResult = await ContentScriptInterface.ensureContentScript(tab.id);
-        if (injectResult.success) {
-          setTimeout(() => {
-            checkGTMStatus();
-            showNotification('Diagnostics completed!', 'success');
-          }, 2000);
+        // Run comprehensive diagnostics
+        const diagnosticResult = await ContentScriptInterface.sendMessage('runDiagnostics');
+        
+        if (diagnosticResult && diagnosticResult.success) {
+          // Display diagnostic results
+          displayDiagnosticResults(diagnosticResult.data);
+          showNotification('Diagnostics completed! Check results below.', 'success');
         } else {
-          showNotification('Diagnostics failed: ' + injectResult.error, 'error');
+          showNotification('Diagnostics failed: ' + (diagnosticResult?.error || 'Unknown error'), 'error');
         }
       } catch (error) {
         showNotification('Diagnostics error: ' + error.message, 'error');
       }
     }
   });
+}
+
+function displayDiagnosticResults(diagnostics) {
+  // Create diagnostic results display
+  const overviewTab = document.getElementById('overview-tab');
+  
+  // Remove existing diagnostic results if any
+  const existingResults = overviewTab.querySelector('.diagnostic-results');
+  if (existingResults) {
+    existingResults.remove();
+  }
+  
+  const resultsDiv = document.createElement('div');
+  resultsDiv.className = 'diagnostic-results';
+  resultsDiv.style.cssText = `
+    margin-top: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #007bff;
+  `;
+  
+  let resultsHTML = '<h3>🔍 Diagnostic Results</h3>';
+  
+  // GTM Diagnostics
+  resultsHTML += '<div style="margin-bottom: 15px;"><strong>GTM Status:</strong><ul>';
+  if (diagnostics.gtm) {
+    resultsHTML += `<li>✅ GTM Container: ${diagnostics.gtm.containerId || 'Not found'}</li>`;
+    resultsHTML += `<li>✅ DataLayer: ${diagnostics.gtm.dataLayer ? 'Available' : 'Not found'}</li>`;
+    resultsHTML += `<li>✅ gtag Function: ${diagnostics.gtm.gtag ? 'Available' : 'Not found'}</li>`;
+    resultsHTML += `<li>✅ GTM Object: ${diagnostics.gtm.gtmObject ? 'Available' : 'Not found'}</li>`;
+  } else {
+    resultsHTML += '<li>❌ GTM not detected</li>';
+  }
+  resultsHTML += '</ul></div>';
+  
+  // Consent Mode Diagnostics
+  resultsHTML += '<div style="margin-bottom: 15px;"><strong>Consent Mode:</strong><ul>';
+  if (diagnostics.consent) {
+    resultsHTML += `<li>✅ Consent Mode: ${diagnostics.consent.enabled ? 'Enabled' : 'Disabled'}</li>`;
+    if (diagnostics.consent.cmp) {
+      resultsHTML += `<li>✅ CMP Detected: ${diagnostics.consent.cmp.name} (${diagnostics.consent.cmp.type})</li>`;
+    }
+    if (diagnostics.consent.state) {
+      resultsHTML += `<li>✅ Current State: Analytics=${diagnostics.consent.state.analytics_storage}, Ads=${diagnostics.consent.state.ad_storage}</li>`;
+    }
+  } else {
+    resultsHTML += '<li>❌ Consent Mode not detected</li>';
+  }
+  resultsHTML += '</ul></div>';
+  
+  // Tag Diagnostics
+  resultsHTML += '<div style="margin-bottom: 15px;"><strong>Tags Found:</strong><ul>';
+  if (diagnostics.tags && diagnostics.tags.length > 0) {
+    diagnostics.tags.forEach(tag => {
+      const status = tag.allowed ? '✅' : '❌';
+      resultsHTML += `<li>${status} ${tag.name} (${tag.type}) - ${tag.allowed ? 'Allowed' : 'Blocked'}</li>`;
+    });
+  } else {
+    resultsHTML += '<li>❌ No tags detected</li>';
+  }
+  resultsHTML += '</ul></div>';
+  
+  // Issues and Recommendations
+  resultsHTML += '<div style="margin-bottom: 15px;"><strong>Issues & Recommendations:</strong><ul>';
+  if (diagnostics.issues && diagnostics.issues.length > 0) {
+    diagnostics.issues.forEach(issue => {
+      resultsHTML += `<li>⚠️ ${issue}</li>`;
+    });
+  } else {
+    resultsHTML += '<li>✅ No issues detected</li>';
+  }
+  resultsHTML += '</ul></div>';
+  
+  resultsHTML += `<div style="font-size: 12px; color: #666; margin-top: 10px;">
+    Diagnostic run at: ${new Date().toLocaleTimeString()}
+  </div>`;
+  
+  resultsDiv.innerHTML = resultsHTML;
+  overviewTab.appendChild(resultsDiv);
 }
 
 function showNotification(message, type = 'info') {

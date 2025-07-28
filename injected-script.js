@@ -510,6 +510,89 @@ if (window.ConsentInspector) {
       console.log('📊 Event log cleared');
     },
     
+    // Run comprehensive diagnostics
+    runDiagnostics: function() {
+      console.log('🔍 Running comprehensive diagnostics...');
+      
+      const diagnostics = {
+        gtm: {},
+        consent: {},
+        tags: [],
+        issues: []
+      };
+      
+      // GTM Diagnostics
+      const gtmResult = this.detectGTM();
+      diagnostics.gtm = {
+        containerId: gtmResult.gtmId,
+        dataLayer: !!window.dataLayer,
+        gtag: !!window.gtag,
+        gtmObject: !!window.google_tag_manager,
+        hasGTM: gtmResult.hasGTM,
+        hasConsentMode: gtmResult.hasConsentMode
+      };
+      
+      // Consent Mode Diagnostics
+      if (gtmResult.hasConsentMode) {
+        diagnostics.consent = {
+          enabled: true,
+          cmp: gtmResult.cmpInfo,
+          state: gtmResult.consentState
+        };
+      } else {
+        diagnostics.consent = {
+          enabled: false,
+          reason: 'No consent mode detected'
+        };
+      }
+      
+      // Tag Diagnostics
+      diagnostics.tags = this.getTagInfo();
+      
+      // Issue Detection
+      if (!gtmResult.hasGTM) {
+        diagnostics.issues.push('GTM not detected on this page');
+      }
+      
+      if (gtmResult.hasGTM && !gtmResult.hasConsentMode) {
+        diagnostics.issues.push('GTM detected but Consent Mode is not implemented');
+      }
+      
+      if (gtmResult.hasConsentMode) {
+        const consentState = gtmResult.consentState;
+        if (consentState.analytics_storage === 'denied' && consentState.ad_storage === 'denied') {
+          diagnostics.issues.push('All analytics and advertising consent is denied - most tags will be blocked');
+        }
+        
+        if (!window.Cookiebot && !window.OneTrust && !window.__tcfapi) {
+          diagnostics.issues.push('Consent Mode detected but no CMP (Cookiebot, OneTrust, TCF) found');
+        }
+      }
+      
+      if (diagnostics.tags.length === 0) {
+        diagnostics.issues.push('No tracking tags detected - this might be normal for some pages');
+      }
+      
+      // Check for common implementation issues
+      if (window.dataLayer && window.dataLayer.length > 0) {
+        const hasConsentEvents = window.dataLayer.some(item => {
+          if (Array.isArray(item)) {
+            return item[0] === 'consent';
+          } else if (item && typeof item === 'object') {
+            return item['0'] === 'consent';
+          }
+          return false;
+        });
+        
+        if (!hasConsentEvents && gtmResult.hasConsentMode) {
+          diagnostics.issues.push('Consent Mode detected but no consent events found in dataLayer');
+        }
+      }
+      
+      console.log('🔍 Diagnostic results:', diagnostics);
+      return { success: true, data: diagnostics };
+    },
+    
     getTagManagerInteractions: function() {
       // Return raw interaction data for detailed analysis
       return window.gtmInspectorInteractions || [];
@@ -583,6 +666,11 @@ window.addEventListener('message', function(event) {
         case 'clearEventLog':
           console.log('📊 Calling clearEventLog...');
           result = window.ConsentInspector.clearEventLog();
+          break;
+          
+        case 'runDiagnostics':
+          console.log('🔍 Calling runDiagnostics...');
+          result = window.ConsentInspector.runDiagnostics();
           break;
           
         default:

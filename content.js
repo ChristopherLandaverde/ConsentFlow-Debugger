@@ -130,6 +130,16 @@
             sendResponse(clearResult);
             break;
             
+          case 'runDiagnostics':
+            // Ensure script is injected first
+            if (!scriptInjected) {
+              await injectScript();
+            }
+            // Use postMessage to communicate with page context
+            const diagnosticResult = await sendMessageToPage('runDiagnostics');
+            sendResponse(diagnosticResult);
+            break;
+            
           case 'exportLog':
             // Ensure script is injected first
             if (!scriptInjected) {
