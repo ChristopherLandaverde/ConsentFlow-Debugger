@@ -891,12 +891,15 @@ if (window.ConsentInspector) {
         
         // Get stored events from page context
         const storedEvents = window.gtmInspectorEventLog || [];
+        console.log('📊 Stored events found:', storedEvents.length);
         
         // Add stored events to the list
         events.push(...storedEvents);
         
         // Get current consent state and add as event if it exists
         const currentConsent = this.getCurrentConsentState();
+        console.log('📊 Current consent state:', currentConsent);
+        
         if (currentConsent && !currentConsent._noConsentMode) {
           const consentEvent = {
             timestamp: Date.now(),
@@ -909,10 +912,13 @@ if (window.ConsentInspector) {
             source: 'consent_state'
           };
           events.push(consentEvent);
+          console.log('📊 Added consent state event');
         }
         
         // Get detected tags and their consent status
         const detectedTags = this.getTagInfo();
+        console.log('📊 Detected tags:', detectedTags.length);
+        
         detectedTags.forEach(tag => {
           const tagEvent = {
             timestamp: Date.now(),
@@ -927,9 +933,9 @@ if (window.ConsentInspector) {
           events.push(tagEvent);
         });
         
-        // Add test event if no events found
-        if (events.length === 0) {
-          const statusEvent = {
+        // Always add system status events
+        const systemEvents = [
+          {
             timestamp: Date.now(),
             tagName: 'Event Log Ready',
             tagType: 'system',
@@ -938,16 +944,45 @@ if (window.ConsentInspector) {
             reason: 'Event log is ready to capture consent activity and tag events',
             status: 'READY ✅',
             source: 'system'
-          };
-          events.push(statusEvent);
+          },
+          {
+            timestamp: Date.now() - 1000,
+            tagName: 'GTM Inspector Active',
+            tagType: 'system',
+            consentType: 'none',
+            allowed: true,
+            reason: 'GTM Consent Inspector extension is monitoring this page',
+            status: 'MONITORING 🔍',
+            source: 'system'
+          }
+        ];
+        
+        // Add system events if no other events exist
+        if (events.length === 0) {
+          events.push(...systemEvents);
+          console.log('📊 Added system events (no other events found)');
+        } else {
+          // Always add the ready event
+          events.unshift(systemEvents[0]);
+          console.log('📊 Added ready event to existing events');
         }
         
-        console.log('📊 Returning', events.length, 'real events');
+        console.log('📊 Returning', events.length, 'total events');
         return events;
         
       } catch (error) {
         console.error('❌ Error in getEvents:', error);
-        return [];
+        // Return at least a basic event even on error
+        return [{
+          timestamp: Date.now(),
+          tagName: 'Event Log Error',
+          tagType: 'system',
+          consentType: 'none',
+          allowed: false,
+          reason: 'Error occurred while getting events: ' + error.message,
+          status: 'ERROR ❌',
+          source: 'system'
+        }];
       }
     },
     
@@ -1128,11 +1163,31 @@ if (window.ConsentInspector) {
     getTagManagerInteractions: function() {
       // Return raw interaction data for detailed analysis
       return window.gtmInspectorInteractions || [];
+    },
+
+    // Generate initial events for the event log
+    generateInitialEvents: function() {
+      console.log('📊 Generating initial events for the event log...');
+      const initialConsentState = this.getCurrentConsentState();
+      const initialTags = this.getTagInfo();
+
+      // Add initial consent state event
+      this.logConsentChange('initial_state', initialConsentState);
+      console.log('📊 Added initial consent state event');
+
+      // Add initial tag firing events for all detected tags
+      initialTags.forEach(tag => {
+        this.logTagFiring(tag.name, tag.type, tag.consentType, true, 'Initial consent state');
+        console.log(`📊 Added initial tag firing event for ${tag.name}`);
+      });
     }
   };
   
   // Initialize bidirectional sync
   window.ConsentInspector.initBidirectionalSync();
+  
+  // Generate initial events
+  window.ConsentInspector.generateInitialEvents();
 
 }
 

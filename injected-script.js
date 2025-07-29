@@ -275,6 +275,7 @@ if (window.ConsentInspector) {
     getTagInfo: function() {
       const tags = [];
       const consentState = this.getCurrentConsentState();
+      const realConsentState = this.getRealConsentState();
       
       // Simple tag detection - check for common tracking scripts
       const tagDetectors = [
@@ -330,13 +331,24 @@ if (window.ConsentInspector) {
       tagDetectors.forEach(detector => {
         try {
           if (detector.check()) {
-            const allowed = consentState[detector.consentType] === 'granted';
+            const currentStatus = realConsentState[detector.consentType] === 'granted';
+            const simulatedStatus = consentState[detector.consentType] === 'granted';
+            const allowed = this.simulationMode ? simulatedStatus : currentStatus;
+            
+            // Calculate impact analysis
+            const impact = this.getTagImpactDescription(detector, currentStatus, simulatedStatus);
+            
             tags.push({
               name: detector.name,
               type: detector.type,
               consentType: detector.consentType,
               allowed: allowed,
-              reason: `${detector.consentType}: ${consentState[detector.consentType]}`
+              reason: `${detector.consentType}: ${consentState[detector.consentType]}`,
+              currentStatus: currentStatus,
+              simulatedStatus: simulatedStatus,
+              impactDescription: impact.description,
+              impactIcon: impact.icon,
+              impactSeverity: impact.severity
             });
           }
         } catch (error) {
@@ -345,6 +357,70 @@ if (window.ConsentInspector) {
       });
       
       return tags;
+    },
+    
+    // Get real consent state (not simulated)
+    getRealConsentState: function() {
+      if (window.Cookiebot && window.Cookiebot.consent) {
+        return {
+          analytics_storage: window.Cookiebot.consent.statistics ? 'granted' : 'denied',
+          ad_storage: window.Cookiebot.consent.marketing ? 'granted' : 'denied',
+          functionality_storage: window.Cookiebot.consent.necessary ? 'granted' : 'denied',
+          personalization_storage: window.Cookiebot.consent.preferences ? 'granted' : 'denied',
+          security_storage: 'granted'
+        };
+      }
+      
+      // Fallback to default granted state
+      return {
+        analytics_storage: 'granted',
+        ad_storage: 'granted',
+        functionality_storage: 'granted',
+        personalization_storage: 'granted',
+        security_storage: 'granted'
+      };
+    },
+    
+    // Get detailed impact description for tag consent changes
+    getTagImpactDescription: function(detector, currentStatus, simulatedStatus) {
+      if (!this.simulationMode) {
+        return {
+          description: `Currently ${currentStatus ? 'allowed' : 'blocked'}`,
+          icon: currentStatus ? '✅' : '🚫',
+          severity: 'info'
+        };
+      }
+      
+      // In simulation mode, show before/after comparison
+      if (currentStatus === simulatedStatus) {
+        return {
+          description: `No change - ${currentStatus ? 'Would continue firing' : 'Would remain blocked'}`,
+          icon: currentStatus ? '✅' : '🚫',
+          severity: 'info'
+        };
+      }
+      
+      if (currentStatus && !simulatedStatus) {
+        return {
+          description: `Would be blocked - No ${detector.type} data collection`,
+          icon: '🚫',
+          severity: 'warning'
+        };
+      }
+      
+      if (!currentStatus && simulatedStatus) {
+        return {
+          description: `Would be allowed - ${detector.type} data collection enabled`,
+          icon: '✅',
+          severity: 'success'
+        };
+      }
+      
+      return {
+        description: 'Status unclear',
+        icon: '⚠️',
+        severity: 'warning'
+      };
     },
     
     updateConsent: function(settings) {
@@ -428,16 +504,18 @@ if (window.ConsentInspector) {
       try {
         console.log('📊 Getting real consent and tag events...');
         
-        // Get stored events from page context
-        const storedEvents = window.gtmInspectorEventLog || [];
+        // Get real events from chrome storage (will be populated by content.js RealEventLogger)
+        // Note: This is called from page context, so we need to request from content script
+        const realEvents = window.gtmInspectorEventLog || [];
         
-        // Add stored events to the list
-        events.push(...storedEvents);
+        // Add real events to the list
+        events.push(...realEvents);
         
         // Get current consent state and add as event if it exists
         const currentConsent = this.getCurrentConsentState();
         if (currentConsent && !currentConsent._noConsentMode) {
           const consentEvent = {
+            id: this.generateUUID(),
             timestamp: Date.now(),
             tagName: 'Current Consent State',
             tagType: 'consent_status',
@@ -445,7 +523,9 @@ if (window.ConsentInspector) {
             allowed: true,
             reason: `Analytics: ${currentConsent.analytics_storage}, Ads: ${currentConsent.ad_storage}, Functionality: ${currentConsent.functionality_storage}`,
             status: 'ACTIVE 📊',
-            source: 'consent_state'
+            source: 'consent_state',
+            isSimulated: false,
+            url: window.location.href
           };
           events.push(consentEvent);
         }
@@ -454,6 +534,7 @@ if (window.ConsentInspector) {
         const detectedTags = this.getTagInfo();
         detectedTags.forEach(tag => {
           const tagEvent = {
+            id: this.generateUUID(),
             timestamp: Date.now(),
             tagName: tag.name,
             tagType: tag.type,
@@ -461,7 +542,9 @@ if (window.ConsentInspector) {
             allowed: tag.allowed,
             reason: tag.reason,
             status: tag.allowed ? 'ALLOWED ✅' : 'BLOCKED ❌',
-            source: 'tag_detection'
+            source: 'tag_detection',
+            isSimulated: false,
+            url: window.location.href
           };
           events.push(tagEvent);
         });
@@ -469,6 +552,7 @@ if (window.ConsentInspector) {
         // Add test event if no events found
         if (events.length === 0) {
           const statusEvent = {
+            id: this.generateUUID(),
             timestamp: Date.now(),
             tagName: 'Event Log Ready',
             tagType: 'system',
@@ -476,7 +560,9 @@ if (window.ConsentInspector) {
             allowed: true,
             reason: 'Event log is ready to capture consent activity and tag events',
             status: 'READY ✅',
-            source: 'system'
+            source: 'system',
+            isSimulated: false,
+            url: window.location.href
           };
           events.push(statusEvent);
         }
@@ -490,62 +576,104 @@ if (window.ConsentInspector) {
       }
     },
     
+    // Generate UUID for event tracking
+    generateUUID: function() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    },
+    
     // Add event to the log
     addEvent: function(eventData) {
-      if (!window.gtmInspectorEventLog) {
-        window.gtmInspectorEventLog = [];
+      try {
+        if (!window.gtmInspectorEventLog) {
+          window.gtmInspectorEventLog = [];
+        }
+        
+        const event = {
+          id: this.generateUUID(),
+          timestamp: Date.now(),
+          isSimulated: false,
+          source: 'page_context',
+          url: window.location.href,
+          ...eventData
+        };
+        
+        window.gtmInspectorEventLog.push(event);
+        
+        // Keep only last 100 events
+        if (window.gtmInspectorEventLog.length > 100) {
+          window.gtmInspectorEventLog = window.gtmInspectorEventLog.slice(-100);
+        }
+        
+        console.log('📊 Event logged:', event);
+        return { success: true, event: event };
+      } catch (error) {
+        console.error('❌ Error adding event:', error);
+        return { success: false, error: error.message };
       }
-      
-      const event = {
-        timestamp: Date.now(),
-        ...eventData
-      };
-      
-      window.gtmInspectorEventLog.push(event);
-      
-      // Keep only last 100 events
-      if (window.gtmInspectorEventLog.length > 100) {
-        window.gtmInspectorEventLog = window.gtmInspectorEventLog.slice(-100);
-      }
-      
-      console.log('📊 Event logged:', event);
     },
     
     // Log consent change event
     logConsentChange: function(action, consentData) {
-      const eventData = {
-        tagName: `Consent ${action.charAt(0).toUpperCase() + action.slice(1)}`,
-        tagType: 'consent_change',
-        consentType: 'user_action',
-        allowed: true,
-        reason: `User ${action} cookies - Analytics: ${consentData.analytics}, Marketing: ${consentData.advertising}, Functionality: ${consentData.functionality}`,
-        status: action === 'accept' ? 'ACCEPTED ✅' : 'DENIED ❌',
-        source: 'cookiebot',
-        details: consentData
-      };
-      
-      this.addEvent(eventData);
+      try {
+        const eventData = {
+          tagName: `Consent ${action.charAt(0).toUpperCase() + action.slice(1)}`,
+          tagType: 'consent_change',
+          consentType: 'user_action',
+          allowed: true,
+          reason: `User ${action} consent`,
+          status: 'CONSENT_CHANGE 📊',
+          data: consentData
+        };
+        
+        return this.addEvent(eventData);
+      } catch (error) {
+        console.error('❌ Error logging consent change:', error);
+        return { success: false, error: error.message };
+      }
     },
     
     // Log tag firing event
     logTagFiring: function(tagName, tagType, consentType, allowed, reason) {
-      const eventData = {
-        tagName: tagName,
-        tagType: tagType,
-        consentType: consentType,
-        allowed: allowed,
-        reason: reason,
-        status: allowed ? 'FIRED ✅' : 'BLOCKED ❌',
-        source: 'tag_manager'
-      };
-      
-      this.addEvent(eventData);
+      try {
+        const eventData = {
+          tagName: tagName,
+          tagType: tagType,
+          consentType: consentType,
+          allowed: allowed,
+          reason: reason,
+          status: allowed ? 'FIRED ✅' : 'BLOCKED ❌',
+          data: {
+            tagName: tagName,
+            tagType: tagType,
+            consentType: consentType
+          }
+        };
+        
+        return this.addEvent(eventData);
+      } catch (error) {
+        console.error('❌ Error logging tag firing:', error);
+        return { success: false, error: error.message };
+      }
     },
     
     // Clear event log
     clearEventLog: function() {
-      window.gtmInspectorEventLog = [];
-      console.log('📊 Event log cleared');
+      try {
+        // Clear the local event log
+        if (window.gtmInspectorEventLog) {
+          window.gtmInspectorEventLog = [];
+        }
+        
+        console.log('🗑️ Event log cleared');
+        return { success: true, message: 'Event log cleared successfully' };
+      } catch (error) {
+        console.error('❌ Error clearing event log:', error);
+        return { success: false, error: error.message };
+      }
     },
     
     // Temporarily disable Cookiebot event listeners to prevent conflicts
@@ -664,6 +792,22 @@ if (window.ConsentInspector) {
       return { success: true, data: diagnostics };
     },
     
+    getTagStatus: function() {
+      const tags = this.getTagInfo();
+      const consentState = this.getCurrentConsentState();
+      
+      return {
+        success: true,
+        tags: tags,
+        totalTags: tags.length,
+        allowedTags: tags.filter(tag => tag.allowed).length,
+        blockedTags: tags.filter(tag => !tag.allowed).length,
+        consentState: consentState,
+        simulationMode: this.simulationMode,
+        timestamp: Date.now()
+      };
+    },
+    
     getTagManagerInteractions: function() {
       // Return raw interaction data for detailed analysis
       return window.gtmInspectorInteractions || [];
@@ -704,14 +848,9 @@ window.addEventListener('message', function(event) {
           result = window.ConsentInspector.detectGTM();
           break;
           
-        case 'getTagInfo':
-          console.log('🏷️ Calling getTagInfo...');
-          result = window.ConsentInspector.getTagInfo();
-          break;
-          
-        case 'updateConsent':
-          console.log('🔐 Calling updateConsent...');
-          result = window.ConsentInspector.updateConsent(data);
+        case 'getTagStatus':
+          console.log('📊 Calling getTagStatus...');
+          result = window.ConsentInspector.getTagStatus();
           break;
           
         case 'getEvents':
@@ -719,23 +858,24 @@ window.addEventListener('message', function(event) {
           result = window.ConsentInspector.getEvents();
           break;
           
-        case 'getTagManagerInteractions':
-          console.log('📊 Calling getTagManagerInteractions...');
-          result = window.ConsentInspector.getTagManagerInteractions();
+        case 'updateConsent':
+          console.log('🍪 Calling updateConsent...');
+          if (!data || !data.consent) {
+            throw new Error('No consent data provided');
+          }
+          result = window.ConsentInspector.updateConsent(data.consent);
           break;
           
-        case 'logConsentChange':
-          console.log('📊 Calling logConsentChange...');
-          result = window.ConsentInspector.logConsentChange(data.action, data.consentData);
-          break;
-          
-        case 'logTagFiring':
-          console.log('📊 Calling logTagFiring...');
-          result = window.ConsentInspector.logTagFiring(data.tagName, data.tagType, data.consentType, data.allowed, data.reason);
+        case 'updateSimulationMode':
+          console.log('🧪 Calling updateSimulationMode...');
+          if (!data) {
+            throw new Error('No simulation data provided');
+          }
+          result = window.ConsentInspector.updateSimulationMode(data);
           break;
           
         case 'clearEventLog':
-          console.log('📊 Calling clearEventLog...');
+          console.log('🗑️ Calling clearEventLog...');
           result = window.ConsentInspector.clearEventLog();
           break;
           
@@ -744,44 +884,41 @@ window.addEventListener('message', function(event) {
           result = window.ConsentInspector.runDiagnostics();
           break;
           
-        case 'updateSimulationMode':
-          console.log('🧪 Calling updateSimulationMode...');
-          result = window.ConsentInspector.updateSimulationMode(data);
+        case 'getTagManagerInteractions':
+          console.log('📊 Calling getTagManagerInteractions...');
+          result = window.ConsentInspector.getTagManagerInteractions();
           break;
           
         default:
-          error = 'Unknown action: ' + action;
+          error = `Unknown action: ${action}`;
           console.error('❌ Unknown action:', action);
       }
     } catch (err) {
       error = err.message;
       console.error('❌ Error processing action:', action, 'Error:', err);
-    }
-    
-    console.log('📤 Sending response:', { result, error });
-    
-    // Ensure response is serializable before sending
-    let serializableResult = result;
-    let serializableError = error;
-    
-    try {
-      // Test if result can be serialized
-      if (result !== null && result !== undefined) {
-        JSON.stringify(result);
+      
+      // Provide user-friendly error messages
+      if (err.message.includes('Permission')) {
+        error = 'Permission denied - this action requires user consent';
+      } else if (err.message.includes('Network')) {
+        error = 'Network error - please check your connection';
+      } else if (err.message.includes('Timeout')) {
+        error = 'Request timed out - please try again';
+      } else if (err.message.includes('Not found')) {
+        error = 'Resource not found - the page may have changed';
       }
-    } catch (serializeError) {
-      console.error('❌ Result not serializable, sending error instead:', serializeError);
-      serializableResult = null;
-      serializableError = 'Result data not serializable: ' + serializeError.message;
     }
     
     // Send response back to content script
-    window.postMessage({
+    const response = {
       source: 'gtm-inspector-page',
       id: id,
-      result: serializableResult,
-      error: serializableError
-    }, '*');
+      result: result,
+      error: error
+    };
+    
+    console.log('📤 Sending response:', response);
+    window.postMessage(response, '*');
   }
 });
 

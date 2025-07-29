@@ -10,6 +10,190 @@
   
   let scriptInjected = false;
   
+  // Real Event Logger Class
+  class RealEventLogger {
+    constructor() {
+      this.maxEvents = 100;
+      this.initializeEventCapture();
+    }
+    
+    async initializeEventCapture() {
+      // Set up Cookiebot event listeners
+      this.setupCookiebotListeners();
+      
+      // Override dataLayer.push to capture real events
+      this.overrideDataLayerPush();
+      
+      // Override gtag to capture consent mode changes
+      this.overrideGtag();
+      
+      // Set up periodic cleanup
+      setInterval(() => this.cleanupOldEvents(), 60000); // Every minute
+    }
+    
+    setupCookiebotListeners() {
+      // Listen for Cookiebot consent events
+      window.addEventListener('CookiebotOnAccept', (event) => {
+        this.logEvent({
+          id: this.generateUUID(),
+          type: 'cookiebot_accept',
+          timestamp: Date.now(),
+          isSimulated: false,
+          source: 'cookiebot_native',
+          url: window.location.href,
+          data: {
+            consent: event.detail || 'all'
+          }
+        });
+      });
+      
+      window.addEventListener('CookiebotOnDecline', (event) => {
+        this.logEvent({
+          id: this.generateUUID(),
+          type: 'cookiebot_decline',
+          timestamp: Date.now(),
+          isSimulated: false,
+          source: 'cookiebot_native',
+          url: window.location.href,
+          data: {
+            consent: event.detail || 'none'
+          }
+        });
+      });
+      
+      window.addEventListener('CookiebotOnConsentReady', (event) => {
+        this.logEvent({
+          id: this.generateUUID(),
+          type: 'cookiebot_consent_ready',
+          timestamp: Date.now(),
+          isSimulated: false,
+          source: 'cookiebot_native',
+          url: window.location.href,
+          data: {
+            consent: event.detail || {}
+          }
+        });
+      });
+      
+      window.addEventListener('CookiebotOnDialogDisplay', (event) => {
+        this.logEvent({
+          id: this.generateUUID(),
+          type: 'cookiebot_dialog_display',
+          timestamp: Date.now(),
+          isSimulated: false,
+          source: 'cookiebot_native',
+          url: window.location.href,
+          data: {
+            dialogType: event.detail || 'preferences'
+          }
+        });
+      });
+    }
+    
+    overrideDataLayerPush() {
+      if (!window.dataLayer) {
+        window.dataLayer = [];
+      }
+      
+      const originalPush = window.dataLayer.push;
+      window.dataLayer.push = (...args) => {
+        // Call original push first
+        const result = originalPush.apply(window.dataLayer, args);
+        
+        // Log the event
+        const eventData = args[0];
+        if (eventData && typeof eventData === 'object') {
+          this.logEvent({
+            id: this.generateUUID(),
+            type: 'datalayer_push',
+            timestamp: Date.now(),
+            isSimulated: false,
+            source: 'datalayer',
+            url: window.location.href,
+            data: eventData
+          });
+        }
+        
+        return result;
+      };
+    }
+    
+    overrideGtag() {
+      if (window.gtag) {
+        const originalGtag = window.gtag;
+        window.gtag = (...args) => {
+          // Call original gtag first
+          const result = originalGtag.apply(window, args);
+          
+          // Check if this is a consent mode update
+          if (args.length >= 2 && args[0] === 'consent' && args[1] === 'update') {
+            this.logEvent({
+              id: this.generateUUID(),
+              type: 'gtag_consent_update',
+              timestamp: Date.now(),
+              isSimulated: false,
+              source: 'gtag',
+              url: window.location.href,
+              data: {
+                consent: args[2] || {}
+              }
+            });
+          }
+          
+          return result;
+        };
+      }
+    }
+    
+    async logEvent(event) {
+      try {
+        // Get existing events
+        const result = await chrome.storage.local.get(['gtmInspectorEvents']);
+        let events = result.gtmInspectorEvents || [];
+        
+        // Add new event
+        events.push(event);
+        
+        // Keep only the latest maxEvents
+        if (events.length > this.maxEvents) {
+          events = events.slice(-this.maxEvents);
+        }
+        
+        // Store events
+        await chrome.storage.local.set({ gtmInspectorEvents: events });
+        
+        console.log('Real event logged:', event);
+      } catch (error) {
+        console.error('Error logging real event:', error);
+      }
+    }
+    
+    async cleanupOldEvents() {
+      try {
+        const result = await chrome.storage.local.get(['gtmInspectorEvents']);
+        let events = result.gtmInspectorEvents || [];
+        
+        const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+        events = events.filter(event => event.timestamp > twentyFourHoursAgo);
+        
+        await chrome.storage.local.set({ gtmInspectorEvents: events });
+      } catch (error) {
+        console.error('Error cleaning up old events:', error);
+      }
+    }
+    
+    generateUUID() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+  }
+  
+  // Initialize real event logger
+  const realEventLogger = new RealEventLogger();
+  
   // Inject external script file (CSP compliant)
   async function injectScript() {
     if (scriptInjected) {
@@ -102,8 +286,8 @@
               await injectScript();
             }
             // Use postMessage to communicate with page context
-            const tagResult = await sendMessageToPage('getTagInfo');
-            sendResponse(Array.isArray(tagResult) ? tagResult : []);
+            const tagResult = await sendMessageToPage('getTagStatus');
+            sendResponse(tagResult);
             break;
             
           case 'applyConsent':
@@ -116,14 +300,47 @@
             sendResponse(consentResult);
             break;
             
-          case 'getEventLog':
+          case 'getEvents':
             // Ensure script is injected first
             if (!scriptInjected) {
               await injectScript();
             }
-            // Use postMessage to communicate with page context
-            const eventResult = await sendMessageToPage('getEvents');
-            sendResponse(Array.isArray(eventResult) ? eventResult : []);
+            
+            try {
+              // Get real events from chrome storage
+              const result = await chrome.storage.local.get(['gtmInspectorEvents']);
+              const realEvents = result.gtmInspectorEvents || [];
+              
+              // Also get events from page context (for backward compatibility)
+              const pageEvents = await sendMessageToPage('getEvents');
+              
+              // Combine real events with page events, ensuring no duplicates
+              const allEvents = [...realEvents];
+              
+              if (Array.isArray(pageEvents)) {
+                pageEvents.forEach(pageEvent => {
+                  // Only add if not already present (check by id or timestamp + type)
+                  const exists = allEvents.some(realEvent => 
+                    (realEvent.id && pageEvent.id && realEvent.id === pageEvent.id) ||
+                    (realEvent.timestamp === pageEvent.timestamp && 
+                     realEvent.type === pageEvent.type &&
+                     realEvent.source === pageEvent.source)
+                  );
+                  
+                  if (!exists) {
+                    allEvents.push(pageEvent);
+                  }
+                });
+              }
+              
+              // Sort by timestamp (newest first)
+              allEvents.sort((a, b) => b.timestamp - a.timestamp);
+              
+              sendResponse(allEvents);
+            } catch (error) {
+              console.error('Error getting events:', error);
+              sendResponse([]);
+            }
             break;
             
           case 'getTagManagerInteractions':

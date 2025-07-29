@@ -235,15 +235,18 @@
     <h2>Event Log</h2>
     <div class="filter-controls">
       <button class="filter-btn active" data-event-filter="all">All</button>
-      <button class="filter-btn" data-event-filter="consent">Consent</button>
-      <button class="filter-btn" data-event-filter="gtm">GTM</button>
+      <button class="filter-btn" data-event-filter="real">📊 Real</button>
+      <button class="filter-btn" data-event-filter="simulated">🧪 Simulated</button>
+      <button class="filter-btn" data-event-filter="consent">🍪 Consent</button>
+      <button class="filter-btn" data-event-filter="gtm">📈 GTM</button>
     </div>
     <div class="event-log" id="eventLog">
       <div class="event-item empty-state">Waiting for events...</div>
     </div>
     <div class="action-buttons">
+      <button id="refreshEvents" class="action-button">🔄 Refresh</button>
       <button id="clearLog" class="action-button">🗑️ Clear Log</button>
-      <button id="exportLog" class="action-button">📤 Export Log</button>
+      <button id="exportLog" class="action-button">📤 Export Report</button>
     </div>
   </div>
   

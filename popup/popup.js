@@ -314,6 +314,7 @@ function initializeButtons() {
   const refreshOverviewBtn = document.getElementById('refreshOverview');
   const diagnoseTabBtn = document.getElementById('diagnoseTab');
   const refreshTagsBtn = document.getElementById('refreshTags');
+  const refreshEventsBtn = document.getElementById('refreshEvents');
   const clearLogBtn = document.getElementById('clearLog');
   const exportLogBtn = document.getElementById('exportLog');
   
@@ -325,6 +326,9 @@ function initializeButtons() {
   }
   if (refreshTagsBtn) {
     refreshTagsBtn.addEventListener('click', refreshTags);
+  }
+  if (refreshEventsBtn) {
+    refreshEventsBtn.addEventListener('click', refreshEvents);
   }
   if (clearLogBtn) {
     clearLogBtn.addEventListener('click', clearEventLog);
@@ -358,21 +362,80 @@ function initializeTagFilters() {
   });
 }
 
+// Event Filtering Functions
 function initializeEventFilters() {
-  const filterContainer = document.querySelector('#events-tab .filter-controls');
-  if (!filterContainer) return;
+  const filterButtons = document.querySelectorAll('[data-event-filter]');
   
-  filterContainer.addEventListener('click', function(e) {
-    if (!e.target.matches('.filter-btn[data-event-filter]')) return;
-    
-    const filterValue = e.target.getAttribute('data-event-filter');
-    
-    filterContainer.querySelectorAll('.filter-btn').forEach(btn => {
-      btn.classList.toggle('active', btn === e.target);
+  filterButtons.forEach(button => {
+    button.addEventListener('click', function() {
+      // Remove active class from all buttons
+      filterButtons.forEach(btn => btn.classList.remove('active'));
+      
+      // Add active class to clicked button
+      this.classList.add('active');
+      
+      // Get filter value
+      const filterValue = this.getAttribute('data-event-filter');
+      
+      // Apply filter
+      filterEvents(filterValue);
     });
-    
-    filterEvents(filterValue);
   });
+}
+
+function filterEvents(category) {
+  const eventItems = document.querySelectorAll('#eventLog .event-item:not(.empty-state):not(.events-section-header):not(.event-summary):not(.simulation-context)');
+  
+  eventItems.forEach(item => {
+    if (category === 'all') {
+      item.style.display = 'block';
+    } else {
+      // Determine event category based on class or data attributes
+      let eventCategory = 'other';
+      
+      if (item.classList.contains('real-event')) {
+        eventCategory = 'real';
+      } else if (item.classList.contains('simulated-event')) {
+        eventCategory = 'simulated';
+      }
+      
+      // Check for source-specific classes
+      if (item.querySelector('.source-cookiebot_native')) {
+        eventCategory = 'consent';
+      } else if (item.querySelector('.source-datalayer') || item.querySelector('.source-gtag')) {
+        eventCategory = 'gtm';
+      }
+      
+      // Check for event type
+      const eventType = item.querySelector('.event-type');
+      if (eventType) {
+        if (eventType.textContent.includes('consent') || eventType.textContent.includes('Cookiebot')) {
+          eventCategory = 'consent';
+        } else if (eventType.textContent.includes('GTM') || eventType.textContent.includes('dataLayer')) {
+          eventCategory = 'gtm';
+        }
+      }
+      
+      item.style.display = eventCategory === category ? 'block' : 'none';
+    }
+  });
+  
+  // Update filter summary
+  updateFilterSummary(category);
+}
+
+function updateFilterSummary(category) {
+  const visibleEvents = document.querySelectorAll('#eventLog .event-item:not(.empty-state):not(.events-section-header):not(.event-summary):not(.simulation-context)[style*="display: block"]');
+  const totalEvents = document.querySelectorAll('#eventLog .event-item:not(.empty-state):not(.events-section-header):not(.event-summary):not(.simulation-context)');
+  
+  const summaryElement = document.querySelector('.event-summary .filter-summary');
+  if (summaryElement) {
+    if (category === 'all') {
+      summaryElement.textContent = `Showing all ${totalEvents.length} events`;
+    } else {
+      summaryElement.textContent = `Showing ${visibleEvents.length} of ${totalEvents.length} events (filtered by ${category})`;
+    }
+  }
 }
 
 function initializeConsentSimulator() {
@@ -723,35 +786,108 @@ function filterTags(category) {
   });
 }
 
-function refreshEvents() {
-  console.log('🔄 Refreshing events...');
-  
-  chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
-    if (tabs[0]) {
-      chrome.tabs.sendMessage(tabs[0].id, { action: 'getEvents' }, function(response) {
-        console.log('📋 Events response:', response);
-        
-        if (chrome.runtime.lastError) {
-          console.error('❌ Error getting events:', chrome.runtime.lastError);
-          updateEventDisplay([]);
-          return;
-        }
-        
-        if (response && response.success !== false) {
-          // Handle both array format and object format
-          const events = Array.isArray(response) ? response : (response.events || []);
-          console.log('📋 Processing events:', events);
-          updateEventDisplay(events);
-        } else {
-          console.warn('⚠️ No events data received');
-          updateEventDisplay([]);
-        }
-      });
-    } else {
-      console.error('❌ No active tab found');
-      updateEventDisplay([]);
+// Storage Helper Functions
+const StorageManager = {
+  async saveEvents(events) {
+    try {
+      await chrome.storage.local.set({ gtmInspectorEvents: events });
+      console.log('Events saved to storage:', events.length);
+    } catch (error) {
+      console.error('Error saving events:', error);
+      throw error;
     }
-  });
+  },
+  
+  async getEvents() {
+    try {
+      const result = await chrome.storage.local.get(['gtmInspectorEvents']);
+      return result.gtmInspectorEvents || [];
+    } catch (error) {
+      console.error('Error getting events:', error);
+      return [];
+    }
+  },
+  
+  async clearOldEvents() {
+    try {
+      const events = await this.getEvents();
+      const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+      const filteredEvents = events.filter(event => event.timestamp > twentyFourHoursAgo);
+      
+      if (filteredEvents.length !== events.length) {
+        await this.saveEvents(filteredEvents);
+        console.log(`Cleaned up ${events.length - filteredEvents.length} old events`);
+      }
+    } catch (error) {
+      console.error('Error clearing old events:', error);
+    }
+  },
+  
+  async clearAllEvents() {
+    try {
+      await chrome.storage.local.remove(['gtmInspectorEvents']);
+      console.log('All events cleared from storage');
+    } catch (error) {
+      console.error('Error clearing all events:', error);
+      throw error;
+    }
+  }
+};
+
+// Enhanced refreshEvents function with storage integration
+async function refreshEvents() {
+  try {
+    // Show loading state
+    const eventList = document.getElementById('eventLog');
+    if (eventList) {
+      eventList.innerHTML = '<div class="loading">Loading events...</div>';
+    }
+    
+    // Get events from content script (which now includes storage events)
+    const events = await ContentScriptInterface.sendMessage('getEvents');
+    
+    if (Array.isArray(events)) {
+      updateEventDisplay(events);
+      
+      // Clean up old events periodically
+      if (Math.random() < 0.1) { // 10% chance to run cleanup
+        StorageManager.clearOldEvents();
+      }
+    } else {
+      console.error('Invalid events response:', events);
+      if (eventList) {
+        eventList.innerHTML = '<div class="no-events">Error loading events</div>';
+      }
+    }
+  } catch (error) {
+    console.error('Error refreshing events:', error);
+    const eventList = document.getElementById('eventLog');
+    if (eventList) {
+      eventList.innerHTML = `<div class="no-events">Error: ${error.message}</div>`;
+    }
+  }
+}
+
+// Enhanced clearEventLog function
+async function clearEventLog() {
+  try {
+    // Clear from storage
+    await StorageManager.clearAllEvents();
+    
+    // Clear from content script
+    await ContentScriptInterface.sendMessage('clearEventLog');
+    
+    // Update display
+    const eventList = document.getElementById('eventLog');
+    if (eventList) {
+      eventList.innerHTML = '<div class="event-item empty-state">Event log cleared</div>';
+    }
+    
+    showNotification('Event log cleared successfully', 'success');
+  } catch (error) {
+    console.error('Error clearing event log:', error);
+    showNotification('Failed to clear event log', 'error');
+  }
 }
 
 // Enhanced event logging with simulation support
@@ -766,15 +902,88 @@ function updateEventDisplay(events) {
     return;
   }
   
-  events.forEach(event => {
-    const eventElement = createEventElement(event);
-    eventList.appendChild(eventElement);
-  });
+  // Separate real and simulated events
+  const realEvents = events.filter(event => !event.isSimulated);
+  const simulatedEvents = events.filter(event => event.isSimulated);
+  
+  // Show simulation context if in simulation mode
+  if (simulationManager && simulationManager.isSimulationMode()) {
+    const simulationContext = createSimulationContextElement();
+    eventList.appendChild(simulationContext);
+  }
+  
+  // Display real events section
+  if (realEvents.length > 0) {
+    const realEventsHeader = document.createElement('div');
+    realEventsHeader.className = 'events-section-header real-events';
+    realEventsHeader.innerHTML = `<h3>📊 Real Events (${realEvents.length})</h3>`;
+    eventList.appendChild(realEventsHeader);
+    
+    realEvents.forEach(event => {
+      const eventElement = createEventElement(event);
+      eventElement.classList.add('real-event');
+      eventList.appendChild(eventElement);
+    });
+  }
+  
+  // Display simulated events section
+  if (simulatedEvents.length > 0) {
+    const simulatedEventsHeader = document.createElement('div');
+    simulatedEventsHeader.className = 'events-section-header simulated-events';
+    simulatedEventsHeader.innerHTML = `<h3>🧪 Simulated Events (${simulatedEvents.length})</h3>`;
+    eventList.appendChild(simulatedEventsHeader);
+    
+    simulatedEvents.forEach(event => {
+      const eventElement = createEventElement(event);
+      eventElement.classList.add('simulated-event');
+      eventList.appendChild(eventElement);
+    });
+  }
+  
+  // Show event count and last updated
+  const eventSummary = document.createElement('div');
+  eventSummary.className = 'event-summary';
+  eventSummary.innerHTML = `
+    <div class="event-counts">
+      <span class="real-count">📊 ${realEvents.length} real events</span>
+      <span class="simulated-count">🧪 ${simulatedEvents.length} simulated events</span>
+    </div>
+    <div class="last-updated">Last updated: ${new Date().toLocaleTimeString()}</div>
+  `;
+  eventList.appendChild(eventSummary);
+}
+
+function createSimulationContextElement() {
+  const contextDiv = document.createElement('div');
+  contextDiv.className = 'simulation-context';
+  
+  const simulatedConsent = simulationManager.getCurrentConsentState();
+  const consentSummary = Object.entries(simulatedConsent)
+    .map(([key, value]) => `${key}: ${value === 'granted' ? '✅' : '❌'}`)
+    .join(', ');
+  
+  contextDiv.innerHTML = `
+    <div class="simulation-context-header">
+      <h3>🧪 Simulation Mode Active</h3>
+      <button class="close-context" onclick="this.parentElement.parentElement.remove()">×</button>
+    </div>
+    <div class="simulation-context-body">
+      <p><strong>Simulated Consent:</strong> ${consentSummary}</p>
+      <p><strong>Impact:</strong> Tags will behave as if consent is set to these values</p>
+    </div>
+  `;
+  
+  return contextDiv;
 }
 
 function createEventElement(event) {
   const eventDiv = document.createElement('div');
   eventDiv.className = 'event-item';
+  
+  // Add source-specific styling
+  if (event.source) {
+    eventDiv.classList.add(`source-${event.source}`);
+  }
   
   const timestamp = new Date(event.timestamp).toLocaleTimeString();
   
@@ -791,9 +1000,20 @@ function createEventElement(event) {
     category = 'gtm';
   }
   
+  // Add impact analysis for tag detection events
+  let impactAnalysis = '';
+  if (event.impactDescription && event.impactIcon) {
+    impactAnalysis = `
+      <div class="impact-analysis ${event.impactSeverity || 'info'}">
+        <span class="impact-icon">${event.impactIcon}</span>
+        <span class="impact-description">${event.impactDescription}</span>
+      </div>
+    `;
+  }
+  
   // Add simulation analysis if in simulation mode
   let simulationAnalysis = '';
-  if (simulationManager && simulationManager.isSimulationMode()) {
+  if (simulationManager && simulationManager.isSimulationMode() && !event.isSimulated) {
     simulationAnalysis = analyzeEventInSimulation(event);
   }
   
@@ -801,7 +1021,7 @@ function createEventElement(event) {
     <div class="event-header">
       <span class="event-time">${timestamp}</span>
       <span class="event-type ${category}">${eventName}</span>
-      ${simulationAnalysis}
+      ${event.source ? `<span class="event-source">${event.source}</span>` : ''}
     </div>
     <div class="event-details">
       <div class="event-info">
@@ -810,7 +1030,10 @@ function createEventElement(event) {
         ${event.reason ? `<strong>Reason:</strong> ${event.reason}<br>` : ''}
         ${event.consentType ? `<strong>Consent Type:</strong> ${event.consentType}<br>` : ''}
         ${event.allowed !== undefined ? `<strong>Allowed:</strong> ${event.allowed ? 'Yes' : 'No'}<br>` : ''}
+        ${event.url ? `<strong>URL:</strong> ${new URL(event.url).hostname}<br>` : ''}
       </div>
+      ${impactAnalysis}
+      ${simulationAnalysis}
     </div>
   `;
   
@@ -882,17 +1105,6 @@ function getTagConsentRequirements(tagData) {
   return { analytics_storage: 'granted' };
 }
 
-function filterEvents(category) {
-  const eventItems = document.querySelectorAll('#eventLog .event-item:not(.empty-state)');
-  eventItems.forEach(item => {
-    if (category === 'all') {
-      item.style.display = 'block';
-    } else {
-      item.style.display = item.dataset.eventType === category ? 'block' : 'none';
-    }
-  });
-}
-
 function getConsentSettings() {
   return {
     analytics_storage: document.getElementById('analytics_storage').value,
@@ -953,60 +1165,276 @@ function applyConsentPreset(preset) {
   }
 }
 
-async function clearEventLog() {
+async function exportEventLog() {
   try {
-    await ContentScriptInterface.sendMessage('clearEventLog');
-    document.getElementById('eventLog').innerHTML = '<div class="event-item empty-state">Event log cleared</div>';
+    // Get current page data
+    const gtmResult = await ContentScriptInterface.sendMessage('checkGTM');
+    const tagsResult = await ContentScriptInterface.sendMessage('getTagStatus');
+    const eventsResult = await ContentScriptInterface.sendMessage('getEvents');
+    
+    // Generate comprehensive report
+    const report = await generateComplianceReport(gtmResult, tagsResult, eventsResult);
+    
+    // Show export options
+    showExportOptions(report);
+    
   } catch (error) {
-    showNotification('Failed to clear event log', 'error');
+    console.error('Export error:', error);
+    showNotification('Failed to generate export report', 'error');
   }
 }
 
-function exportEventLog() {
-  // Get current events from the display
-  const eventItems = document.querySelectorAll('#eventLog .event-item:not(.empty-state)');
-  
-  if (eventItems.length === 0) {
-    showNotification('No events to export', 'info');
-    return;
-  }
-  
-  // Convert displayed events to data
-  const eventsToExport = Array.from(eventItems).map(item => {
-    const timestamp = item.querySelector('span[style*="color: #666"]')?.textContent?.replace(/[\[\]]/g, '') || new Date().toLocaleTimeString();
-    const status = item.querySelector('span[style*="background"]')?.textContent || 'Event';
-    const name = item.querySelector('div[style*="font-weight: 600"]')?.textContent || 'Unknown Event';
-    const reason = item.querySelector('div[style*="color: #666"]')?.textContent || '';
-    
-    return {
-      timestamp: timestamp,
-      status: status,
-      name: name,
-      reason: reason,
-      category: item.dataset.eventType || 'other'
-    };
-  });
-  
-  // Create export data
-  const exportData = {
-    exportDate: new Date().toISOString(),
-    website: window.location.href,
-    totalEvents: eventsToExport.length,
-    events: eventsToExport
+async function generateComplianceReport(gtmResult, tagsResult, eventsResult) {
+  const report = {
+    metadata: {
+      generatedAt: new Date().toISOString(),
+      url: window.location.href,
+      userAgent: navigator.userAgent,
+      extensionVersion: chrome.runtime.getManifest().version
+    },
+    gtm: {
+      detected: gtmResult.success || false,
+      containerId: gtmResult.containerId || 'Not detected',
+      consentMode: gtmResult.consentMode || 'Not detected'
+    },
+    consent: {
+      simulationMode: simulationManager ? simulationManager.isSimulationMode() : false,
+      currentState: simulationManager ? simulationManager.getCurrentConsentState() : null,
+      cmps: {
+        cookiebot: gtmResult.cookiebot || false,
+        onetrust: gtmResult.onetrust || false,
+        iab: gtmResult.iab || false
+      }
+    },
+    tags: {
+      detected: tagsResult.tags || [],
+      total: tagsResult.tags ? tagsResult.tags.length : 0,
+      byType: {}
+    },
+    events: {
+      total: eventsResult.length || 0,
+      real: eventsResult.filter(e => !e.isSimulated).length || 0,
+      simulated: eventsResult.filter(e => e.isSimulated).length || 0,
+      recent: eventsResult.slice(-20) || [] // Last 20 events
+    },
+    recommendations: await generateRecommendations(gtmResult, tagsResult, eventsResult)
   };
   
-  // Create and download file
-  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+  // Group tags by type
+  if (report.tags.detected.length > 0) {
+    report.tags.detected.forEach(tag => {
+      if (!report.tags.byType[tag.type]) {
+        report.tags.byType[tag.type] = [];
+      }
+      report.tags.byType[tag.type].push(tag);
+    });
+  }
+  
+  return report;
+}
+
+async function generateRecommendations(gtmResult, tagsResult, eventsResult) {
+  const recommendations = [];
+  
+  // GTM detection recommendations
+  if (!gtmResult.success) {
+    recommendations.push({
+      type: 'error',
+      category: 'gtm',
+      title: 'Google Tag Manager Not Detected',
+      description: 'No GTM container found on this page. Ensure GTM is properly installed.',
+      priority: 'high'
+    });
+  }
+  
+  // Consent mode recommendations
+  if (gtmResult.success && !gtmResult.consentMode) {
+    recommendations.push({
+      type: 'warning',
+      category: 'consent',
+      title: 'Consent Mode Not Implemented',
+      description: 'GTM detected but consent mode is not configured. Consider implementing Google Consent Mode.',
+      priority: 'medium'
+    });
+  }
+  
+  // CMP recommendations
+  if (!gtmResult.cookiebot && !gtmResult.onetrust && !gtmResult.iab) {
+    recommendations.push({
+      type: 'info',
+      category: 'cmp',
+      title: 'No CMP Detected',
+      description: 'No consent management platform detected. Consider implementing a CMP for GDPR compliance.',
+      priority: 'medium'
+    });
+  }
+  
+  // Tag-specific recommendations
+  if (tagsResult.tags && tagsResult.tags.length > 0) {
+    const analyticsTags = tagsResult.tags.filter(tag => tag.type === 'analytics');
+    const advertisingTags = tagsResult.tags.filter(tag => tag.type === 'advertising');
+    
+    analyticsTags.forEach(tag => {
+      if (!tag.allowed) {
+        recommendations.push({
+          type: 'warning',
+          category: 'tag',
+          title: `${tag.name} Blocked`,
+          description: `${tag.name} is currently blocked due to missing analytics_storage consent.`,
+          priority: 'low'
+        });
+      }
+    });
+    
+    advertisingTags.forEach(tag => {
+      if (!tag.allowed) {
+        recommendations.push({
+          type: 'warning',
+          category: 'tag',
+          title: `${tag.name} Blocked`,
+          description: `${tag.name} is currently blocked due to missing ad_storage consent.`,
+          priority: 'low'
+        });
+      }
+    });
+  }
+  
+  return recommendations;
+}
+
+function showExportOptions(report) {
+  // Create export modal
+  const modal = document.createElement('div');
+  modal.className = 'export-modal';
+  modal.innerHTML = `
+    <div class="export-modal-content">
+      <div class="export-modal-header">
+        <h3>📊 Export Compliance Report</h3>
+        <button class="close-modal" onclick="this.closest('.export-modal').remove()">×</button>
+      </div>
+      <div class="export-modal-body">
+        <div class="export-summary">
+          <p><strong>Website:</strong> ${new URL(report.metadata.url).hostname}</p>
+          <p><strong>GTM:</strong> ${report.gtm.detected ? `Container ${report.gtm.containerId}` : 'Not detected'}</p>
+          <p><strong>Tags:</strong> ${report.tags.total} detected</p>
+          <p><strong>Events:</strong> ${report.events.total} total (${report.events.real} real, ${report.events.simulated} simulated)</p>
+        </div>
+        <div class="export-options">
+          <button class="export-btn json" onclick="exportToJSON(${JSON.stringify(report).replace(/"/g, '&quot;')})">
+            📄 Export as JSON
+          </button>
+          <button class="export-btn pdf" onclick="exportToPDF(${JSON.stringify(report).replace(/"/g, '&quot;')})">
+            📋 Export as PDF
+          </button>
+          <button class="export-btn csv" onclick="exportToCSV(${JSON.stringify(report).replace(/"/g, '&quot;')})">
+            📊 Export as CSV
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+}
+
+function exportToJSON(report) {
+  const dataStr = JSON.stringify(report, null, 2);
+  const dataBlob = new Blob([dataStr], { type: 'application/json' });
+  downloadFile(dataBlob, `gtm-consent-report-${new Date().toISOString().split('T')[0]}.json`);
+  document.querySelector('.export-modal').remove();
+}
+
+function exportToPDF(report) {
+  // Simple PDF generation using browser print
+  const printWindow = window.open('', '_blank');
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>GTM Consent Report</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          .header { border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+          .section { margin: 20px 0; }
+          .recommendation { margin: 10px 0; padding: 10px; border-left: 4px solid #007cba; background: #f0f0f0; }
+          .error { border-left-color: #dc3232; }
+          .warning { border-left-color: #ffb900; }
+          .info { border-left-color: #007cba; }
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background-color: #f2f2f2; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>GTM Consent Compliance Report</h1>
+          <p><strong>Generated:</strong> ${new Date(report.metadata.generatedAt).toLocaleString()}</p>
+          <p><strong>Website:</strong> ${report.metadata.url}</p>
+        </div>
+        
+        <div class="section">
+          <h2>GTM Status</h2>
+          <p><strong>Detected:</strong> ${report.gtm.detected ? 'Yes' : 'No'}</p>
+          <p><strong>Container ID:</strong> ${report.gtm.containerId}</p>
+          <p><strong>Consent Mode:</strong> ${report.gtm.consentMode ? 'Enabled' : 'Not detected'}</p>
+        </div>
+        
+        <div class="section">
+          <h2>Detected Tags (${report.tags.total})</h2>
+          <table>
+            <tr><th>Name</th><th>Type</th><th>Consent Required</th><th>Status</th></tr>
+            ${report.tags.detected.map(tag => `
+              <tr>
+                <td>${tag.name}</td>
+                <td>${tag.type}</td>
+                <td>${tag.consentType}</td>
+                <td>${tag.allowed ? '✅ Allowed' : '❌ Blocked'}</td>
+              </tr>
+            `).join('')}
+          </table>
+        </div>
+        
+        <div class="section">
+          <h2>Recommendations (${report.recommendations.length})</h2>
+          ${report.recommendations.map(rec => `
+            <div class="recommendation ${rec.type}">
+              <h4>${rec.title}</h4>
+              <p>${rec.description}</p>
+              <small>Priority: ${rec.priority}</small>
+            </div>
+          `).join('')}
+        </div>
+      </body>
+    </html>
+  `);
+  printWindow.document.close();
+  printWindow.print();
+  document.querySelector('.export-modal').remove();
+}
+
+function exportToCSV(report) {
+  // Export tags and events as CSV
+  let csvContent = 'data:text/csv;charset=utf-8,';
+  
+  // Tags CSV
+  csvContent += 'Tag Name,Type,Consent Required,Status\n';
+  report.tags.detected.forEach(tag => {
+    csvContent += `"${tag.name}","${tag.type}","${tag.consentType}","${tag.allowed ? 'Allowed' : 'Blocked'}"\n`;
+  });
+  
+  const dataBlob = new Blob([csvContent], { type: 'text/csv' });
+  downloadFile(dataBlob, `gtm-tags-${new Date().toISOString().split('T')[0]}.csv`);
+  document.querySelector('.export-modal').remove();
+}
+
+function downloadFile(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `gtm-consent-events-${new Date().toISOString().split('T')[0]}.json`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  
-  showNotification('Event log exported successfully!', 'success');
 }
 
 async function runDiagnostics() {
