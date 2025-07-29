@@ -140,6 +140,8 @@ class SimulationManager {
         this.updateUI();
         this.saveState();
         this.notifyContentScript();
+        // Auto-refresh tags when simulation mode changes
+        setTimeout(() => refreshTags(), 100);
       });
     }
     
@@ -159,6 +161,8 @@ class SimulationManager {
           this.simulatedConsent[consentType] = e.target.checked ? 'granted' : 'denied';
           this.saveState();
           this.notifyContentScript();
+          // Auto-refresh tags when consent settings change
+          setTimeout(() => refreshTags(), 100);
         });
       }
     });
@@ -168,6 +172,8 @@ class SimulationManager {
       btn.addEventListener('click', (e) => {
         const preset = e.currentTarget.dataset.preset;
         this.applyPreset(preset);
+        // Auto-refresh tags when preset is applied
+        setTimeout(() => refreshTags(), 100);
       });
     });
   }
