@@ -339,9 +339,6 @@ function initializeButtons() {
   if (clearLogBtn) {
     clearLogBtn.addEventListener('click', clearEventLog);
   }
-  if (exportLogBtn) {
-    exportLogBtn.addEventListener('click', exportEventLog);
-  }
   
   // Filter buttons
   initializeTagFilters();
@@ -384,7 +381,7 @@ function initializeEventFilters() {
       const filterValue = this.getAttribute('data-event-filter');
       
       // Apply filter
-      filterEvents(filterValue);
+    filterEvents(filterValue);
     });
   });
 }
@@ -878,7 +875,7 @@ async function refreshEvents() {
     const events = await ContentScriptInterface.sendMessage('getEvents');
     
     if (Array.isArray(events)) {
-      updateEventDisplay(events);
+          updateEventDisplay(events);
       
       // Clean up old events periodically
       if (Math.random() < 0.1) { // 10% chance to run cleanup
@@ -951,10 +948,10 @@ function updateEventDisplay(events) {
     eventList.appendChild(realEventsHeader);
     
     realEvents.forEach(event => {
-      const eventElement = createEventElement(event);
+    const eventElement = createEventElement(event);
       eventElement.classList.add('real-event');
-      eventList.appendChild(eventElement);
-    });
+    eventList.appendChild(eventElement);
+  });
   }
   
   // Display simulated events section
@@ -1194,348 +1191,6 @@ function applyConsentPreset(preset) {
       document.getElementById('applyConsent').click();
     }, 100);
   }
-}
-
-async function exportEventLog() {
-  try {
-    // Get current page data
-    const gtmResult = await ContentScriptInterface.sendMessage('checkGTM');
-    const tagsResult = await ContentScriptInterface.sendMessage('getTagStatus');
-    const eventsResult = await ContentScriptInterface.sendMessage('getEvents');
-    
-    // Generate comprehensive report
-    const report = await generateComplianceReport(gtmResult, tagsResult, eventsResult);
-    
-    // Show export options
-    showExportOptions(report);
-    
-  } catch (error) {
-    console.error('Export error:', error);
-    showNotification('Failed to generate export report', 'error');
-  }
-}
-
-async function generateComplianceReport(gtmResult, tagsResult, eventsResult) {
-  // Get the actual website URL from the current tab
-  let websiteUrl = 'Unknown';
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    websiteUrl = tab.url || 'Unknown';
-  } catch (error) {
-    console.error('Failed to get tab URL:', error);
-  }
-
-  const report = {
-    metadata: {
-      generatedAt: new Date().toISOString(),
-      url: websiteUrl,
-      userAgent: navigator.userAgent,
-      extensionVersion: chrome.runtime.getManifest().version
-    },
-    gtm: {
-      detected: gtmResult?.success || false,
-      containerId: gtmResult?.containerId || 'Not detected',
-      consentMode: gtmResult?.hasConsentMode || false,
-      cmpInfo: gtmResult?.cmpInfo || null
-    },
-    consent: {
-      simulationMode: simulationManager ? simulationManager.isSimulationMode() : false,
-      currentState: simulationManager ? simulationManager.getCurrentConsentState() : null,
-      cmps: {
-        cookiebot: gtmResult?.cookiebot || false,
-        onetrust: gtmResult?.onetrust || false,
-        iab: gtmResult?.iab || false
-      }
-    },
-    tags: {
-      detected: tagsResult?.tags || [],
-      total: tagsResult?.totalTags || 0,
-      allowed: tagsResult?.allowedTags || 0,
-      blocked: tagsResult?.blockedTags || 0,
-      byType: {}
-    },
-    events: {
-      total: eventsResult?.length || 0,
-      real: eventsResult?.filter(e => !e.isSimulated).length || 0,
-      simulated: eventsResult?.filter(e => e.isSimulated).length || 0,
-      recent: eventsResult?.slice(-20) || [] // Last 20 events
-    },
-    recommendations: await generateRecommendations(gtmResult, tagsResult, eventsResult)
-  };
-  
-  // Group tags by type
-  if (report.tags.detected.length > 0) {
-    report.tags.detected.forEach(tag => {
-      if (!report.tags.byType[tag.type]) {
-        report.tags.byType[tag.type] = [];
-      }
-      report.tags.byType[tag.type].push(tag);
-    });
-  }
-  
-  return report;
-}
-
-async function generateRecommendations(gtmResult, tagsResult, eventsResult) {
-  const recommendations = [];
-  
-  // GTM detection recommendations
-  if (!gtmResult.success) {
-    recommendations.push({
-      type: 'error',
-      category: 'gtm',
-      title: 'Google Tag Manager Not Detected',
-      description: 'No GTM container found on this page. Ensure GTM is properly installed.',
-      priority: 'high'
-    });
-  }
-  
-  // Consent mode recommendations
-  if (gtmResult.success && !gtmResult.consentMode) {
-    recommendations.push({
-      type: 'warning',
-      category: 'consent',
-      title: 'Consent Mode Not Implemented',
-      description: 'GTM detected but consent mode is not configured. Consider implementing Google Consent Mode.',
-      priority: 'medium'
-    });
-  }
-  
-  // CMP recommendations
-  if (!gtmResult.cookiebot && !gtmResult.onetrust && !gtmResult.iab) {
-    recommendations.push({
-      type: 'info',
-      category: 'cmp',
-      title: 'No CMP Detected',
-      description: 'No consent management platform detected. Consider implementing a CMP for GDPR compliance.',
-      priority: 'medium'
-    });
-  }
-  
-  // Tag-specific recommendations
-  if (tagsResult.tags && tagsResult.tags.length > 0) {
-    const analyticsTags = tagsResult.tags.filter(tag => tag.type === 'analytics');
-    const advertisingTags = tagsResult.tags.filter(tag => tag.type === 'advertising');
-    
-    analyticsTags.forEach(tag => {
-      if (!tag.allowed) {
-        recommendations.push({
-          type: 'warning',
-          category: 'tag',
-          title: `${tag.name} Blocked`,
-          description: `${tag.name} is currently blocked due to missing analytics_storage consent.`,
-          priority: 'low'
-        });
-      }
-    });
-    
-    advertisingTags.forEach(tag => {
-      if (!tag.allowed) {
-        recommendations.push({
-          type: 'warning',
-          category: 'tag',
-          title: `${tag.name} Blocked`,
-          description: `${tag.name} is currently blocked due to missing ad_storage consent.`,
-          priority: 'low'
-        });
-      }
-    });
-  }
-  
-  return recommendations;
-}
-
-function showExportOptions(report) {
-  // Create export modal
-  const modal = document.createElement('div');
-  modal.className = 'export-modal';
-  modal.innerHTML = `
-    <div class="export-modal-content">
-      <div class="export-modal-header">
-        <h3>📊 Export Compliance Report</h3>
-        <button class="close-modal" onclick="this.closest('.export-modal').remove()">×</button>
-      </div>
-      <div class="export-modal-body">
-        <div class="export-summary">
-          <p><strong>Website:</strong> ${new URL(report.metadata.url).hostname}</p>
-          <p><strong>GTM:</strong> ${report.gtm.detected ? `Container ${report.gtm.containerId}` : 'Not detected'}</p>
-          <p><strong>Tags:</strong> ${report.tags.total} detected</p>
-          <p><strong>Events:</strong> ${report.events.total} total (${report.events.real} real, ${report.events.simulated} simulated)</p>
-        </div>
-        <div class="export-options">
-          <button class="export-btn json" onclick="exportToJSON(${JSON.stringify(report).replace(/"/g, '&quot;')})">
-            📄 Export as JSON
-          </button>
-          <button class="export-btn pdf" onclick="exportToPDF(${JSON.stringify(report).replace(/"/g, '&quot;')})">
-            📋 Export as PDF
-          </button>
-          <button class="export-btn csv" onclick="exportToCSV(${JSON.stringify(report).replace(/"/g, '&quot;')})">
-            📊 Export as CSV
-          </button>
-        </div>
-      </div>
-    </div>
-  `;
-  
-  document.body.appendChild(modal);
-}
-
-function exportToJSON(report) {
-  const dataStr = JSON.stringify(report, null, 2);
-  const dataBlob = new Blob([dataStr], { type: 'application/json' });
-  downloadFile(dataBlob, `gtm-consent-report-${new Date().toISOString().split('T')[0]}.json`);
-  document.querySelector('.export-modal').remove();
-}
-
-function exportToPDF(report) {
-  // Simple PDF generation using browser print
-  const printWindow = window.open('', '_blank');
-  printWindow.document.write(`
-    <html>
-      <head>
-        <title>GTM Consent Report</title>
-        <style>
-          body { font-family: Arial, sans-serif; margin: 20px; }
-          .header { border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
-          .section { margin: 20px 0; }
-          .recommendation { margin: 10px 0; padding: 10px; border-left: 4px solid #007cba; background: #f0f0f0; }
-          .error { border-left-color: #dc3232; }
-          .warning { border-left-color: #ffb900; }
-          .info { border-left-color: #007cba; }
-          table { border-collapse: collapse; width: 100%; margin: 10px 0; }
-          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-          th { background-color: #f2f2f2; }
-          .status-yes { color: #28a745; font-weight: bold; }
-          .status-no { color: #dc3545; font-weight: bold; }
-          .summary-box { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>GTM Consent Compliance Report</h1>
-          <p><strong>Generated:</strong> ${new Date(report.metadata.generatedAt).toLocaleString()}</p>
-          <p><strong>Website:</strong> ${report.metadata.url}</p>
-          <p><strong>Extension Version:</strong> ${report.metadata.extensionVersion}</p>
-        </div>
-        
-        <div class="section">
-          <h2>GTM Status</h2>
-          <div class="summary-box">
-            <p><strong>Detected:</strong> <span class="${report.gtm.detected ? 'status-yes' : 'status-no'}">${report.gtm.detected ? 'Yes' : 'No'}</span></p>
-            <p><strong>Container ID:</strong> ${report.gtm.containerId}</p>
-            <p><strong>Consent Mode:</strong> <span class="${report.gtm.consentMode ? 'status-yes' : 'status-no'}">${report.gtm.consentMode ? 'Enabled' : 'Not detected'}</span></p>
-            ${report.gtm.cmpInfo ? `<p><strong>CMP:</strong> ${report.gtm.cmpInfo.name || 'Unknown'}</p>` : ''}
-          </div>
-        </div>
-        
-        <div class="section">
-          <h2>Consent Management</h2>
-          <div class="summary-box">
-            <p><strong>Simulation Mode:</strong> <span class="${report.consent.simulationMode ? 'status-yes' : 'status-no'}">${report.consent.simulationMode ? 'Active' : 'Inactive'}</span></p>
-            <p><strong>Cookiebot Detected:</strong> <span class="${report.consent.cmps.cookiebot ? 'status-yes' : 'status-no'}">${report.consent.cmps.cookiebot ? 'Yes' : 'No'}</span></p>
-            <p><strong>OneTrust Detected:</strong> <span class="${report.consent.cmps.onetrust ? 'status-yes' : 'status-no'}">${report.consent.cmps.onetrust ? 'Yes' : 'No'}</span></p>
-            <p><strong>IAB TCF Detected:</strong> <span class="${report.consent.cmps.iab ? 'status-yes' : 'status-no'}">${report.consent.cmps.iab ? 'Yes' : 'No'}</span></p>
-          </div>
-        </div>
-        
-        <div class="section">
-          <h2>Detected Tags (${report.tags.total})</h2>
-          <div class="summary-box">
-            <p><strong>Total Tags:</strong> ${report.tags.total}</p>
-            <p><strong>Allowed:</strong> ${report.tags.allowed}</p>
-            <p><strong>Blocked:</strong> ${report.tags.blocked}</p>
-          </div>
-          ${report.tags.detected.length > 0 ? `
-            <table>
-              <tr><th>Name</th><th>Type</th><th>Consent Required</th><th>Status</th><th>Impact</th></tr>
-              ${report.tags.detected.map(tag => `
-                <tr>
-                  <td>${tag.name}</td>
-                  <td>${tag.type}</td>
-                  <td>${tag.consentType}</td>
-                  <td class="${tag.allowed ? 'status-yes' : 'status-no'}">${tag.allowed ? '✅ Allowed' : '❌ Blocked'}</td>
-                  <td>${tag.impactDescription || 'N/A'}</td>
-                </tr>
-              `).join('')}
-            </table>
-          ` : '<p>No tags detected</p>'}
-        </div>
-        
-        <div class="section">
-          <h2>Events Summary</h2>
-          <div class="summary-box">
-            <p><strong>Total Events:</strong> ${report.events.total}</p>
-            <p><strong>Real Events:</strong> ${report.events.real}</p>
-            <p><strong>Simulated Events:</strong> ${report.events.simulated}</p>
-          </div>
-        </div>
-        
-        <div class="section">
-          <h2>Recommendations (${report.recommendations.length})</h2>
-          ${report.recommendations.length > 0 ? report.recommendations.map(rec => `
-            <div class="recommendation ${rec.type}">
-              <h4>${rec.title}</h4>
-              <p>${rec.description}</p>
-              <small>Priority: ${rec.priority}</small>
-            </div>
-          `).join('') : '<p>No recommendations at this time.</p>'}
-        </div>
-      </body>
-    </html>
-  `);
-  printWindow.document.close();
-  printWindow.print();
-  document.querySelector('.export-modal').remove();
-}
-
-function exportToCSV(report) {
-  // Export comprehensive data as CSV
-  let csvContent = 'data:text/csv;charset=utf-8,';
-  
-  // Header information
-  csvContent += 'GTM Consent Report\n';
-  csvContent += `Website,${report.metadata.url}\n`;
-  csvContent += `Generated,${new Date(report.metadata.generatedAt).toLocaleString()}\n`;
-  csvContent += `GTM Detected,${report.gtm.detected ? 'Yes' : 'No'}\n`;
-  csvContent += `GTM Container ID,${report.gtm.containerId}\n`;
-  csvContent += `Consent Mode,${report.gtm.consentMode ? 'Enabled' : 'Not detected'}\n`;
-  csvContent += `Simulation Mode,${report.consent.simulationMode ? 'Active' : 'Inactive'}\n`;
-  csvContent += `Total Tags,${report.tags.total}\n`;
-  csvContent += `Allowed Tags,${report.tags.allowed}\n`;
-  csvContent += `Blocked Tags,${report.tags.blocked}\n`;
-  csvContent += `Total Events,${report.events.total}\n`;
-  csvContent += `Real Events,${report.events.real}\n`;
-  csvContent += `Simulated Events,${report.events.simulated}\n`;
-  csvContent += '\n';
-  
-  // Tags CSV
-  csvContent += 'Tag Name,Type,Consent Required,Status,Impact Description\n';
-  report.tags.detected.forEach(tag => {
-    csvContent += `"${tag.name}","${tag.type}","${tag.consentType}","${tag.allowed ? 'Allowed' : 'Blocked'}","${tag.impactDescription || 'N/A'}"\n`;
-  });
-  
-  csvContent += '\n';
-  
-  // Recent Events CSV
-  csvContent += 'Event Type,Timestamp,Source,Is Simulated,Description\n';
-  report.events.recent.forEach(event => {
-    csvContent += `"${event.type || 'Unknown'}","${new Date(event.timestamp).toLocaleString()}","${event.source || 'Unknown'}","${event.isSimulated ? 'Yes' : 'No'}","${event.description || 'N/A'}"\n`;
-  });
-  
-  const dataBlob = new Blob([csvContent], { type: 'text/csv' });
-  downloadFile(dataBlob, `gtm-consent-report-${new Date().toISOString().split('T')[0]}.csv`);
-  document.querySelector('.export-modal').remove();
-}
-
-function downloadFile(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 async function runDiagnostics() {
