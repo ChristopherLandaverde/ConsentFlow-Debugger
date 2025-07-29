@@ -262,12 +262,12 @@ if (window.ConsentInspector) {
         };
       }
       
-      // Fallback to default granted state
+      // Fallback to default denied state (more privacy-friendly)
       return {
-        analytics_storage: 'granted',
-        ad_storage: 'granted',
+        analytics_storage: 'denied',
+        ad_storage: 'denied',
         functionality_storage: 'granted',
-        personalization_storage: 'granted',
+        personalization_storage: 'denied',
         security_storage: 'granted'
       };
     },

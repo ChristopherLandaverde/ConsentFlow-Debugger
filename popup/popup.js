@@ -51,10 +51,10 @@ class SimulationManager {
   constructor() {
     this.simulationMode = false;
     this.simulatedConsent = {
-      analytics_storage: 'granted',
-      ad_storage: 'granted',
+      analytics_storage: 'denied',  // More privacy-friendly default
+      ad_storage: 'denied',         // More privacy-friendly default
       functionality_storage: 'granted',
-      personalization_storage: 'granted',
+      personalization_storage: 'denied', // More privacy-friendly default
       security_storage: 'granted'
     };
     
@@ -498,10 +498,15 @@ async function checkGTMStatus() {
     // Get tag data
     const tagResult = await ContentScriptInterface.sendMessage('getTagStatus');
     
-    // Combine the results
+    // Combine the results - tagResult is now an object with tags array and metadata
     const result = {
       ...gtmResult,
-      tags: Array.isArray(tagResult) ? tagResult : []
+      tags: tagResult?.tags || [],
+      totalTags: tagResult?.totalTags || 0,
+      allowedTags: tagResult?.allowedTags || 0,
+      blockedTags: tagResult?.blockedTags || 0,
+      consentState: tagResult?.consentState || gtmResult?.consentState,
+      simulationMode: tagResult?.simulationMode || false
     };
     
     updateStatusDisplay(result);
@@ -606,10 +611,20 @@ function updateOverviewTab(result) {
     document.getElementById('overviewConsentValue').className = 'value';
   }
   
-  if (result?.tags) {
-    document.getElementById('totalTagsFound').textContent = result.tags.length;
+  // Use the correct data structure from tagResult
+  if (result?.totalTags !== undefined) {
+    document.getElementById('totalTagsFound').textContent = result.totalTags;
     
     // Handle tags blocked based on consent mode
+    if (result.hasConsentMode) {
+      document.getElementById('totalTagsBlocked').textContent = result.blockedTags;
+    } else {
+      document.getElementById('totalTagsBlocked').textContent = 'Consent Mode Not Implemented';
+    }
+  } else if (result?.tags) {
+    // Fallback to old format if needed
+    document.getElementById('totalTagsFound').textContent = result.tags.length;
+    
     if (result.hasConsentMode) {
       const blockedTags = result.tags.filter(tag => !tag.allowed).length;
       document.getElementById('totalTagsBlocked').textContent = blockedTags;
@@ -736,8 +751,18 @@ async function refreshTags() {
   
   try {
     const result = await ContentScriptInterface.sendMessage('getTagStatus');
-    updateTagDisplay(result || []);
+    
+    // Handle the new getTagStatus response structure
+    if (result && result.success && result.tags) {
+      updateTagDisplay(result.tags);
+    } else if (Array.isArray(result)) {
+      // Fallback for old format
+      updateTagDisplay(result);
+    } else {
+      updateTagDisplay([]);
+    }
   } catch (error) {
+    console.error('Error refreshing tags:', error);
     if (tagList) {
       tagList.innerHTML = '<div class="tag-item empty-state">Error loading tags</div>';
     }
