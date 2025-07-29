@@ -567,13 +567,13 @@ function updateStatusDisplay(result) {
       const hasFullConsent = analytics === 'granted' && ads === 'granted';
       
       if (hasRestrictedConsent) {
-        consentModeStatus.textContent = `⚠️ Consent Mode${cmpInfo}: Analytics=${analytics}, Ads=${ads}`;
+        consentModeStatus.textContent = `⚠️ Consent Mode${cmpInfo}`;
         consentModeStatus.className = 'status restricted';
       } else if (hasFullConsent) {
-        consentModeStatus.textContent = `✅ Consent Mode${cmpInfo}: Analytics=${analytics}, Ads=${ads}`;
+        consentModeStatus.textContent = `✅ Consent Mode${cmpInfo}`;
         consentModeStatus.className = 'status found';
       } else {
-        consentModeStatus.textContent = `ℹ️ Consent Mode${cmpInfo}: Analytics=${analytics}, Ads=${ads}`;
+        consentModeStatus.textContent = `ℹ️ Consent Mode${cmpInfo}`;
         consentModeStatus.className = 'status found';
       }
       
@@ -1216,37 +1216,49 @@ async function exportEventLog() {
 }
 
 async function generateComplianceReport(gtmResult, tagsResult, eventsResult) {
+  // Get the actual website URL from the current tab
+  let websiteUrl = 'Unknown';
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    websiteUrl = tab.url || 'Unknown';
+  } catch (error) {
+    console.error('Failed to get tab URL:', error);
+  }
+
   const report = {
     metadata: {
       generatedAt: new Date().toISOString(),
-      url: window.location.href,
+      url: websiteUrl,
       userAgent: navigator.userAgent,
       extensionVersion: chrome.runtime.getManifest().version
     },
     gtm: {
-      detected: gtmResult.success || false,
-      containerId: gtmResult.containerId || 'Not detected',
-      consentMode: gtmResult.consentMode || 'Not detected'
+      detected: gtmResult?.success || false,
+      containerId: gtmResult?.containerId || 'Not detected',
+      consentMode: gtmResult?.hasConsentMode || false,
+      cmpInfo: gtmResult?.cmpInfo || null
     },
     consent: {
       simulationMode: simulationManager ? simulationManager.isSimulationMode() : false,
       currentState: simulationManager ? simulationManager.getCurrentConsentState() : null,
       cmps: {
-        cookiebot: gtmResult.cookiebot || false,
-        onetrust: gtmResult.onetrust || false,
-        iab: gtmResult.iab || false
+        cookiebot: gtmResult?.cookiebot || false,
+        onetrust: gtmResult?.onetrust || false,
+        iab: gtmResult?.iab || false
       }
     },
     tags: {
-      detected: tagsResult.tags || [],
-      total: tagsResult.tags ? tagsResult.tags.length : 0,
+      detected: tagsResult?.tags || [],
+      total: tagsResult?.totalTags || 0,
+      allowed: tagsResult?.allowedTags || 0,
+      blocked: tagsResult?.blockedTags || 0,
       byType: {}
     },
     events: {
-      total: eventsResult.length || 0,
-      real: eventsResult.filter(e => !e.isSimulated).length || 0,
-      simulated: eventsResult.filter(e => e.isSimulated).length || 0,
-      recent: eventsResult.slice(-20) || [] // Last 20 events
+      total: eventsResult?.length || 0,
+      real: eventsResult?.filter(e => !e.isSimulated).length || 0,
+      simulated: eventsResult?.filter(e => e.isSimulated).length || 0,
+      recent: eventsResult?.slice(-20) || [] // Last 20 events
     },
     recommendations: await generateRecommendations(gtmResult, tagsResult, eventsResult)
   };
@@ -1390,9 +1402,12 @@ function exportToPDF(report) {
           .error { border-left-color: #dc3232; }
           .warning { border-left-color: #ffb900; }
           .info { border-left-color: #007cba; }
-          table { border-collapse: collapse; width: 100%; }
+          table { border-collapse: collapse; width: 100%; margin: 10px 0; }
           th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
           th { background-color: #f2f2f2; }
+          .status-yes { color: #28a745; font-weight: bold; }
+          .status-no { color: #dc3545; font-weight: bold; }
+          .summary-box { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; }
         </style>
       </head>
       <body>
@@ -1400,39 +1415,70 @@ function exportToPDF(report) {
           <h1>GTM Consent Compliance Report</h1>
           <p><strong>Generated:</strong> ${new Date(report.metadata.generatedAt).toLocaleString()}</p>
           <p><strong>Website:</strong> ${report.metadata.url}</p>
+          <p><strong>Extension Version:</strong> ${report.metadata.extensionVersion}</p>
         </div>
         
         <div class="section">
           <h2>GTM Status</h2>
-          <p><strong>Detected:</strong> ${report.gtm.detected ? 'Yes' : 'No'}</p>
-          <p><strong>Container ID:</strong> ${report.gtm.containerId}</p>
-          <p><strong>Consent Mode:</strong> ${report.gtm.consentMode ? 'Enabled' : 'Not detected'}</p>
+          <div class="summary-box">
+            <p><strong>Detected:</strong> <span class="${report.gtm.detected ? 'status-yes' : 'status-no'}">${report.gtm.detected ? 'Yes' : 'No'}</span></p>
+            <p><strong>Container ID:</strong> ${report.gtm.containerId}</p>
+            <p><strong>Consent Mode:</strong> <span class="${report.gtm.consentMode ? 'status-yes' : 'status-no'}">${report.gtm.consentMode ? 'Enabled' : 'Not detected'}</span></p>
+            ${report.gtm.cmpInfo ? `<p><strong>CMP:</strong> ${report.gtm.cmpInfo.name || 'Unknown'}</p>` : ''}
+          </div>
+        </div>
+        
+        <div class="section">
+          <h2>Consent Management</h2>
+          <div class="summary-box">
+            <p><strong>Simulation Mode:</strong> <span class="${report.consent.simulationMode ? 'status-yes' : 'status-no'}">${report.consent.simulationMode ? 'Active' : 'Inactive'}</span></p>
+            <p><strong>Cookiebot Detected:</strong> <span class="${report.consent.cmps.cookiebot ? 'status-yes' : 'status-no'}">${report.consent.cmps.cookiebot ? 'Yes' : 'No'}</span></p>
+            <p><strong>OneTrust Detected:</strong> <span class="${report.consent.cmps.onetrust ? 'status-yes' : 'status-no'}">${report.consent.cmps.onetrust ? 'Yes' : 'No'}</span></p>
+            <p><strong>IAB TCF Detected:</strong> <span class="${report.consent.cmps.iab ? 'status-yes' : 'status-no'}">${report.consent.cmps.iab ? 'Yes' : 'No'}</span></p>
+          </div>
         </div>
         
         <div class="section">
           <h2>Detected Tags (${report.tags.total})</h2>
-          <table>
-            <tr><th>Name</th><th>Type</th><th>Consent Required</th><th>Status</th></tr>
-            ${report.tags.detected.map(tag => `
-              <tr>
-                <td>${tag.name}</td>
-                <td>${tag.type}</td>
-                <td>${tag.consentType}</td>
-                <td>${tag.allowed ? '✅ Allowed' : '❌ Blocked'}</td>
-              </tr>
-            `).join('')}
-          </table>
+          <div class="summary-box">
+            <p><strong>Total Tags:</strong> ${report.tags.total}</p>
+            <p><strong>Allowed:</strong> ${report.tags.allowed}</p>
+            <p><strong>Blocked:</strong> ${report.tags.blocked}</p>
+          </div>
+          ${report.tags.detected.length > 0 ? `
+            <table>
+              <tr><th>Name</th><th>Type</th><th>Consent Required</th><th>Status</th><th>Impact</th></tr>
+              ${report.tags.detected.map(tag => `
+                <tr>
+                  <td>${tag.name}</td>
+                  <td>${tag.type}</td>
+                  <td>${tag.consentType}</td>
+                  <td class="${tag.allowed ? 'status-yes' : 'status-no'}">${tag.allowed ? '✅ Allowed' : '❌ Blocked'}</td>
+                  <td>${tag.impactDescription || 'N/A'}</td>
+                </tr>
+              `).join('')}
+            </table>
+          ` : '<p>No tags detected</p>'}
+        </div>
+        
+        <div class="section">
+          <h2>Events Summary</h2>
+          <div class="summary-box">
+            <p><strong>Total Events:</strong> ${report.events.total}</p>
+            <p><strong>Real Events:</strong> ${report.events.real}</p>
+            <p><strong>Simulated Events:</strong> ${report.events.simulated}</p>
+          </div>
         </div>
         
         <div class="section">
           <h2>Recommendations (${report.recommendations.length})</h2>
-          ${report.recommendations.map(rec => `
+          ${report.recommendations.length > 0 ? report.recommendations.map(rec => `
             <div class="recommendation ${rec.type}">
               <h4>${rec.title}</h4>
               <p>${rec.description}</p>
               <small>Priority: ${rec.priority}</small>
             </div>
-          `).join('')}
+          `).join('') : '<p>No recommendations at this time.</p>'}
         </div>
       </body>
     </html>
@@ -1443,17 +1489,41 @@ function exportToPDF(report) {
 }
 
 function exportToCSV(report) {
-  // Export tags and events as CSV
+  // Export comprehensive data as CSV
   let csvContent = 'data:text/csv;charset=utf-8,';
   
+  // Header information
+  csvContent += 'GTM Consent Report\n';
+  csvContent += `Website,${report.metadata.url}\n`;
+  csvContent += `Generated,${new Date(report.metadata.generatedAt).toLocaleString()}\n`;
+  csvContent += `GTM Detected,${report.gtm.detected ? 'Yes' : 'No'}\n`;
+  csvContent += `GTM Container ID,${report.gtm.containerId}\n`;
+  csvContent += `Consent Mode,${report.gtm.consentMode ? 'Enabled' : 'Not detected'}\n`;
+  csvContent += `Simulation Mode,${report.consent.simulationMode ? 'Active' : 'Inactive'}\n`;
+  csvContent += `Total Tags,${report.tags.total}\n`;
+  csvContent += `Allowed Tags,${report.tags.allowed}\n`;
+  csvContent += `Blocked Tags,${report.tags.blocked}\n`;
+  csvContent += `Total Events,${report.events.total}\n`;
+  csvContent += `Real Events,${report.events.real}\n`;
+  csvContent += `Simulated Events,${report.events.simulated}\n`;
+  csvContent += '\n';
+  
   // Tags CSV
-  csvContent += 'Tag Name,Type,Consent Required,Status\n';
+  csvContent += 'Tag Name,Type,Consent Required,Status,Impact Description\n';
   report.tags.detected.forEach(tag => {
-    csvContent += `"${tag.name}","${tag.type}","${tag.consentType}","${tag.allowed ? 'Allowed' : 'Blocked'}"\n`;
+    csvContent += `"${tag.name}","${tag.type}","${tag.consentType}","${tag.allowed ? 'Allowed' : 'Blocked'}","${tag.impactDescription || 'N/A'}"\n`;
+  });
+  
+  csvContent += '\n';
+  
+  // Recent Events CSV
+  csvContent += 'Event Type,Timestamp,Source,Is Simulated,Description\n';
+  report.events.recent.forEach(event => {
+    csvContent += `"${event.type || 'Unknown'}","${new Date(event.timestamp).toLocaleString()}","${event.source || 'Unknown'}","${event.isSimulated ? 'Yes' : 'No'}","${event.description || 'N/A'}"\n`;
   });
   
   const dataBlob = new Blob([csvContent], { type: 'text/csv' });
-  downloadFile(dataBlob, `gtm-tags-${new Date().toISOString().split('T')[0]}.csv`);
+  downloadFile(dataBlob, `gtm-consent-report-${new Date().toISOString().split('T')[0]}.csv`);
   document.querySelector('.export-modal').remove();
 }
 
