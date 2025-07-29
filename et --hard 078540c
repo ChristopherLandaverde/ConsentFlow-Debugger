@@ -1,5 +1,0 @@
-[33m07b29cb[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Implement bidirectional sync solution - Cookiebot and extension now stay in perfect sync with shared state management
-[33m078540c[m Adding to disable cookiebot event listeners
-[33m5cff284[m Fix diagnostic results readability - darker background with better contrast
-[33me285695[m Fix diagnostic results readability - darker background with better contrast
-[33m2d37949[m Implement comprehensive diagnostics for Diagnose button - now provides useful information and issue detection

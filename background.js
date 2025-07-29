@@ -32,7 +32,6 @@ async function ensureContentScriptWithDiagnostics(tabId) {
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     // Step 6: Test communication
-    
     let testSuccess = false;
     let attempts = 0;
     const maxAttempts = 3;
@@ -60,6 +59,7 @@ async function ensureContentScriptWithDiagnostics(tabId) {
     }
     
   } catch (error) {
+    console.error('Content script injection failed:', error);
     return { 
       success: false, 
       error: error.message,
@@ -77,6 +77,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     ensureContentScriptWithDiagnostics(tabId).then(result => {
       sendResponse(result);
     }).catch(error => {
+      console.error('Content script ensure failed:', error);
       sendResponse({ 
         success: false, 
         error: error.message,
@@ -117,8 +118,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
   // Handle Cookiebot consent change notifications
   if (request.action === 'cookiebotConsentChange') {
-    console.log('🍪 Cookiebot consent change received in background:', request.data);
-    
     // Store the consent change data
     chrome.storage.local.set({
       lastCookiebotConsentChange: {
@@ -136,15 +135,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
   // Handle popup opening request
   if (request.action === 'openPopup') {
-    // This will be handled by the popup when it opens
     sendResponse({ success: true });
     return true;
   }
   
   // Handle Tag Manager interaction logging
   if (request.action === 'logTagManagerInteraction') {
-    console.log('📊 Tag Manager interaction logged:', request.data);
-    
     // Store the interaction data
     chrome.storage.local.get(['tagManagerInteractions'], (result) => {
       const interactions = result.tagManagerInteractions || [];
@@ -178,15 +174,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // Show notification for Cookiebot consent changes
 function showCookiebotNotification(consentData) {
-  const actionText = consentData.action === 'accept' ? 'accepted' : 'rejected';
-  const icon = consentData.action === 'accept' ? '✅' : '❌';
-  
-  chrome.notifications.create({
-    type: 'basic',
-    iconUrl: 'icon48.png', // You'll need to add this icon
-    title: 'GTM Consent Inspector',
-    message: `${consentData.website}: Cookies ${actionText} ${icon}`,
-    priority: 1
-  });
+  try {
+    const actionText = consentData.action === 'accept' ? 'accepted' : 'rejected';
+    const icon = consentData.action === 'accept' ? '✅' : '❌';
+    
+    chrome.notifications.create({
+      type: 'basic',
+      title: 'GTM Consent Inspector',
+      message: `${consentData.website}: Cookies ${actionText} ${icon}`,
+      priority: 1
+    });
+  } catch (error) {
+    console.error('Failed to show notification:', error);
+  }
 }
 

@@ -246,13 +246,12 @@ class SimulationManager {
         });
       }
     } catch (error) {
-      console.log('Content script not available for simulation update:', error);
+      console.error('Content script not available for simulation update:', error);
     }
   }
   
   showNotification(message, type) {
     // Simple notification - you can enhance this
-    console.log(`${type}: ${message}`);
   }
 }
 
@@ -732,7 +731,7 @@ function showConsentModeUnavailable() {
         consentTab.appendChild(warningMsg);
       }
     } catch (error) {
-      console.log('DOM insertion fallback:', error);
+      console.error('DOM insertion fallback:', error);
       consentTab.appendChild(warningMsg);
     }
   }
@@ -823,7 +822,6 @@ const StorageManager = {
   async saveEvents(events) {
     try {
       await chrome.storage.local.set({ gtmInspectorEvents: events });
-      console.log('Events saved to storage:', events.length);
     } catch (error) {
       console.error('Error saving events:', error);
       throw error;
@@ -848,7 +846,6 @@ const StorageManager = {
       
       if (filteredEvents.length !== events.length) {
         await this.saveEvents(filteredEvents);
-        console.log(`Cleaned up ${events.length - filteredEvents.length} old events`);
       }
     } catch (error) {
       console.error('Error clearing old events:', error);
@@ -858,7 +855,6 @@ const StorageManager = {
   async clearAllEvents() {
     try {
       await chrome.storage.local.remove(['gtmInspectorEvents']);
-      console.log('All events cleared from storage');
     } catch (error) {
       console.error('Error clearing all events:', error);
       throw error;
@@ -1317,7 +1313,6 @@ function displayDiagnosticResults(diagnostics) {
 }
 
 function showNotification(message, type = 'info') {
-  console.log(`${type.toUpperCase()}: ${message}`);
   // Simple notification - you can enhance this later
 }
 

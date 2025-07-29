@@ -161,8 +161,6 @@
         
         // Store events
         await chrome.storage.local.set({ gtmInspectorEvents: events });
-        
-        console.log('Real event logged:', event);
       } catch (error) {
         console.error('Error logging real event:', error);
       }
@@ -249,7 +247,7 @@
             (document.head || document.documentElement).appendChild(script);
           }
         } catch (error) {
-          console.log('Script injection fallback:', error);
+          console.error('Script injection fallback:', error);
           document.documentElement.appendChild(script);
         }
       });
@@ -260,7 +258,7 @@
     }
   }
   
-    // Message listener
+  // Message listener
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     
     const handleMessage = async () => {
@@ -415,14 +413,10 @@
     return new Promise((resolve, reject) => {
       const messageId = Date.now() + Math.random();
       
-      console.log('📤 Sending message to page:', { action, data, messageId });
-      
       // Listen for response from page
       const messageListener = (event) => {
-        console.log('📥 Received message from page:', event.data);
         if (event.data && event.data.source === 'gtm-inspector-page' && event.data.id === messageId) {
           window.removeEventListener('message', messageListener);
-          console.log('✅ Message matched, resolving with:', event.data.result);
           if (event.data.error) {
             reject(new Error(event.data.error));
           } else {
@@ -441,12 +435,10 @@
         id: messageId
       }, '*');
       
-      console.log('📤 Message sent, waiting for response...');
-      
       // Timeout after 5 seconds
       setTimeout(() => {
         window.removeEventListener('message', messageListener);
-        console.error('⏰ Message timeout for action:', action);
+        console.error('Message timeout for action:', action);
         reject(new Error('Message timeout'));
       }, 5000);
     });
@@ -457,20 +449,17 @@
     // Listen for postMessage from website integration
     window.addEventListener('message', (event) => {
       if (event.data && event.data.type === 'COOKIEBOT_CONSENT_CHANGE') {
-        console.log('🍪 Cookiebot consent change detected:', event.data.data);
         handleCookiebotConsentChange(event.data.data);
       }
     });
     
     // Listen for custom events from website integration
     window.addEventListener('cookiebotConsentChange', (event) => {
-      console.log('🍪 Cookiebot consent change event detected:', event.detail);
       handleCookiebotConsentChange(event.detail);
     });
     
     // Listen for actual Cookiebot events
     window.addEventListener('CookiebotOnAccept', (event) => {
-      console.log('🍪 Cookiebot accept event fired:', event);
       const consentData = {
         action: 'accept',
         website: document.title || window.location.hostname,
@@ -482,7 +471,6 @@
     });
     
     window.addEventListener('CookiebotOnDecline', (event) => {
-      console.log('🍪 Cookiebot decline event fired:', event);
       const consentData = {
         action: 'decline',
         website: document.title || window.location.hostname,
@@ -494,7 +482,6 @@
     });
     
     window.addEventListener('CookiebotOnConsentReady', (event) => {
-      console.log('🍪 Cookiebot consent ready event fired:', event);
       const consentData = {
         action: 'ready',
         website: document.title || window.location.hostname,
@@ -507,6 +494,7 @@
     
     // Set up immediate monitoring of gtag and dataLayer
     setupImmediateMonitoring();
+    
     // Listen for dataLayer events
     if (window.dataLayer) {
       const originalPush = window.dataLayer.push;
@@ -515,7 +503,6 @@
         
         // Check if this is a cookiebot consent change event
         if (args[0] && args[0].event === 'cookiebot_consent_change') {
-          console.log('🍪 Cookiebot consent change in dataLayer:', args[0]);
           handleCookiebotConsentChange(args[0].consent_data);
         }
         
@@ -562,7 +549,6 @@
               event.event === 'click' ||
               event.event === 'custom_event') {
             
-            console.log('🏷️ Tag event detected:', event);
             logTagEventToEventLog(event);
           }
         }
@@ -574,15 +560,12 @@
   
   // Set up immediate monitoring of gtag and dataLayer consent calls
   function setupImmediateMonitoring() {
-    console.log('🔍 Setting up immediate monitoring of Tag Manager consent calls...');
-    
     // Monitor gtag consent calls immediately
     if (window.gtag && typeof window.gtag === 'function') {
       const originalGtag = window.gtag;
       window.gtag = function(...args) {
         // Check if this is a consent call
         if (args[0] === 'consent') {
-          console.log('🍪 GTM Consent call detected:', args);
           logTagManagerInteraction('gtag_consent_call', {
             method: 'gtag',
             action: args[1],
@@ -609,7 +592,6 @@
           // Check for consent events
           if (event.event === 'consent' || 
               (Array.isArray(args) && args[0] === 'consent')) {
-            console.log('🍪 DataLayer consent event detected:', args);
             logTagManagerInteraction('datalayer_consent_event', {
               method: 'dataLayer',
               event: event,
@@ -621,7 +603,6 @@
           
           // Check for tag firing events that might be consent-dependent
           if (event.event && (event.event.includes('gtm.') || event.event.includes('consent'))) {
-            console.log('🍪 Potential consent-dependent tag event:', event);
             logTagManagerInteraction('potential_consent_tag', {
               method: 'dataLayer',
               event: event,
@@ -633,7 +614,6 @@
         
         // Also check for array format consent events
         if (Array.isArray(args) && args[0] === 'consent') {
-          console.log('🍪 DataLayer consent event (array format) detected:', args);
           logTagManagerInteraction('datalayer_consent_event', {
             method: 'dataLayer',
             args: args,
@@ -663,7 +643,7 @@
       action: 'cookiebotConsentChange',
       data: consentData
     }).catch(error => {
-      console.log('Background script not available:', error);
+      console.error('Background script not available:', error);
     });
   }
   
@@ -674,21 +654,18 @@
       action: consentData.action,
       consentData: consentData
     }).catch(error => {
-      console.log('Could not log consent change to event log:', error);
+      console.error('Could not log consent change to event log:', error);
     });
   }
   
   // Enhanced monitoring of Tag Manager interaction with Cookiebot
   function monitorTagManagerInteraction(consentData) {
-    console.log('🔍 Monitoring Tag Manager interaction with Cookiebot consent change:', consentData);
-    
     // Monitor gtag consent calls
     if (window.gtag && typeof window.gtag === 'function') {
       const originalGtag = window.gtag;
       window.gtag = function(...args) {
         // Check if this is a consent call
         if (args[0] === 'consent') {
-          console.log('🍪 GTM Consent call detected:', args);
           logTagManagerInteraction('gtag_consent_call', {
             method: 'gtag',
             action: args[1],
@@ -715,7 +692,6 @@
           // Check for consent events
           if (event.event === 'consent' || 
               (Array.isArray(args) && args[0] === 'consent')) {
-            console.log('🍪 DataLayer consent event detected:', args);
             logTagManagerInteraction('datalayer_consent_event', {
               method: 'dataLayer',
               event: event,
@@ -727,7 +703,6 @@
           
           // Check for tag firing events that might be consent-dependent
           if (event.event && (event.event.includes('gtm.') || event.event.includes('consent'))) {
-            console.log('🍪 Potential consent-dependent tag event:', event);
             logTagManagerInteraction('potential_consent_tag', {
               method: 'dataLayer',
               event: event,
@@ -757,10 +732,6 @@
         };
         
         if (JSON.stringify(initialGTMState.containers) !== JSON.stringify(currentGTMState.containers)) {
-          console.log('🍪 GTM container state changed after consent:', {
-            before: initialGTMState,
-            after: currentGTMState
-          });
           logTagManagerInteraction('gtm_container_change', {
             before: initialGTMState,
             after: currentGTMState,
@@ -794,18 +765,14 @@
       window.gtmInspectorInteractions = window.gtmInspectorInteractions.slice(-50);
     }
     
-    console.log('📊 Tag Manager Interaction Logged:', interaction);
-    
     // Send to background script for storage
     chrome.runtime.sendMessage({
       action: 'logTagManagerInteraction',
       data: interaction
     }).catch(error => {
-      console.log('Could not send interaction to background:', error);
+      console.error('Could not send interaction to background:', error);
     });
   }
-  
-
   
   // Update extension state
   function updateExtensionState(consentData) {
@@ -825,7 +792,6 @@
   
   // Initialize script injection
   function initialize() {
-    
     // Setup Cookiebot listeners
     setupCookiebotListeners();
     
@@ -865,7 +831,6 @@
         const currentConsentState = JSON.stringify(window.Cookiebot.consent);
         
         if (lastConsentState !== null && lastConsentState !== currentConsentState) {
-          console.log('🍪 Consent state change detected via periodic monitoring');
           const consentData = {
             action: 'periodic_detection',
             website: document.title || window.location.hostname,
@@ -896,7 +861,6 @@
         timestamp: Date.now()
       };
       handleCookiebotConsentChange(consentData);
-      console.log('🍪 Manual consent change triggered:', consentData);
     },
     
     // Get current interaction data
@@ -907,7 +871,6 @@
     // Clear interaction data
     clearInteractions: function() {
       window.gtmInspectorInteractions = [];
-      console.log('🍪 Interaction data cleared');
     },
     
     // Test gtag consent call
@@ -917,9 +880,6 @@
           analytics_storage: 'granted',
           ad_storage: 'denied'
         });
-        console.log('🍪 Test gtag consent call made');
-      } else {
-        console.log('❌ gtag not available');
       }
     },
     
@@ -930,12 +890,7 @@
           analytics_storage: 'granted',
           ad_storage: 'denied'
         }]);
-        console.log('🍪 Test dataLayer consent event pushed');
-      } else {
-        console.log('❌ dataLayer not available');
       }
     }
   };
-  
-  console.log('🔧 GTM Inspector initialized with manual testing functions available at window.GTMInspectorTest');
 })();

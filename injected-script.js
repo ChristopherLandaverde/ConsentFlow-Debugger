@@ -2,10 +2,8 @@
 
 // Prevent multiple injections
 if (window.ConsentInspector) {
-  console.log('🔧 ConsentInspector already exists, skipping injection...');
+  // ConsentInspector already exists, skipping injection
 } else {
-  console.log('🔧 Creating ConsentInspector...');
-  
   // Create ConsentInspector in page context
   window.ConsentInspector = {
     version: 'external-v2-fixed',
@@ -94,11 +92,6 @@ if (window.ConsentInspector) {
     },
     
     detectConsentMode: function() {
-      console.log('🔍 detectConsentMode called');
-      console.log('🔍 dataLayer available:', !!window.dataLayer);
-      console.log('🔍 dataLayer length:', window.dataLayer ? window.dataLayer.length : 0);
-      console.log('🔍 dataLayer contents:', window.dataLayer ? JSON.stringify(window.dataLayer, null, 2) : 'null');
-      
       // Method 1: Check for actual consent events in dataLayer
       if (window.dataLayer && Array.isArray(window.dataLayer)) {
         const hasConsentEvents = window.dataLayer.some(item => {
@@ -111,7 +104,6 @@ if (window.ConsentInspector) {
           }
           return false;
         });
-        console.log('🔍 Method 1 - hasConsentEvents:', hasConsentEvents);
         if (hasConsentEvents) {
           return true;
         }
@@ -119,7 +111,6 @@ if (window.ConsentInspector) {
       
       // Method 2: Check if gtag with consent is used
       if (window.gtag && typeof window.gtag === 'function') {
-        console.log('🔍 Method 2 - gtag function available');
         // Look for gtag consent calls in dataLayer
         if (window.dataLayer) {
           const hasGtagConsent = window.dataLayer.some(item => {
@@ -131,29 +122,21 @@ if (window.ConsentInspector) {
             }
             return false;
           });
-          console.log('🔍 Method 2 - hasGtagConsent:', hasGtagConsent);
           return hasGtagConsent;
         }
       }
       
       // Method 3: Enhanced CMP detection
-      console.log('🔍 Method 3 - CMP detection');
-      console.log('🔍 __tcfapi available:', !!window.__tcfapi);
-      console.log('🔍 OneTrust available:', !!window.OneTrust);
-      console.log('🔍 Cookiebot available:', !!window.Cookiebot);
       if (window.__tcfapi || window.OneTrust || window.Cookiebot) {
-        console.log('🔍 Method 3 - CMP detected, returning true');
         return true;
       }
       
       // Method 4: Check for Cookiebot script tag
       const cookiebotScript = document.querySelector('script[id="Cookiebot"], script[src*="cookiebot.com"]');
-      console.log('🔍 Method 4 - Cookiebot script found:', !!cookiebotScript);
       if (cookiebotScript) {
         return true;
       }
       
-      console.log('🔍 No consent mode detected');
       return false;
     },
     
@@ -241,7 +224,6 @@ if (window.ConsentInspector) {
     updateSimulationMode: function(data) {
       this.simulationMode = data.simulationMode;
       this.simulatedConsent = { ...this.simulatedConsent, ...data.simulatedConsent };
-      console.log('🧪 Simulation mode updated:', this.simulationMode, this.simulatedConsent);
       return { success: true };
     },
     
@@ -352,7 +334,7 @@ if (window.ConsentInspector) {
             });
           }
         } catch (error) {
-          console.log('Error checking detector:', detector.name, error);
+          console.error('Error checking detector:', detector.name, error);
         }
       });
       
@@ -424,7 +406,6 @@ if (window.ConsentInspector) {
     },
     
     updateConsent: function(settings) {
-      
       try {
         const results = [];
         
@@ -435,13 +416,11 @@ if (window.ConsentInspector) {
         if (window.gtag && typeof window.gtag === 'function') {
           window.gtag('consent', 'update', settings);
           results.push({ method: 'gtag', success: true });
-          console.log('🍪 Updated consent via gtag:', settings);
         }
         
         if (window.dataLayer && Array.isArray(window.dataLayer)) {
           window.dataLayer.push(['consent', 'update', settings]);
           results.push({ method: 'dataLayer', success: true });
-          console.log('🍪 Updated consent via dataLayer:', settings);
         }
         
         // Method 2: Update Cookiebot consent state (if available, but don't trigger events)
@@ -466,7 +445,6 @@ if (window.ConsentInspector) {
           }
           
           results.push({ method: 'cookiebot_silent', success: true });
-          console.log('🍪 Updated Cookiebot consent silently:', cookiebotConsent);
         }
         
         // Re-enable Cookiebot events after a short delay
@@ -502,8 +480,6 @@ if (window.ConsentInspector) {
       const events = [];
       
       try {
-        console.log('📊 Getting real consent and tag events...');
-        
         // Get real events from chrome storage (will be populated by content.js RealEventLogger)
         // Note: This is called from page context, so we need to request from content script
         const realEvents = window.gtmInspectorEventLog || [];
@@ -567,11 +543,10 @@ if (window.ConsentInspector) {
           events.push(statusEvent);
         }
         
-        console.log('📊 Returning', events.length, 'real events');
         return events;
         
       } catch (error) {
-        console.error('❌ Error in getEvents:', error);
+        console.error('Error in getEvents:', error);
         return [];
       }
     },
@@ -608,10 +583,9 @@ if (window.ConsentInspector) {
           window.gtmInspectorEventLog = window.gtmInspectorEventLog.slice(-100);
         }
         
-        console.log('📊 Event logged:', event);
         return { success: true, event: event };
       } catch (error) {
-        console.error('❌ Error adding event:', error);
+        console.error('Error adding event:', error);
         return { success: false, error: error.message };
       }
     },
@@ -631,7 +605,7 @@ if (window.ConsentInspector) {
         
         return this.addEvent(eventData);
       } catch (error) {
-        console.error('❌ Error logging consent change:', error);
+        console.error('Error logging consent change:', error);
         return { success: false, error: error.message };
       }
     },
@@ -655,7 +629,7 @@ if (window.ConsentInspector) {
         
         return this.addEvent(eventData);
       } catch (error) {
-        console.error('❌ Error logging tag firing:', error);
+        console.error('Error logging tag firing:', error);
         return { success: false, error: error.message };
       }
     },
@@ -668,10 +642,9 @@ if (window.ConsentInspector) {
           window.gtmInspectorEventLog = [];
         }
         
-        console.log('🗑️ Event log cleared');
         return { success: true, message: 'Event log cleared successfully' };
       } catch (error) {
-        console.error('❌ Error clearing event log:', error);
+        console.error('Error clearing event log:', error);
         return { success: false, error: error.message };
       }
     },
@@ -691,7 +664,6 @@ if (window.ConsentInspector) {
         // Temporarily disable callbacks
         window.Cookiebot.callback = null;
         
-        console.log('🍪 Temporarily disabled Cookiebot event listeners');
         return true;
       }
       return false;
@@ -703,7 +675,6 @@ if (window.ConsentInspector) {
         // Restore original event listeners
         window.Cookiebot.callback = window.gtmInspectorOriginalCookiebotEvents.onAccept;
         
-        console.log('🍪 Re-enabled Cookiebot event listeners');
         return true;
       }
       return false;
@@ -711,8 +682,6 @@ if (window.ConsentInspector) {
     
     // Run comprehensive diagnostics
     runDiagnostics: function() {
-      console.log('🔍 Running comprehensive diagnostics...');
-      
       const diagnostics = {
         gtm: {},
         consent: {},
@@ -788,7 +757,6 @@ if (window.ConsentInspector) {
         }
       }
       
-      console.log('🔍 Diagnostic results:', diagnostics);
       return { success: true, data: diagnostics };
     },
     
@@ -813,19 +781,15 @@ if (window.ConsentInspector) {
       return window.gtmInspectorInteractions || [];
     }
   };
-  
-
 }
 
 // Listen for messages from content script
 window.addEventListener('message', function(event) {
   // Only log and process our specific messages to avoid spam
   if (event.data && event.data.source === 'gtm-inspector-content') {
-    console.log('📥 Injected script received GTM Inspector message:', event.data);
-    
     // Ensure ConsentInspector is available
     if (!window.ConsentInspector) {
-      console.error('❌ ConsentInspector not available, cannot process message');
+      console.error('ConsentInspector not available, cannot process message');
       window.postMessage({
         source: 'gtm-inspector-page',
         id: event.data.id,
@@ -836,7 +800,6 @@ window.addEventListener('message', function(event) {
     }
     
     const { action, data, id } = event.data;
-    console.log('🔧 Processing action:', action, 'with data:', data);
     
     let result = null;
     let error = null;
@@ -844,22 +807,18 @@ window.addEventListener('message', function(event) {
     try {
       switch (action) {
         case 'detectGTM':
-          console.log('🔍 Calling detectGTM...');
           result = window.ConsentInspector.detectGTM();
           break;
           
         case 'getTagStatus':
-          console.log('📊 Calling getTagStatus...');
           result = window.ConsentInspector.getTagStatus();
           break;
           
         case 'getEvents':
-          console.log('📊 Calling getEvents...');
           result = window.ConsentInspector.getEvents();
           break;
           
         case 'updateConsent':
-          console.log('🍪 Calling updateConsent...');
           if (!data || !data.consent) {
             throw new Error('No consent data provided');
           }
@@ -867,7 +826,6 @@ window.addEventListener('message', function(event) {
           break;
           
         case 'updateSimulationMode':
-          console.log('🧪 Calling updateSimulationMode...');
           if (!data) {
             throw new Error('No simulation data provided');
           }
@@ -875,27 +833,24 @@ window.addEventListener('message', function(event) {
           break;
           
         case 'clearEventLog':
-          console.log('🗑️ Calling clearEventLog...');
           result = window.ConsentInspector.clearEventLog();
           break;
           
         case 'runDiagnostics':
-          console.log('🔍 Calling runDiagnostics...');
           result = window.ConsentInspector.runDiagnostics();
           break;
           
         case 'getTagManagerInteractions':
-          console.log('📊 Calling getTagManagerInteractions...');
           result = window.ConsentInspector.getTagManagerInteractions();
           break;
           
         default:
           error = `Unknown action: ${action}`;
-          console.error('❌ Unknown action:', action);
+          console.error('Unknown action:', action);
       }
     } catch (err) {
       error = err.message;
-      console.error('❌ Error processing action:', action, 'Error:', err);
+      console.error('Error processing action:', action, 'Error:', err);
       
       // Provide user-friendly error messages
       if (err.message.includes('Permission')) {
@@ -917,11 +872,6 @@ window.addEventListener('message', function(event) {
       error: error
     };
     
-    console.log('📤 Sending response:', response);
     window.postMessage(response, '*');
   }
 });
-
-console.log('🔧 GTM Inspector injected script loaded successfully');
-console.log('🔧 ConsentInspector available:', !!window.ConsentInspector);
-console.log('🔧 Message listener attached');
