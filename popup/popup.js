@@ -725,10 +725,14 @@ function showConsentModeUnavailable() {
     
     // Fix: Check if the target element exists before using insertBefore
     const targetElement = consentTab.querySelector('.consent-categories');
-    if (targetElement) {
-      consentTab.insertBefore(warningMsg, targetElement);
-    } else {
-      // Fallback: append to the end of the consent tab
+    try {
+      if (targetElement && targetElement.parentNode === consentTab) {
+        consentTab.insertBefore(warningMsg, targetElement);
+      } else {
+        consentTab.appendChild(warningMsg);
+      }
+    } catch (error) {
+      console.log('DOM insertion fallback:', error);
       consentTab.appendChild(warningMsg);
     }
   }

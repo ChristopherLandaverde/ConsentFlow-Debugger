@@ -242,10 +242,15 @@
         
         // Find the best insertion point
         const insertionPoint = document.head || document.documentElement;
-        if (insertionPoint) {
-          insertionPoint.appendChild(script);
-        } else {
-          reject(new Error('No valid insertion point found'));
+        try {
+          if (insertionPoint && document.contains(insertionPoint)) {
+            insertionPoint.appendChild(script);
+          } else {
+            (document.head || document.documentElement).appendChild(script);
+          }
+        } catch (error) {
+          console.log('Script injection fallback:', error);
+          document.documentElement.appendChild(script);
         }
       });
       
@@ -830,10 +835,18 @@
     // Inject script when page is ready
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => {
-        setTimeout(injectScript, 500);
+        setTimeout(() => {
+          if (document.head || document.documentElement) {
+            injectScript();
+          }
+        }, 1000);
       });
     } else {
-      setTimeout(injectScript, 500);
+      setTimeout(() => {
+        if (document.head || document.documentElement) {
+          injectScript();
+        }
+      }, 1000);
     }
   }
   
