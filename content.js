@@ -35,7 +35,7 @@
       // Listen for Cookiebot consent events
       window.addEventListener('CookiebotOnAccept', (event) => {
         this.logEvent({
-          id: this.generateUUID(),
+          id: this.generateSecureId(),
           type: 'cookiebot_accept',
           timestamp: Date.now(),
           isSimulated: false,
@@ -49,7 +49,7 @@
       
       window.addEventListener('CookiebotOnDecline', (event) => {
         this.logEvent({
-          id: this.generateUUID(),
+          id: this.generateSecureId(),
           type: 'cookiebot_decline',
           timestamp: Date.now(),
           isSimulated: false,
@@ -63,7 +63,7 @@
       
       window.addEventListener('CookiebotOnConsentReady', (event) => {
         this.logEvent({
-          id: this.generateUUID(),
+          id: this.generateSecureId(),
           type: 'cookiebot_consent_ready',
           timestamp: Date.now(),
           isSimulated: false,
@@ -77,7 +77,7 @@
       
       window.addEventListener('CookiebotOnDialogDisplay', (event) => {
         this.logEvent({
-          id: this.generateUUID(),
+          id: this.generateSecureId(),
           type: 'cookiebot_dialog_display',
           timestamp: Date.now(),
           isSimulated: false,
@@ -104,7 +104,7 @@
         const eventData = args[0];
         if (eventData && typeof eventData === 'object') {
           this.logEvent({
-            id: this.generateUUID(),
+            id: this.generateSecureId(),
             type: 'datalayer_push',
             timestamp: Date.now(),
             isSimulated: false,
@@ -128,7 +128,7 @@
           // Check if this is a consent mode update
           if (args.length >= 2 && args[0] === 'consent' && args[1] === 'update') {
             this.logEvent({
-              id: this.generateUUID(),
+              id: this.generateSecureId(),
               type: 'gtag_consent_update',
               timestamp: Date.now(),
               isSimulated: false,
@@ -181,11 +181,26 @@
     }
     
     generateUUID() {
-      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        const r = Math.random() * 16 | 0;
-        const v = c == 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-      });
+      // Use cryptographically secure random values
+      const array = new Uint8Array(16);
+      crypto.getRandomValues(array);
+      
+      // Set version (4) and variant bits
+      array[6] = (array[6] & 0x0f) | 0x40; // Version 4
+      array[8] = (array[8] & 0x3f) | 0x80; // Variant 1
+      
+      // Convert to hex string
+      const hex = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+      
+      // Format as UUID
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+    }
+    
+    // Generate cryptographically secure random ID
+    generateSecureId() {
+      const array = new Uint8Array(16);
+      crypto.getRandomValues(array);
+      return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
     }
   }
   
@@ -584,7 +599,7 @@
   // Function to send messages to page context
   function sendMessageToPage(action, data = {}) {
     return new Promise((resolve, reject) => {
-      const messageId = Date.now() + Math.random();
+      const messageId = realEventLogger.generateSecureId();
       
       // Listen for response from page
       const messageListener = (event) => {
@@ -941,7 +956,7 @@
     }
     
     const interaction = {
-      id: Date.now() + Math.random(),
+      id: realEventLogger.generateSecureId(),
       type: type,
       data: data,
       url: window.location.href,

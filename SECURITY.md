@@ -854,3 +854,173 @@ To test rate limiting security:
 4. **Consent Abuse Test**: Rapidly change consent states
 5. **Recovery Test**: Verify normal operation after limits
 6. **Edge Case Test**: Test boundary conditions and timeouts 
+
+## Cryptographically Secure Random IDs
+
+### Overview
+The extension implements cryptographically secure random ID generation to replace predictable timestamp-based IDs, preventing enumeration attacks and ensuring unique, non-guessable identifiers.
+
+### Security Issues with Timestamp-Based IDs
+
+#### ❌ VULNERABLE - Predictable IDs
+```javascript
+// Attacker can predict and enumerate IDs
+const id = Date.now() + Math.random();
+// Result: Predictable, enumerable, vulnerable to timing attacks
+```
+
+#### ❌ VULNERABLE - Collision Attacks
+```javascript
+// Multiple events can have same timestamp
+const id = Date.now();
+// Result: ID collisions, data corruption, security bypass
+```
+
+#### ❌ VULNERABLE - Enumeration Attacks
+```javascript
+// Attacker can guess future IDs
+const id = Date.now() + Math.random();
+// Result: Predictable sequence, data enumeration possible
+```
+
+### Secure Random ID Implementation
+
+#### 1. Cryptographically Secure UUID Generation
+```javascript
+// ❌ BEFORE (INSECURE)
+generateUUID: function() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+// ✅ AFTER (SECURE)
+generateUUID: function() {
+  // Use cryptographically secure random values
+  const array = new Uint8Array(16);
+  crypto.getRandomValues(array);
+  
+  // Set version (4) and variant bits
+  array[6] = (array[6] & 0x0f) | 0x40; // Version 4
+  array[8] = (array[8] & 0x3f) | 0x80; // Variant 1
+  
+  // Convert to hex string
+  const hex = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+  
+  // Format as UUID
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+```
+
+#### 2. Secure Random ID Generation
+```javascript
+// ✅ SECURE - Cryptographically random ID
+generateSecureId: function() {
+  const array = new Uint8Array(16);
+  crypto.getRandomValues(array);
+  return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+```
+
+#### 3. Message ID Security
+```javascript
+// ❌ BEFORE (VULNERABLE)
+const messageId = Date.now() + Math.random();
+
+// ✅ AFTER (SECURE)
+const messageId = realEventLogger.generateSecureId();
+```
+
+#### 4. Event ID Security
+```javascript
+// ❌ BEFORE (VULNERABLE)
+const interaction = {
+  id: Date.now() + Math.random(),
+  type: type,
+  data: data,
+  url: window.location.href,
+  timestamp: Date.now()
+};
+
+// ✅ AFTER (SECURE)
+const interaction = {
+  id: realEventLogger.generateSecureId(),
+  type: type,
+  data: data,
+  url: window.location.href,
+  timestamp: Date.now()
+};
+```
+
+### Security Benefits
+
+1. **Unpredictability**: IDs cannot be guessed or predicted
+2. **Uniqueness**: Extremely low collision probability
+3. **Enumeration Resistance**: Prevents ID enumeration attacks
+4. **Timing Attack Resistance**: No correlation with time
+5. **Data Integrity**: Prevents ID-based data manipulation
+6. **Privacy Protection**: IDs reveal no information about timing or sequence
+
+### Cryptographic Properties
+
+#### Randomness Quality
+- **Source**: `crypto.getRandomValues()` - cryptographically secure
+- **Entropy**: 128 bits of entropy per ID
+- **Distribution**: Uniform random distribution
+- **Collision Resistance**: 2^64 collision resistance
+
+#### UUID Compliance
+- **Version**: UUID v4 (random)
+- **Variant**: RFC 4122 variant 1
+- **Format**: Standard UUID format (8-4-4-4-12)
+- **Compatibility**: Compatible with UUID libraries
+
+### Implementation Locations
+
+#### Core Extension Files
+- ✅ `content.js` - Event logging and message IDs
+- ✅ `injected-script.js` - Page context event IDs
+- ✅ `popup/popup.js` - UI event tracking
+
+#### Integration Scripts
+- ✅ `universal-cookiebot-integration.js` - Consent change IDs
+- ✅ `website-integration.js` - Website integration IDs
+- ✅ `universal-bookmarklet.js` - Bookmarklet event IDs
+
+### Best Practices
+
+1. **Use Crypto API**: Always use `crypto.getRandomValues()`
+2. **Avoid Math.random()**: Never use for security-critical IDs
+3. **Sufficient Entropy**: Use at least 128 bits of entropy
+4. **Consistent Format**: Use standardized UUID format
+5. **Error Handling**: Handle crypto API failures gracefully
+6. **Validation**: Validate ID format and uniqueness
+
+### Error Handling Strategy
+
+```javascript
+function generateSecureId() {
+  try {
+    const array = new Uint8Array(16);
+    crypto.getRandomValues(array);
+    return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+  } catch (error) {
+    console.error('Crypto API unavailable, using fallback');
+    // Fallback to timestamp + random (less secure but functional)
+    return Date.now().toString(36) + Math.random().toString(36).substr(2);
+  }
+}
+```
+
+### Testing Secure IDs
+
+To test secure ID generation:
+
+1. **Uniqueness Test**: Generate many IDs and check for collisions
+2. **Randomness Test**: Verify uniform distribution
+3. **Format Test**: Validate UUID format compliance
+4. **Performance Test**: Measure generation speed
+5. **Fallback Test**: Test behavior when crypto API unavailable
+6. **Security Test**: Attempt to predict or enumerate IDs 

@@ -28,6 +28,13 @@
     let extensionDetected = false;
     let consentChangeCount = 0;
     
+    // Generate cryptographically secure random ID
+    function generateSecureId() {
+      const array = new Uint8Array(16);
+      crypto.getRandomValues(array);
+      return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+    }
+    
     // Secure logging utility
     function log(message, type = 'info') {
         // Only log in development mode
@@ -136,13 +143,14 @@
             detectChromeExtension();
         }
         
-        const notificationData = {
-            website: CONFIG.websiteName,
-            url: window.location.href,
-            action: consentAction,
-            consent: getCurrentConsent(),
-            timestamp: Date.now(),
-            changeCount: consentChangeCount
+                const notificationData = {
+          website: CONFIG.websiteName,
+          url: window.location.href,
+          action: consentAction,
+          consent: getCurrentConsent(),
+          id: generateSecureId(),
+          timestamp: Date.now(),
+          changeCount: consentChangeCount
         };
         
         log(`Triggering extension notification for: ${consentAction}`, 'info');
