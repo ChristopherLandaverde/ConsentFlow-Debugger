@@ -891,7 +891,10 @@ async function refreshEvents() {
     console.error('Error refreshing events:', error);
     const eventList = document.getElementById('eventLog');
     if (eventList) {
-      eventList.innerHTML = `<div class="no-events">Error: ${error.message}</div>`;
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'no-events';
+      errorDiv.textContent = `Error: ${error.message}`;
+      eventList.appendChild(errorDiv);
     }
   }
 }
@@ -908,7 +911,10 @@ async function clearEventLog() {
     // Update display
     const eventList = document.getElementById('eventLog');
     if (eventList) {
-      eventList.innerHTML = '<div class="event-item empty-state">Event log cleared</div>';
+      const clearedDiv = document.createElement('div');
+      clearedDiv.className = 'event-item empty-state';
+      clearedDiv.textContent = 'Event log cleared';
+      eventList.appendChild(clearedDiv);
     }
     
     showNotification('Event log cleared successfully', 'success');
@@ -926,7 +932,10 @@ function updateEventDisplay(events) {
   eventList.innerHTML = '';
   
   if (!events || events.length === 0) {
-    eventList.innerHTML = '<div class="no-events">No events logged yet</div>';
+    const noEventsDiv = document.createElement('div');
+    noEventsDiv.className = 'no-events';
+    noEventsDiv.textContent = 'No events logged yet';
+    eventList.appendChild(noEventsDiv);
     return;
   }
   
@@ -1320,4 +1329,38 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+// Enhanced HTML sanitization function
+function sanitizeHtml(html) {
+  // Create a temporary div to parse and clean HTML
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = html;
+  
+  // Remove all script tags and event handlers
+  const scripts = tempDiv.querySelectorAll('script');
+  scripts.forEach(script => script.remove());
+  
+  // Remove event handlers from all elements
+  const allElements = tempDiv.querySelectorAll('*');
+  allElements.forEach(element => {
+    const attrs = element.attributes;
+    for (let i = attrs.length - 1; i >= 0; i--) {
+      const attr = attrs[i];
+      if (attr.name.startsWith('on')) { // Remove event handlers
+        element.removeAttribute(attr.name);
+      }
+    }
+  });
+  
+  return tempDiv.innerHTML;
+}
+
+// Safe innerHTML function
+function safeInnerHTML(element, html) {
+  if (typeof html === 'string') {
+    element.innerHTML = sanitizeHtml(html);
+  } else {
+    element.textContent = String(html);
+  }
 }
