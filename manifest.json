@@ -10,12 +10,10 @@
     "scripting", 
     "storage",
     "notifications",
-    "tabs"
+    "tabs",
+    "activeTab"
   ],
-  "host_permissions": [
-    "http://*/*",
-    "https://*/*"
-  ],
+  "host_permissions": [],
   "action": {
     "default_popup": "popup/popup.html"
   },

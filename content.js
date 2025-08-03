@@ -528,9 +528,30 @@
               allEvents.sort((a, b) => b.timestamp - a.timestamp);
               
               sendResponse(allEvents);
+              break;
+              
+          case 'startInspection':
+            // Initialize the extension when user activates it
+            try {
+              // Ensure script is injected first
+              if (!scriptInjected) {
+                await injectScript();
+              }
+              
+              // Start monitoring
+              setupImmediateMonitoring();
+              startPeriodicConsentMonitoring();
+              
+              sendResponse({ 
+                success: true, 
+                message: 'GTM Consent Inspector activated',
+                timestamp: Date.now()
+              });
             } catch (error) {
-              console.error('Error getting events:', error);
-              sendResponse([]);
+              sendResponse({ 
+                error: 'Failed to start inspection', 
+                details: error.message 
+              });
             }
             break;
             

@@ -258,9 +258,6 @@ async function rateLimitedStorageSet(data) {
 // Enhanced message handler
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
-  // Handle async operations
-  const handleAsyncMessage = async () => {
-  
   // Validate request structure
   if (!InputValidator.isValidRequest(request)) {
     sendResponse({ error: 'Invalid request structure' });
@@ -422,3 +419,33 @@ function showCookiebotNotification(consentData) {
   }
 }
 
+// Handle extension icon click to activate on current tab
+chrome.action.onClicked.addListener(async (tab) => {
+  try {
+    // Check if we can access this tab
+    if (tab.url.startsWith('chrome://') || 
+        tab.url.startsWith('chrome-extension://') || 
+        tab.url.startsWith('edge://') ||
+        tab.url.startsWith('about:')) {
+      console.log('Cannot inject into system page');
+      return;
+    }
+    
+    // Inject content script using activeTab permission
+    const result = await ensureContentScriptWithDiagnostics(tab.id);
+    
+    if (result.success) {
+      // Send message to content script to start inspection
+      try {
+        await chrome.tabs.sendMessage(tab.id, { 
+          action: 'startInspection',
+          timestamp: Date.now()
+        });
+      } catch (error) {
+        console.error('Failed to start inspection:', error);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to activate extension:', error);
+  }
+});
