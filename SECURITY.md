@@ -148,4 +148,96 @@ To test secure error handling:
 2. Verify no sensitive information is exposed
 3. Check that user-friendly messages are displayed
 4. Confirm error logging is appropriate for debugging
-5. Test error recovery mechanisms 
+5. Test error recovery mechanisms
+
+## Debug Logging Security
+
+### Overview
+The extension implements secure debug logging that prevents exposure of sensitive information in production environments.
+
+### Debug Logging Configuration
+
+#### Production-Safe Logging
+```javascript
+const LOG_CONFIG = {
+  debugMode: false,  // Disabled in production
+  logLevel: 'error', // Only log errors in production
+  isDevelopment: process.env.NODE_ENV === 'development',
+  isProduction: process.env.NODE_ENV === 'production'
+};
+```
+
+#### Secure Logging Function
+```javascript
+function secureLog(message, level = 'info', context = '') {
+  // Only log if debug mode is enabled
+  if (!LOG_CONFIG.debugMode) {
+    return;
+  }
+  
+  // In production, only log errors and warnings
+  if (LOG_CONFIG.isProduction && level === 'debug') {
+    return;
+  }
+  
+  // Sanitize the message
+  const sanitizedMessage = sanitizeLogMessage(message);
+  console.log(`[GTM Inspector] [${timestamp}] ${context}: ${sanitizedMessage}`);
+}
+```
+
+### Message Sanitization
+
+#### Sensitive Data Patterns Removed
+- URLs and extension URLs
+- Email addresses
+- Credit card numbers
+- IBAN numbers
+- Passport numbers
+- Internal extension paths
+
+#### Sanitization Function
+```javascript
+function sanitizeLogMessage(message) {
+  const sensitivePatterns = [
+    /https?:\/\/[^\s]+/g,  // URLs
+    /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,  // Email addresses
+    /\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b/g,  // Credit card numbers
+    // ... more patterns
+  ];
+  
+  let sanitized = message;
+  sensitivePatterns.forEach(pattern => {
+    sanitized = sanitized.replace(pattern, '[REDACTED]');
+  });
+  
+  return sanitized;
+}
+```
+
+### Security Benefits
+
+1. **No Sensitive Data Exposure**: All sensitive data is redacted from logs
+2. **Production-Safe**: Debug logging is disabled in production
+3. **Level-Based Logging**: Different log levels for different environments
+4. **Sanitized Output**: All log messages are sanitized before output
+5. **Environment Awareness**: Different behavior in development vs production
+
+### Debug Logging Best Practices
+
+1. **Disable in Production**: Set `debugMode: false` for production builds
+2. **Sanitize All Messages**: Always sanitize log messages before output
+3. **Use Appropriate Levels**: Use error/warn for production, debug for development
+4. **Avoid Sensitive Data**: Never log passwords, tokens, or personal data
+5. **Environment Detection**: Use environment variables to control logging
+6. **Regular Audits**: Regularly review logging for sensitive data exposure
+
+### Testing Debug Logging
+
+To test secure debug logging:
+
+1. Set `debugMode: true` and test with sensitive data
+2. Verify sensitive data is redacted in logs
+3. Set `debugMode: false` and verify no logging occurs
+4. Test different log levels in different environments
+5. Verify no sensitive URLs or data appear in console 

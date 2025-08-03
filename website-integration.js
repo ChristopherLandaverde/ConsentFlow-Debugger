@@ -11,7 +11,7 @@
         websiteName: 'Premium Carpets Co',
         websiteUrl: 'https://vermillion-zuccutto-ed1811.netlify.app/',
         extensionName: 'GTM Consent Mode Inspector',
-        debugMode: true
+        debugMode: false  // Set to false for production
     };
     
     // State tracking
@@ -27,12 +27,38 @@
     let extensionDetected = false;
     let consentChangeCount = 0;
     
-    // Utility functions
+    // Secure logging utility
     function log(message, type = 'info') {
-        if (CONFIG.debugMode) {
+        // Only log in development mode
+        if (CONFIG.debugMode && process.env.NODE_ENV === 'development') {
             const timestamp = new Date().toLocaleTimeString();
-            console.log(`[${CONFIG.websiteName}] [${timestamp}] ${message}`);
+            // Sanitize message to avoid exposing sensitive data
+            const sanitizedMessage = sanitizeLogMessage(message);
+            console.log(`[GTM Inspector] [${timestamp}] ${sanitizedMessage}`);
         }
+    }
+    
+    // Sanitize log messages to prevent sensitive data exposure
+    function sanitizeLogMessage(message) {
+        if (typeof message !== 'string') {
+            return '[Object]';
+        }
+        
+        // Remove sensitive patterns
+        const sensitivePatterns = [
+            /https?:\/\/[^\s]+/g,  // URLs
+            /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,  // Email addresses
+            /\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b/g,  // Credit card numbers
+            /[A-Z]{2}\d{2}[A-Z0-9]{10,30}/g,  // IBAN
+            /[A-Z]{3}\d{6}/g,  // Passport numbers
+        ];
+        
+        let sanitized = message;
+        sensitivePatterns.forEach(pattern => {
+            sanitized = sanitized.replace(pattern, '[REDACTED]');
+        });
+        
+        return sanitized;
     }
     
     function getCurrentConsent() {
@@ -64,8 +90,9 @@
     function updateConsentState(newConsent) {
         consentState = { ...newConsent, lastUpdate: Date.now() };
         consentChangeCount++;
-        log(`Consent state updated (change #${consentChangeCount}):`, 'success');
-        log(`Analytics: ${newConsent.analytics}, Advertising: ${newConsent.advertising}, Functionality: ${newConsent.functionality}, Personalization: ${newConsent.personalization}`, 'info');
+        log(`Consent state updated (change #${consentChangeCount})`, 'success');
+        // Don't log sensitive consent data
+        log(`Consent categories updated`, 'info');
     }
     
     // Chrome Extension Detection

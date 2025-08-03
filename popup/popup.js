@@ -1425,3 +1425,76 @@ function logErrorSafely(error, context = '') {
   
   return errorInfo;
 }
+
+// Production-safe logging configuration
+const LOG_CONFIG = {
+  // Set to false for production
+  debugMode: false,
+  
+  // Log levels: 'error', 'warn', 'info', 'debug'
+  logLevel: 'error',
+  
+  // Environment detection
+  isDevelopment: process.env.NODE_ENV === 'development',
+  isProduction: process.env.NODE_ENV === 'production'
+};
+
+// Secure logging utility
+function secureLog(message, level = 'info', context = '') {
+  // Only log if debug mode is enabled and level is appropriate
+  if (!LOG_CONFIG.debugMode) {
+    return;
+  }
+  
+  // In production, only log errors and warnings
+  if (LOG_CONFIG.isProduction && level === 'debug') {
+    return;
+  }
+  
+  // Sanitize the message
+  const sanitizedMessage = sanitizeLogMessage(message);
+  const timestamp = new Date().toISOString();
+  
+  // Log with appropriate level
+  switch (level) {
+    case 'error':
+      console.error(`[GTM Inspector] [${timestamp}] ${context}: ${sanitizedMessage}`);
+      break;
+    case 'warn':
+      console.warn(`[GTM Inspector] [${timestamp}] ${context}: ${sanitizedMessage}`);
+      break;
+    case 'info':
+      console.info(`[GTM Inspector] [${timestamp}] ${context}: ${sanitizedMessage}`);
+      break;
+    case 'debug':
+      console.debug(`[GTM Inspector] [${timestamp}] ${context}: ${sanitizedMessage}`);
+      break;
+    default:
+      console.log(`[GTM Inspector] [${timestamp}] ${context}: ${sanitizedMessage}`);
+  }
+}
+
+// Sanitize log messages to prevent sensitive data exposure
+function sanitizeLogMessage(message) {
+  if (typeof message !== 'string') {
+    return '[Object]';
+  }
+  
+  // Remove sensitive patterns
+  const sensitivePatterns = [
+    /https?:\/\/[^\s]+/g,  // URLs
+    /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,  // Email addresses
+    /\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}\b/g,  // Credit card numbers
+    /[A-Z]{2}\d{2}[A-Z0-9]{10,30}/g,  // IBAN
+    /[A-Z]{3}\d{6}/g,  // Passport numbers
+    /chrome-extension:\/\/[^\s]+/g,  // Extension URLs
+    /moz-extension:\/\/[^\s]+/g,  // Firefox extension URLs
+  ];
+  
+  let sanitized = message;
+  sensitivePatterns.forEach(pattern => {
+    sanitized = sanitized.replace(pattern, '[REDACTED]');
+  });
+  
+  return sanitized;
+}
