@@ -886,7 +886,7 @@ window.addEventListener('message', function(event) {
         id: event.data.id,
         result: null,
         error: 'ConsentInspector not initialized'
-      }, '*');
+      }, event.origin || window.location.origin);
       return;
     }
     
@@ -965,6 +965,6 @@ window.addEventListener('message', function(event) {
       error: error
     };
     
-    window.postMessage(response, '*');
+    window.postMessage(response, event.origin || window.location.origin);
   }
 });

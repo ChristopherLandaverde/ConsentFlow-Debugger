@@ -558,4 +558,120 @@ To test data encryption:
 3. Test with corrupted encrypted data
 4. Verify encryption key consistency across sessions
 5. Test performance impact of encryption/decryption
-6. Verify backward compatibility with unencrypted data 
+6. Verify backward compatibility with unencrypted data
+
+## PostMessage Security
+
+### Overview
+The extension implements secure postMessage communication by using specific origins instead of wildcard (`'*'`) targets to prevent cross-site scripting attacks.
+
+### Security Issue with Wildcard Origins
+
+#### ❌ DANGEROUS - Using `'*'` origin
+```javascript
+// UNSAFE - Allows any origin to receive the message
+window.postMessage(data, '*');
+```
+
+#### ✅ SECURE - Using specific origin
+```javascript
+// SAFE - Only allows same origin to receive the message
+window.postMessage(data, window.location.origin);
+```
+
+### PostMessage Security Implementation
+
+#### 1. Content Script to Page Communication
+```javascript
+// ❌ BEFORE (UNSAFE)
+window.postMessage({
+  source: 'gtm-inspector-content',
+  action: action,
+  data: data,
+  id: messageId
+}, '*');
+
+// ✅ AFTER (SECURE)
+window.postMessage({
+  source: 'gtm-inspector-content',
+  action: action,
+  data: data,
+  id: messageId
+}, window.location.origin);
+```
+
+#### 2. Injected Script Response
+```javascript
+// ❌ BEFORE (UNSAFE)
+window.postMessage(response, '*');
+
+// ✅ AFTER (SECURE)
+window.postMessage(response, event.origin || window.location.origin);
+```
+
+#### 3. Integration Scripts
+```javascript
+// ❌ BEFORE (UNSAFE)
+window.postMessage({
+  type: 'COOKIEBOT_CONSENT_CHANGE',
+  data: notificationData
+}, '*');
+
+// ✅ AFTER (SECURE)
+window.postMessage({
+  type: 'COOKIEBOT_CONSENT_CHANGE',
+  data: notificationData
+}, window.location.origin);
+```
+
+### Security Benefits
+
+1. **Origin Restriction**: Messages only sent to same origin
+2. **XSS Prevention**: Prevents malicious sites from intercepting messages
+3. **Data Protection**: Sensitive data not exposed to other origins
+4. **Attack Mitigation**: Reduces attack surface for postMessage exploits
+5. **Privacy Protection**: Ensures communication stays within trusted context
+
+### PostMessage Security Best Practices
+
+1. **Use Specific Origins**: Never use `'*'` as target origin
+2. **Validate Origins**: Always validate incoming message origins
+3. **Sanitize Data**: Clean data before sending via postMessage
+4. **Error Handling**: Handle cases where origin is unavailable
+5. **Fallback Strategy**: Provide fallback for edge cases
+6. **Testing**: Test with different origin scenarios
+
+### Origin Validation Strategy
+
+```javascript
+// Validate incoming message origins
+function isValidOrigin(origin) {
+  if (!origin) return false;
+  
+  // Allow same origin
+  if (origin === window.location.origin) return true;
+  
+  // Allow extension origin
+  if (origin.startsWith('chrome-extension://')) return true;
+  
+  // Allow specific trusted domains
+  const trustedDomains = [
+    'https://vermillion-zuccutto-ed1811.netlify.app',
+    'https://cookiebot.com',
+    'https://consent.cookiebot.com'
+  ];
+  
+  return trustedDomains.some(domain => origin.startsWith(domain));
+}
+```
+
+### Testing PostMessage Security
+
+To test postMessage security:
+
+1. Send messages from different origins
+2. Verify only same-origin messages are processed
+3. Test with malicious origin attempts
+4. Verify fallback behavior when origin is unavailable
+5. Test cross-origin communication scenarios
+6. Verify data integrity across origins 

@@ -151,7 +151,7 @@
         window.postMessage({
             type: 'COOKIEBOT_CONSENT_CHANGE',
             data: notificationData
-        }, '*');
+        }, window.location.origin);
         
         // Method 2: Custom event
         const event = new CustomEvent('cookiebotConsentChange', {

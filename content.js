@@ -600,13 +600,13 @@
       
       window.addEventListener('message', messageListener);
       
-      // Send message to page context
+      // Send message to page context with specific origin
       window.postMessage({
         source: 'gtm-inspector-content',
         action: action,
         data: data,
         id: messageId
-      }, '*');
+      }, window.location.origin);
       
       // Timeout after 5 seconds
       setTimeout(() => {
