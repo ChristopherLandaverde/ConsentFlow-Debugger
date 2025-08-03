@@ -192,6 +192,69 @@ const InputValidator = {
   }
 };
 
+// Rate Limiting Implementation
+class RateLimiter {
+  constructor() {
+    this.operations = new Map();
+    this.defaultLimits = {
+      storage: { max: 10, window: 60000 }, // 10 operations per minute
+      messages: { max: 20, window: 60000 }, // 20 messages per minute
+      consent: { max: 5, window: 60000 },   // 5 consent changes per minute
+      events: { max: 50, window: 60000 }    // 50 events per minute
+    };
+  }
+
+  isAllowed(operation, key = 'default') {
+    const limit = this.defaultLimits[operation] || this.defaultLimits.messages;
+    const now = Date.now();
+    const keyName = `${operation}_${key}`;
+    
+    if (!this.operations.has(keyName)) {
+      this.operations.set(keyName, []);
+    }
+    
+    const operations = this.operations.get(keyName);
+    
+    // Remove old operations outside the window
+    const validOperations = operations.filter(time => now - time < limit.window);
+    this.operations.set(keyName, validOperations);
+    
+    // Check if we're under the limit
+    if (validOperations.length < limit.max) {
+      validOperations.push(now);
+      this.operations.set(keyName, validOperations);
+      return true;
+    }
+    
+    return false;
+  }
+
+  getRemainingTime(operation, key = 'default') {
+    const limit = this.defaultLimits[operation] || this.defaultLimits.messages;
+    const keyName = `${operation}_${key}`;
+    const operations = this.operations.get(keyName) || [];
+    const now = Date.now();
+    
+    if (operations.length === 0) return 0;
+    
+    const oldestOperation = Math.min(...operations);
+    return Math.max(0, limit.window - (now - oldestOperation));
+  }
+}
+
+// Global rate limiter instance
+const rateLimiter = new RateLimiter();
+
+// Rate-limited storage operations
+async function rateLimitedStorageSet(data) {
+  if (!rateLimiter.isAllowed('storage')) {
+    const remainingTime = rateLimiter.getRemainingTime('storage');
+    throw new Error(`Rate limit exceeded. Try again in ${Math.ceil(remainingTime / 1000)} seconds.`);
+  }
+  
+  return await chrome.storage.local.set(data);
+}
+
 // Enhanced message handler
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
@@ -262,31 +325,45 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
   // Handle Cookiebot consent change notifications
   if (sanitizedRequest.action === 'cookiebotConsentChange') {
-    // Validate consent data
-    if (!InputValidator.isValidConsentData(sanitizedRequest.data)) {
-      sendResponse({ error: 'Invalid consent data provided' });
-      return;
-    }
+    // Use async handler for rate-limited storage
+    (async () => {
+      try {
+        // Validate consent data
+        if (!InputValidator.isValidConsentData(sanitizedRequest.data)) {
+          sendResponse({ error: 'Invalid consent data provided' });
+          return;
+        }
+        
+        // Encrypt sensitive consent data before storage
+        const consentDataToStore = {
+          ...sanitizedRequest.data,
+          timestamp: Date.now()
+        };
+        
+        // Encrypt the consent data
+        const encryptedConsentData = await encryptSensitiveData(consentDataToStore);
+        
+        // Store the encrypted consent change data with rate limiting
+        await rateLimitedStorageSet({
+          lastCookiebotConsentChange: encryptedConsentData
+        });
+        
+        // Show notification to user
+        showCookiebotNotification(sanitizedRequest.data);
+        
+        sendResponse({ success: true });
+      } catch (error) {
+        if (error.message.includes('Rate limit exceeded')) {
+          console.warn('Rate limit exceeded for consent storage');
+          sendResponse({ error: 'Too many consent changes. Please wait a moment.' });
+        } else {
+          console.error('Storage error:', error);
+          sendResponse({ error: 'Failed to store consent data' });
+        }
+      }
+    })();
     
-    // Encrypt sensitive consent data before storage
-    const consentDataToStore = {
-      ...sanitizedRequest.data,
-      timestamp: Date.now()
-    };
-    
-    // Encrypt the consent data
-    const encryptedConsentData = await encryptSensitiveData(consentDataToStore);
-    
-    // Store the encrypted consent change data
-    chrome.storage.local.set({
-      lastCookiebotConsentChange: encryptedConsentData
-    });
-    
-    // Show notification to user
-    showCookiebotNotification(sanitizedRequest.data);
-    
-    sendResponse({ success: true });
-    return true;
+    return true; // Keep message channel open for async response
   }
   
   // Handle popup opening request

@@ -674,4 +674,183 @@ To test postMessage security:
 3. Test with malicious origin attempts
 4. Verify fallback behavior when origin is unavailable
 5. Test cross-origin communication scenarios
-6. Verify data integrity across origins 
+6. Verify data integrity across origins
+
+## Rate Limiting Security
+
+### Overview
+The extension implements comprehensive rate limiting to prevent abuse, protect resources, and mitigate various attack vectors including storage overflow, performance degradation, and data exfiltration attempts.
+
+### Security Issues Without Rate Limiting
+
+#### ❌ VULNERABLE - Storage Overflow Attack
+```javascript
+// Attacker can flood storage with fake events
+for (let i = 0; i < 10000; i++) {
+  chrome.storage.local.set({ gtmInspectorEvents: fakeEvents });
+}
+// Result: Storage quota exceeded, extension breaks
+```
+
+#### ❌ VULNERABLE - Performance Attack
+```javascript
+// Attacker can spam messages to freeze extension
+for (let i = 0; i < 1000; i++) {
+  chrome.runtime.sendMessage({action: 'getEvents'});
+}
+// Result: UI freezing, memory exhaustion
+```
+
+#### ❌ VULNERABLE - Data Exfiltration
+```javascript
+// Attacker can rapidly query sensitive data
+for (let i = 0; i < 500; i++) {
+  chrome.runtime.sendMessage({action: 'getConsentData'});
+}
+// Result: Potential data leakage, privacy violation
+```
+
+### Rate Limiting Implementation
+
+#### 1. RateLimiter Class
+```javascript
+class RateLimiter {
+  constructor() {
+    this.operations = new Map();
+    this.defaultLimits = {
+      storage: { max: 10, window: 60000 }, // 10 operations per minute
+      messages: { max: 20, window: 60000 }, // 20 messages per minute
+      events: { max: 50, window: 60000 },   // 50 events per minute
+      consent: { max: 5, window: 60000 }    // 5 consent changes per minute
+    };
+  }
+
+  isAllowed(operation, key = 'default') {
+    const limit = this.defaultLimits[operation] || this.defaultLimits.messages;
+    const now = Date.now();
+    const keyName = `${operation}_${key}`;
+    
+    if (!this.operations.has(keyName)) {
+      this.operations.set(keyName, []);
+    }
+    
+    const operations = this.operations.get(keyName);
+    
+    // Remove old operations outside the window
+    const validOperations = operations.filter(time => now - time < limit.window);
+    this.operations.set(keyName, validOperations);
+    
+    // Check if we're under the limit
+    if (validOperations.length < limit.max) {
+      validOperations.push(now);
+      this.operations.set(keyName, validOperations);
+      return true;
+    }
+    
+    return false;
+  }
+}
+```
+
+#### 2. Rate-Limited Storage Operations
+```javascript
+// ❌ BEFORE (VULNERABLE)
+await chrome.storage.local.set({ gtmInspectorEvents: events });
+
+// ✅ AFTER (SECURE)
+async function rateLimitedStorageSet(data) {
+  if (!rateLimiter.isAllowed('storage')) {
+    const remainingTime = rateLimiter.getRemainingTime('storage');
+    throw new Error(`Rate limit exceeded. Try again in ${Math.ceil(remainingTime / 1000)} seconds.`);
+  }
+  
+  return await chrome.storage.local.set(data);
+}
+
+await rateLimitedStorageSet({ gtmInspectorEvents: events });
+```
+
+#### 3. Rate-Limited Message Sending
+```javascript
+// ❌ BEFORE (VULNERABLE)
+chrome.runtime.sendMessage({action: 'cookiebotConsentChange', data: {...}});
+
+// ✅ AFTER (SECURE)
+async function rateLimitedSendMessage(message) {
+  if (!rateLimiter.isAllowed('messages')) {
+    const remainingTime = rateLimiter.getRemainingTime('messages');
+    throw new Error(`Message rate limit exceeded. Try again in ${Math.ceil(remainingTime / 1000)} seconds.`);
+  }
+  
+  return await chrome.runtime.sendMessage(message);
+}
+
+await rateLimitedSendMessage({action: 'cookiebotConsentChange', data: {...}});
+```
+
+### Rate Limiting Configuration
+
+#### Storage Operations
+- **Limit**: 10 operations per minute
+- **Purpose**: Prevent storage quota exhaustion
+- **Protection**: Against storage overflow attacks
+
+#### Message Communication
+- **Limit**: 20 messages per minute
+- **Purpose**: Prevent performance degradation
+- **Protection**: Against message flooding attacks
+
+#### Event Logging
+- **Limit**: 50 events per minute
+- **Purpose**: Prevent excessive event logging
+- **Protection**: Against log flooding attacks
+
+#### Consent Changes
+- **Limit**: 5 changes per minute
+- **Purpose**: Prevent consent manipulation
+- **Protection**: Against consent abuse attacks
+
+### Security Benefits
+
+1. **Storage Protection**: Prevents quota exhaustion attacks
+2. **Performance Protection**: Prevents UI freezing and memory exhaustion
+3. **Data Protection**: Prevents rapid data exfiltration attempts
+4. **Resource Protection**: Ensures extension remains responsive
+5. **Attack Mitigation**: Reduces attack surface for various exploits
+6. **User Experience**: Maintains smooth operation under attack
+
+### Rate Limiting Best Practices
+
+1. **Per-Operation Limits**: Different limits for different operations
+2. **Time Windows**: Sliding window approach for accurate limiting
+3. **User Feedback**: Clear error messages with retry times
+4. **Graceful Degradation**: Extension continues working under limits
+5. **Monitoring**: Log rate limit violations for security analysis
+6. **Configuration**: Adjustable limits based on usage patterns
+
+### Error Handling Strategy
+
+```javascript
+try {
+  await rateLimitedStorageSet(data);
+} catch (error) {
+  if (error.message.includes('Rate limit exceeded')) {
+    console.warn('Rate limit exceeded for storage operation');
+    showNotification('Too many operations. Please wait a moment.', 'warning');
+  } else {
+    console.error('Storage error:', error);
+    throw error;
+  }
+}
+```
+
+### Testing Rate Limiting
+
+To test rate limiting security:
+
+1. **Storage Attack Test**: Rapidly call storage operations
+2. **Message Flood Test**: Send many messages quickly
+3. **Event Spam Test**: Generate excessive events
+4. **Consent Abuse Test**: Rapidly change consent states
+5. **Recovery Test**: Verify normal operation after limits
+6. **Edge Case Test**: Test boundary conditions and timeouts 

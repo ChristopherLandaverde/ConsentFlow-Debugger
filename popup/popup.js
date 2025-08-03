@@ -132,7 +132,7 @@ class SimulationManager {
       // Encrypt sensitive consent data
       const encryptedConsent = await EncryptionManager.encryptAndMark(this.simulatedConsent);
       
-      await chrome.storage.local.set({
+      await rateLimitedStorageSet({
         simulationMode: this.simulationMode,
         simulatedConsent: encryptedConsent
       });
@@ -833,10 +833,15 @@ const StorageManager = {
     try {
       // Encrypt sensitive event data
       const encryptedEvents = await EncryptionManager.encryptAndMark(events);
-      await chrome.storage.local.set({ gtmInspectorEvents: encryptedEvents });
+      await rateLimitedStorageSet({ gtmInspectorEvents: encryptedEvents });
     } catch (error) {
-      console.error('Error saving events:', error);
-      throw error;
+      if (error.message.includes('Rate limit exceeded')) {
+        console.warn('Rate limit exceeded for event storage');
+        showNotification('Too many events being saved. Please wait a moment.', 'warning');
+      } else {
+        console.error('Error saving events:', error);
+        throw error;
+      }
     }
   },
   
@@ -1613,4 +1618,77 @@ function sanitizeLogMessage(message) {
   });
   
   return sanitized;
+}
+
+// Rate Limiting Implementation
+class RateLimiter {
+  constructor() {
+    this.operations = new Map();
+    this.defaultLimits = {
+      storage: { max: 10, window: 60000 }, // 10 operations per minute
+      messages: { max: 20, window: 60000 }, // 20 messages per minute
+      events: { max: 50, window: 60000 },   // 50 events per minute
+      consent: { max: 5, window: 60000 }    // 5 consent changes per minute
+    };
+  }
+
+  isAllowed(operation, key = 'default') {
+    const limit = this.defaultLimits[operation] || this.defaultLimits.messages;
+    const now = Date.now();
+    const keyName = `${operation}_${key}`;
+    
+    if (!this.operations.has(keyName)) {
+      this.operations.set(keyName, []);
+    }
+    
+    const operations = this.operations.get(keyName);
+    
+    // Remove old operations outside the window
+    const validOperations = operations.filter(time => now - time < limit.window);
+    this.operations.set(keyName, validOperations);
+    
+    // Check if we're under the limit
+    if (validOperations.length < limit.max) {
+      validOperations.push(now);
+      this.operations.set(keyName, validOperations);
+      return true;
+    }
+    
+    return false;
+  }
+
+  getRemainingTime(operation, key = 'default') {
+    const limit = this.defaultLimits[operation] || this.defaultLimits.messages;
+    const keyName = `${operation}_${key}`;
+    const operations = this.operations.get(keyName) || [];
+    const now = Date.now();
+    
+    if (operations.length === 0) return 0;
+    
+    const oldestOperation = Math.min(...operations);
+    return Math.max(0, limit.window - (now - oldestOperation));
+  }
+}
+
+// Global rate limiter instance
+const rateLimiter = new RateLimiter();
+
+// Rate-limited storage operations
+async function rateLimitedStorageSet(data) {
+  if (!rateLimiter.isAllowed('storage')) {
+    const remainingTime = rateLimiter.getRemainingTime('storage');
+    throw new Error(`Rate limit exceeded. Try again in ${Math.ceil(remainingTime / 1000)} seconds.`);
+  }
+  
+  return await chrome.storage.local.set(data);
+}
+
+// Rate-limited message sending
+async function rateLimitedSendMessage(message) {
+  if (!rateLimiter.isAllowed('messages')) {
+    const remainingTime = rateLimiter.getRemainingTime('messages');
+    throw new Error(`Message rate limit exceeded. Try again in ${Math.ceil(remainingTime / 1000)} seconds.`);
+  }
+  
+  return await chrome.runtime.sendMessage(message);
 }
