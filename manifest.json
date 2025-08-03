@@ -3,6 +3,9 @@
   "name": "GTM Consent Mode Inspector", 
   "version": "1.0.4",
   "description": "Inspects GTM-enabled websites and shows which tags are blocked or allowed based on Consent Mode settings",
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self';"
+  },
   "permissions": [
     "scripting", 
     "storage",
