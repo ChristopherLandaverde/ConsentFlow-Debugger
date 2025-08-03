@@ -888,12 +888,12 @@ async function refreshEvents() {
       }
     }
   } catch (error) {
-    console.error('Error refreshing events:', error);
+    logErrorSafely(error, 'refreshEvents');
     const eventList = document.getElementById('eventLog');
     if (eventList) {
       const errorDiv = document.createElement('div');
       errorDiv.className = 'no-events';
-      errorDiv.textContent = `Error: ${error.message}`;
+      errorDiv.textContent = getUserFriendlyError(error);
       eventList.appendChild(errorDiv);
     }
   }
@@ -919,7 +919,7 @@ async function clearEventLog() {
     
     showNotification('Event log cleared successfully', 'success');
   } catch (error) {
-    console.error('Error clearing event log:', error);
+    logErrorSafely(error, 'clearEventLog');
     showNotification('Failed to clear event log', 'error');
   }
 }
@@ -1363,4 +1363,65 @@ function safeInnerHTML(element, html) {
   } else {
     element.textContent = String(html);
   }
+}
+
+// Secure error handling utility
+function handleErrorSafely(error, context = '') {
+  // Log full error for debugging (only in development)
+  if (process.env.NODE_ENV === 'development') {
+    console.error(`Error in ${context}:`, error);
+  } else {
+    // In production, only log error type and context
+    console.error(`Error in ${context}:`, error.name || 'Unknown error');
+  }
+  
+  // Return user-friendly error message
+  return {
+    success: false,
+    error: 'An unexpected error occurred. Please try again.',
+    errorCode: error.name || 'UNKNOWN_ERROR'
+  };
+}
+
+// Secure error message for users
+function getUserFriendlyError(error) {
+  const errorMap = {
+    'NetworkError': 'Network connection failed. Please check your internet connection.',
+    'TimeoutError': 'Request timed out. Please try again.',
+    'PermissionError': 'Permission denied. Please check extension permissions.',
+    'NotFoundError': 'Resource not found. Please refresh the page.',
+    'QuotaExceededError': 'Storage limit reached. Please clear some data.',
+    'TypeError': 'Invalid operation. Please try again.',
+    'ReferenceError': 'Configuration error. Please restart the extension.',
+    'SyntaxError': 'Data format error. Please refresh the page.',
+    'RangeError': 'Invalid input. Please check your settings.',
+    'URIError': 'Invalid URL. Please check the website address.',
+    'EvalError': 'Script execution error. Please refresh the page.',
+    'InternalError': 'Internal error. Please restart the extension.',
+    'AggregateError': 'Multiple errors occurred. Please try again.',
+    'UNKNOWN_ERROR': 'An unexpected error occurred. Please try again.'
+  };
+  
+  return errorMap[error.name] || errorMap['UNKNOWN_ERROR'];
+}
+
+// Safe error logging
+function logErrorSafely(error, context = '') {
+  const errorInfo = {
+    name: error.name || 'UnknownError',
+    message: error.message || 'No message',
+    context: context,
+    timestamp: new Date().toISOString(),
+    userAgent: navigator.userAgent,
+    extensionVersion: chrome.runtime.getManifest().version
+  };
+  
+  // Log sanitized error info
+  console.error('Extension Error:', {
+    name: errorInfo.name,
+    context: errorInfo.context,
+    timestamp: errorInfo.timestamp
+  });
+  
+  return errorInfo;
 }

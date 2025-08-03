@@ -59,11 +59,12 @@ async function ensureContentScriptWithDiagnostics(tabId) {
     }
     
   } catch (error) {
-    console.error('Content script injection failed:', error);
+    // Log error safely without exposing sensitive information
+    console.error('Content script injection failed:', error.name || 'Unknown error');
     return { 
       success: false, 
-      error: error.message,
-      stack: error.stack
+      error: 'Content script injection failed. Please refresh the page.',
+      errorCode: error.name || 'INJECTION_ERROR'
     };
   }
 }
@@ -77,11 +78,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     ensureContentScriptWithDiagnostics(tabId).then(result => {
       sendResponse(result);
     }).catch(error => {
-      console.error('Content script ensure failed:', error);
+      console.error('Content script ensure failed:', error.name || 'Unknown error');
       sendResponse({ 
         success: false, 
-        error: error.message,
-        stack: error.stack 
+        error: 'Content script initialization failed. Please refresh the page.',
+        errorCode: error.name || 'ENSURE_ERROR'
       });
     });
     
@@ -96,9 +97,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         const diagnosis = {
           tab: {
             id: tab.id,
-            url: tab.url,
+            // Don't expose full URL - just domain for security
+            domain: new URL(tab.url).hostname,
             status: tab.status,
-            title: tab.title
+            // Don't expose full title - just first 50 chars
+            title: tab.title ? tab.title.substring(0, 50) + (tab.title.length > 50 ? '...' : '') : 'Unknown'
           },
           canInject: !tab.url.startsWith('chrome://') && 
                      !tab.url.startsWith('chrome-extension://') &&
