@@ -783,10 +783,101 @@ if (window.ConsentInspector) {
   };
 }
 
+// Input validation utilities
+const InputValidator = {
+  // Validate message origin
+  isValidOrigin(origin) {
+    if (!origin) return false;
+    
+    // Allow same origin
+    if (origin === window.location.origin) return true;
+    
+    // Allow extension origin
+    if (origin.startsWith('chrome-extension://')) return true;
+    
+    return true; // For injected script, we trust content script
+  },
+  
+  // Validate message structure
+  isValidMessage(message) {
+    if (!message || typeof message !== 'object') return false;
+    
+    // Check for required fields
+    if (!message.source || !message.action) return false;
+    
+    // Validate source
+    if (message.source !== 'gtm-inspector-content') return false;
+    
+    // Validate action
+    const validActions = [
+      'detectGTM', 'getTagStatus', 'getEvents', 'updateConsent',
+      'updateSimulationMode', 'clearEventLog', 'runDiagnostics',
+      'getTagManagerInteractions'
+    ];
+    if (!validActions.includes(message.action)) return false;
+    
+    return true;
+  },
+  
+  // Validate consent data
+  isValidConsentData(consent) {
+    if (!consent || typeof consent !== 'object') return false;
+    
+    const requiredFields = [
+      'analytics_storage', 'ad_storage', 'functionality_storage',
+      'personalization_storage', 'security_storage'
+    ];
+    
+    const validValues = ['granted', 'denied'];
+    
+    for (const field of requiredFields) {
+      if (!(field in consent)) return false;
+      if (!validValues.includes(consent[field])) return false;
+    }
+    
+    return true;
+  },
+  
+  // Sanitize input
+  sanitizeObject(obj) {
+    if (!obj || typeof obj !== 'object') return {};
+    
+    const sanitized = {};
+    
+    for (const [key, value] of Object.entries(obj)) {
+      if (typeof key === 'string' && key.length <= 50) {
+        if (typeof value === 'string') {
+          sanitized[key] = value.replace(/[<>]/g, '').substring(0, 1000);
+        } else if (typeof value === 'number' && isFinite(value)) {
+          sanitized[key] = value;
+        } else if (typeof value === 'boolean') {
+          sanitized[key] = value;
+        } else if (Array.isArray(value)) {
+          sanitized[key] = value.slice(0, 100);
+        }
+      }
+    }
+    
+    return sanitized;
+  }
+};
+
 // Listen for messages from content script
 window.addEventListener('message', function(event) {
-  // Only log and process our specific messages to avoid spam
-  if (event.data && event.data.source === 'gtm-inspector-content') {
+  // Validate origin
+  if (!InputValidator.isValidOrigin(event.origin)) {
+    console.warn('Rejected message from untrusted origin:', event.origin);
+    return;
+  }
+  
+  // Validate message structure
+  if (!InputValidator.isValidMessage(event.data)) {
+    console.warn('Invalid message structure received');
+    return;
+  }
+  
+  // Only process our specific messages
+  if (event.data.source === 'gtm-inspector-content') {
     // Ensure ConsentInspector is available
     if (!window.ConsentInspector) {
       console.error('ConsentInspector not available, cannot process message');
@@ -819,15 +910,17 @@ window.addEventListener('message', function(event) {
           break;
           
         case 'updateConsent':
-          if (!data || !data.consent) {
-            throw new Error('No consent data provided');
+          // Validate consent data
+          if (!data || !InputValidator.isValidConsentData(data.consent)) {
+            throw new Error('Invalid consent data provided');
           }
           result = window.ConsentInspector.updateConsent(data.consent);
           break;
           
         case 'updateSimulationMode':
-          if (!data) {
-            throw new Error('No simulation data provided');
+          // Validate simulation data
+          if (!data || typeof data.enabled !== 'boolean') {
+            throw new Error('Invalid simulation data provided');
           }
           result = window.ConsentInspector.updateSimulationMode(data);
           break;

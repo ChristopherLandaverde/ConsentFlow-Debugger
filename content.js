@@ -258,12 +258,179 @@
     }
   }
   
+  // Input validation utilities
+  const InputValidator = {
+    // Validate message origin
+    isValidOrigin(origin) {
+      if (!origin) return false;
+      
+      // Allow same origin
+      if (origin === window.location.origin) return true;
+      
+      // Allow extension origin
+      if (origin.startsWith('chrome-extension://')) return true;
+      
+      // Allow specific trusted domains (if needed)
+      const trustedDomains = [
+        'https://vermillion-zuccutto-ed1811.netlify.app',
+        'https://cookiebot.com',
+        'https://consent.cookiebot.com'
+      ];
+      
+      return trustedDomains.some(domain => origin.startsWith(domain));
+    },
+    
+    // Validate message structure
+    isValidMessage(message) {
+      if (!message || typeof message !== 'object') return false;
+      
+      // Check for required fields
+      if (!message.source || !message.action) return false;
+      
+      // Validate source
+      const validSources = ['gtm-inspector-content', 'gtm-inspector-page'];
+      if (!validSources.includes(message.source)) return false;
+      
+      // Validate action
+      const validActions = [
+        'detectGTM', 'getTagStatus', 'getEvents', 'updateConsent',
+        'updateSimulationMode', 'clearEventLog', 'runDiagnostics',
+        'getTagManagerInteractions', 'ping'
+      ];
+      if (!validActions.includes(message.action)) return false;
+      
+      return true;
+    },
+    
+    // Validate consent data
+    isValidConsentData(consent) {
+      if (!consent || typeof consent !== 'object') return false;
+      
+      const requiredFields = [
+        'analytics_storage', 'ad_storage', 'functionality_storage',
+        'personalization_storage', 'security_storage'
+      ];
+      
+      const validValues = ['granted', 'denied'];
+      
+      for (const field of requiredFields) {
+        if (!(field in consent)) return false;
+        if (!validValues.includes(consent[field])) return false;
+      }
+      
+      return true;
+    },
+    
+    // Validate event data
+    isValidEventData(event) {
+      if (!event || typeof event !== 'object') return false;
+      
+      // Check required fields
+      if (!event.type || !event.timestamp) return false;
+      
+      // Validate timestamp
+      if (typeof event.timestamp !== 'number' || event.timestamp <= 0) return false;
+      
+      // Validate type
+      const validTypes = [
+        'consent_change', 'tag_fired', 'tag_blocked', 'gtm_event',
+        'cookiebot_event', 'simulation_event', 'real_event'
+      ];
+      if (!validTypes.includes(event.type)) return false;
+      
+      return true;
+    },
+    
+    // Validate simulation data
+    isValidSimulationData(data) {
+      if (!data || typeof data !== 'object') return false;
+      
+      // Check for required fields
+      if (typeof data.enabled !== 'boolean') return false;
+      
+      // If consent data is provided, validate it
+      if (data.consent && !this.isValidConsentData(data.consent)) return false;
+      
+      return true;
+    },
+    
+    // Sanitize string input
+    sanitizeString(input, maxLength = 1000) {
+      if (typeof input !== 'string') return '';
+      
+      // Remove potentially dangerous characters
+      let sanitized = input
+        .replace(/[<>]/g, '') // Remove angle brackets
+        .replace(/javascript:/gi, '') // Remove javascript: protocol
+        .replace(/data:/gi, '') // Remove data: protocol
+        .trim();
+      
+      // Limit length
+      if (sanitized.length > maxLength) {
+        sanitized = sanitized.substring(0, maxLength);
+      }
+      
+      return sanitized;
+    },
+    
+    // Sanitize object input
+    sanitizeObject(obj, maxDepth = 3) {
+      if (!obj || typeof obj !== 'object') return {};
+      
+      const sanitized = {};
+      
+      for (const [key, value] of Object.entries(obj)) {
+        // Sanitize key
+        const sanitizedKey = this.sanitizeString(key, 50);
+        
+        if (sanitizedKey) {
+          // Sanitize value based on type
+          if (typeof value === 'string') {
+            sanitized[sanitizedKey] = this.sanitizeString(value);
+          } else if (typeof value === 'number') {
+            // Validate number
+            if (isFinite(value) && value >= 0) {
+              sanitized[sanitizedKey] = value;
+            }
+          } else if (typeof value === 'boolean') {
+            sanitized[sanitizedKey] = value;
+          } else if (Array.isArray(value)) {
+            // Sanitize array (limit length)
+            sanitized[sanitizedKey] = value.slice(0, 100).map(item => 
+              typeof item === 'string' ? this.sanitizeString(item) : item
+            );
+          } else if (typeof value === 'object' && maxDepth > 0) {
+            // Recursively sanitize object (with depth limit)
+            sanitized[sanitizedKey] = this.sanitizeObject(value, maxDepth - 1);
+          }
+        }
+      }
+      
+      return sanitized;
+    }
+  };
+  
   // Message listener
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     
     const handleMessage = async () => {
       try {
-        switch (request.action) {
+        // Validate request structure
+        if (!request || typeof request !== 'object') {
+          sendResponse({ error: 'Invalid request structure' });
+          return;
+        }
+        
+        // Validate action
+        if (!request.action || typeof request.action !== 'string') {
+          sendResponse({ error: 'Invalid action specified' });
+          return;
+        }
+        
+        // Sanitize request data
+        const sanitizedRequest = InputValidator.sanitizeObject(request);
+        
+        switch (sanitizedRequest.action) {
           case 'ping':
             sendResponse({ 
               success: true, 
@@ -294,12 +461,18 @@
             break;
             
           case 'applyConsent':
+            // Validate consent data
+            if (!sanitizedRequest.data || !InputValidator.isValidConsentData(sanitizedRequest.data)) {
+              sendResponse({ error: 'Invalid consent data provided' });
+              return;
+            }
+            
             // Ensure script is injected first
             if (!scriptInjected) {
               await injectScript();
             }
             // Use postMessage to communicate with page context
-            const consentResult = await sendMessageToPage('updateConsent', request.data);
+            const consentResult = await sendMessageToPage('updateConsent', sanitizedRequest.data);
             sendResponse(consentResult);
             break;
             
@@ -448,8 +621,25 @@
   function setupCookiebotListeners() {
     // Listen for postMessage from website integration
     window.addEventListener('message', (event) => {
-      if (event.data && event.data.type === 'COOKIEBOT_CONSENT_CHANGE') {
-        handleCookiebotConsentChange(event.data.data);
+      // Validate origin
+      if (!InputValidator.isValidOrigin(event.origin)) {
+        console.warn('Rejected message from untrusted origin:', event.origin);
+        return;
+      }
+      
+      // Validate message structure
+      if (!event.data || typeof event.data !== 'object') {
+        console.warn('Invalid message structure received');
+        return;
+      }
+      
+      // Validate specific message types
+      if (event.data.type === 'COOKIEBOT_CONSENT_CHANGE') {
+        // Sanitize and validate consent data
+        const sanitizedData = InputValidator.sanitizeObject(event.data.data);
+        if (sanitizedData && Object.keys(sanitizedData).length > 0) {
+          handleCookiebotConsentChange(sanitizedData);
+        }
       }
     });
     

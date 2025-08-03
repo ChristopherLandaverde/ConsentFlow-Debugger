@@ -69,11 +69,83 @@ async function ensureContentScriptWithDiagnostics(tabId) {
   }
 }
 
+// Input validation utilities
+const InputValidator = {
+  // Validate request structure
+  isValidRequest(request) {
+    if (!request || typeof request !== 'object') return false;
+    if (!request.action || typeof request.action !== 'string') return false;
+    
+    const validActions = [
+      'ensureContentScript', 'diagnoseTab', 'cookiebotConsentChange',
+      'openPopup', 'logTagManagerInteraction', 'getTagManagerInteractions'
+    ];
+    
+    return validActions.includes(request.action);
+  },
+  
+  // Validate tab ID
+  isValidTabId(tabId) {
+    return typeof tabId === 'number' && tabId > 0;
+  },
+  
+  // Validate consent data
+  isValidConsentData(data) {
+    if (!data || typeof data !== 'object') return false;
+    
+    // Check for required fields
+    if (!data.action || !data.website) return false;
+    
+    const validActions = ['accept', 'decline', 'ready'];
+    if (!validActions.includes(data.action)) return false;
+    
+    return true;
+  },
+  
+  // Sanitize input
+  sanitizeObject(obj) {
+    if (!obj || typeof obj !== 'object') return {};
+    
+    const sanitized = {};
+    
+    for (const [key, value] of Object.entries(obj)) {
+      if (typeof key === 'string' && key.length <= 50) {
+        if (typeof value === 'string') {
+          sanitized[key] = value.replace(/[<>]/g, '').substring(0, 1000);
+        } else if (typeof value === 'number' && isFinite(value)) {
+          sanitized[key] = value;
+        } else if (typeof value === 'boolean') {
+          sanitized[key] = value;
+        } else if (Array.isArray(value)) {
+          sanitized[key] = value.slice(0, 100);
+        }
+      }
+    }
+    
+    return sanitized;
+  }
+};
+
 // Enhanced message handler
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   
-  if (request.action === 'ensureContentScript') {
-    const tabId = request.tabId;
+  // Validate request structure
+  if (!InputValidator.isValidRequest(request)) {
+    sendResponse({ error: 'Invalid request structure' });
+    return;
+  }
+  
+  // Sanitize request
+  const sanitizedRequest = InputValidator.sanitizeObject(request);
+  
+  if (sanitizedRequest.action === 'ensureContentScript') {
+    // Validate tab ID
+    if (!InputValidator.isValidTabId(sanitizedRequest.tabId)) {
+      sendResponse({ error: 'Invalid tab ID provided' });
+      return;
+    }
+    
+    const tabId = sanitizedRequest.tabId;
     
     ensureContentScriptWithDiagnostics(tabId).then(result => {
       sendResponse(result);
@@ -120,17 +192,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   // Handle Cookiebot consent change notifications
-  if (request.action === 'cookiebotConsentChange') {
+  if (sanitizedRequest.action === 'cookiebotConsentChange') {
+    // Validate consent data
+    if (!InputValidator.isValidConsentData(sanitizedRequest.data)) {
+      sendResponse({ error: 'Invalid consent data provided' });
+      return;
+    }
+    
     // Store the consent change data
     chrome.storage.local.set({
       lastCookiebotConsentChange: {
-        ...request.data,
+        ...sanitizedRequest.data,
         timestamp: Date.now()
       }
     });
     
     // Show notification to user
-    showCookiebotNotification(request.data);
+    showCookiebotNotification(sanitizedRequest.data);
     
     sendResponse({ success: true });
     return true;

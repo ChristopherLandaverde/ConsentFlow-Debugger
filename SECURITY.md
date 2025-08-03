@@ -240,4 +240,158 @@ To test secure debug logging:
 2. Verify sensitive data is redacted in logs
 3. Set `debugMode: false` and verify no logging occurs
 4. Test different log levels in different environments
-5. Verify no sensitive URLs or data appear in console 
+5. Verify no sensitive URLs or data appear in console
+
+## Input Validation Security
+
+### Overview
+The extension implements comprehensive input validation to prevent malicious data injection and ensure data integrity.
+
+### Input Validation Implementation
+
+#### Message Validation
+```javascript
+const InputValidator = {
+  // Validate message origin
+  isValidOrigin(origin) {
+    if (!origin) return false;
+    
+    // Allow same origin
+    if (origin === window.location.origin) return true;
+    
+    // Allow extension origin
+    if (origin.startsWith('chrome-extension://')) return true;
+    
+    // Allow specific trusted domains
+    const trustedDomains = [
+      'https://vermillion-zuccutto-ed1811.netlify.app',
+      'https://cookiebot.com',
+      'https://consent.cookiebot.com'
+    ];
+    
+    return trustedDomains.some(domain => origin.startsWith(domain));
+  },
+  
+  // Validate message structure
+  isValidMessage(message) {
+    if (!message || typeof message !== 'object') return false;
+    
+    // Check for required fields
+    if (!message.source || !message.action) return false;
+    
+    // Validate source
+    const validSources = ['gtm-inspector-content', 'gtm-inspector-page'];
+    if (!validSources.includes(message.source)) return false;
+    
+    // Validate action
+    const validActions = [
+      'detectGTM', 'getTagStatus', 'getEvents', 'updateConsent',
+      'updateSimulationMode', 'clearEventLog', 'runDiagnostics',
+      'getTagManagerInteractions', 'ping'
+    ];
+    if (!validActions.includes(message.action)) return false;
+    
+    return true;
+  }
+};
+```
+
+#### Data Validation
+```javascript
+// Validate consent data
+isValidConsentData(consent) {
+  if (!consent || typeof consent !== 'object') return false;
+  
+  const requiredFields = [
+    'analytics_storage', 'ad_storage', 'functionality_storage',
+    'personalization_storage', 'security_storage'
+  ];
+  
+  const validValues = ['granted', 'denied'];
+  
+  for (const field of requiredFields) {
+    if (!(field in consent)) return false;
+    if (!validValues.includes(consent[field])) return false;
+  }
+  
+  return true;
+}
+```
+
+#### Input Sanitization
+```javascript
+// Sanitize string input
+sanitizeString(input, maxLength = 1000) {
+  if (typeof input !== 'string') return '';
+  
+  // Remove potentially dangerous characters
+  let sanitized = input
+    .replace(/[<>]/g, '') // Remove angle brackets
+    .replace(/javascript:/gi, '') // Remove javascript: protocol
+    .replace(/data:/gi, '') // Remove data: protocol
+    .trim();
+  
+  // Limit length
+  if (sanitized.length > maxLength) {
+    sanitized = sanitized.substring(0, maxLength);
+  }
+  
+  return sanitized;
+}
+```
+
+### Security Benefits
+
+1. **Origin Validation**: Only accepts messages from trusted sources
+2. **Structure Validation**: Ensures proper message format
+3. **Data Type Validation**: Validates data types and values
+4. **Input Sanitization**: Removes potentially dangerous content
+5. **Length Limits**: Prevents buffer overflow attacks
+6. **Protocol Filtering**: Blocks dangerous protocols
+
+### Validation Points
+
+#### 1. PostMessage Validation
+- Origin validation for all incoming messages
+- Message structure validation
+- Action whitelist validation
+- Data sanitization before processing
+
+#### 2. Chrome Runtime Message Validation
+- Request structure validation
+- Action validation
+- Parameter type checking
+- Data sanitization
+
+#### 3. Consent Data Validation
+- Required field validation
+- Value validation (granted/denied only)
+- Structure validation
+- Type checking
+
+#### 4. Event Data Validation
+- Timestamp validation
+- Event type validation
+- Data structure validation
+- Size limits
+
+### Input Validation Best Practices
+
+1. **Validate at Entry Points**: Validate all external data at the boundary
+2. **Whitelist Validation**: Use whitelists instead of blacklists
+3. **Type Checking**: Validate data types before processing
+4. **Length Limits**: Set reasonable limits on input size
+5. **Sanitization**: Clean input before processing
+6. **Error Handling**: Provide clear error messages for invalid input
+7. **Logging**: Log validation failures for monitoring
+
+### Testing Input Validation
+
+To test input validation:
+
+1. Send malformed messages to postMessage handlers
+2. Test with invalid consent data structures
+3. Send oversized data to test length limits
+4. Test with malicious protocols in strings
+5. Verify error responses are appropriate
+6. Test origin validation with untrusted domains 
