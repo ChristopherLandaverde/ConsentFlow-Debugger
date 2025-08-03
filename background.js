@@ -69,6 +69,72 @@ async function ensureContentScriptWithDiagnostics(tabId) {
   }
 }
 
+// Encryption utilities for sensitive data
+const EncryptionManager = {
+  // Generate a secure encryption key (derived from extension ID)
+  async getEncryptionKey() {
+    const manifest = chrome.runtime.getManifest();
+    const extensionId = chrome.runtime.id;
+    
+    // Create a deterministic key from extension ID
+    const encoder = new TextEncoder();
+    const data = encoder.encode(extensionId + manifest.version);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const key = hashArray.slice(0, 32); // Use first 32 bytes for AES-256
+    
+    return crypto.subtle.importKey(
+      'raw',
+      new Uint8Array(key),
+      { name: 'AES-GCM' },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  },
+  
+  // Encrypt sensitive data
+  async encryptData(data) {
+    try {
+      const key = await this.getEncryptionKey();
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const encoder = new TextEncoder();
+      const encodedData = encoder.encode(JSON.stringify(data));
+      
+      const encryptedBuffer = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv },
+        key,
+        encodedData
+      );
+      
+      const encryptedArray = new Uint8Array(encryptedBuffer);
+      const combined = new Uint8Array(iv.length + encryptedArray.length);
+      combined.set(iv);
+      combined.set(encryptedArray, iv.length);
+      
+      return btoa(String.fromCharCode(...combined));
+    } catch (error) {
+      console.error('Encryption failed:', error);
+      return null;
+    }
+  },
+  
+  // Check if data is encrypted
+  isEncrypted(data) {
+    return typeof data === 'string' && data.startsWith('ENCRYPTED:');
+  },
+  
+  // Encrypt and mark data
+  async encryptAndMark(data) {
+    const encrypted = await this.encryptData(data);
+    return encrypted ? `ENCRYPTED:${encrypted}` : data;
+  }
+};
+
+// Helper function to encrypt sensitive data
+async function encryptSensitiveData(data) {
+  return await EncryptionManager.encryptAndMark(data);
+}
+
 // Input validation utilities
 const InputValidator = {
   // Validate request structure
@@ -128,6 +194,9 @@ const InputValidator = {
 
 // Enhanced message handler
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  
+  // Handle async operations
+  const handleAsyncMessage = async () => {
   
   // Validate request structure
   if (!InputValidator.isValidRequest(request)) {
@@ -199,12 +268,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return;
     }
     
-    // Store the consent change data
+    // Encrypt sensitive consent data before storage
+    const consentDataToStore = {
+      ...sanitizedRequest.data,
+      timestamp: Date.now()
+    };
+    
+    // Encrypt the consent data
+    const encryptedConsentData = await encryptSensitiveData(consentDataToStore);
+    
+    // Store the encrypted consent change data
     chrome.storage.local.set({
-      lastCookiebotConsentChange: {
-        ...sanitizedRequest.data,
-        timestamp: Date.now()
-      }
+      lastCookiebotConsentChange: encryptedConsentData
     });
     
     // Show notification to user

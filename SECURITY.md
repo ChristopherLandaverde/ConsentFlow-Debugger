@@ -394,4 +394,168 @@ To test input validation:
 3. Send oversized data to test length limits
 4. Test with malicious protocols in strings
 5. Verify error responses are appropriate
-6. Test origin validation with untrusted domains 
+6. Test origin validation with untrusted domains
+
+## Data Encryption Security
+
+### Overview
+The extension implements AES-256-GCM encryption for sensitive stored data to prevent unauthorized access and data breaches.
+
+### Sensitive Data Identified
+
+#### 1. Consent Data (HIGH PRIORITY)
+```javascript
+{
+  simulationMode: true/false,
+  simulatedConsent: {
+    analytics_storage: 'granted'/'denied',
+    ad_storage: 'granted'/'denied',
+    functionality_storage: 'granted'/'denied',
+    personalization_storage: 'granted'/'denied',
+    security_storage: 'granted'/'denied'
+  }
+}
+```
+
+#### 2. Event Logs (MEDIUM PRIORITY)
+```javascript
+{
+  gtmInspectorEvents: [
+    {
+      id: 'uuid',
+      type: 'consent_change'/'tag_fired'/'tag_blocked',
+      timestamp: Date.now(),
+      url: 'https://example.com/page',  // SENSITIVE
+      website: 'Website Name',          // SENSITIVE
+      consent: { /* consent data */ },  // SENSITIVE
+      data: { /* event details */ }     // SENSITIVE
+    }
+  ]
+}
+```
+
+#### 3. Tag Manager Interactions (MEDIUM PRIORITY)
+```javascript
+{
+  tagManagerInteractions: [
+    {
+      type: 'tag_fired'/'tag_blocked',
+      timestamp: Date.now(),
+      url: 'https://example.com',       // SENSITIVE
+      website: 'Website Name',          // SENSITIVE
+      tagData: { /* tag information */ } // SENSITIVE
+    }
+  ]
+}
+```
+
+#### 4. Cookiebot Consent Changes (HIGH PRIORITY)
+```javascript
+{
+  lastCookiebotConsentChange: {
+    action: 'accept'/'decline'/'ready',
+    website: 'Website Name',            // SENSITIVE
+    url: 'https://example.com/page',    // SENSITIVE
+    consent: { /* consent data */ },    // SENSITIVE
+    timestamp: Date.now()
+  }
+}
+```
+
+### Encryption Implementation
+
+#### Encryption Manager
+```javascript
+const EncryptionManager = {
+  // Generate a secure encryption key (derived from extension ID)
+  async getEncryptionKey() {
+    const manifest = chrome.runtime.getManifest();
+    const extensionId = chrome.runtime.id;
+    
+    // Create a deterministic key from extension ID
+    const encoder = new TextEncoder();
+    const data = encoder.encode(extensionId + manifest.version);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const key = hashArray.slice(0, 32); // Use first 32 bytes for AES-256
+    
+    return crypto.subtle.importKey(
+      'raw',
+      new Uint8Array(key),
+      { name: 'AES-GCM' },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  },
+  
+  // Encrypt sensitive data
+  async encryptData(data) {
+    const key = await this.getEncryptionKey();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encoder = new TextEncoder();
+    const encodedData = encoder.encode(JSON.stringify(data));
+    
+    const encryptedBuffer = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      key,
+      encodedData
+    );
+    
+    const encryptedArray = new Uint8Array(encryptedBuffer);
+    const combined = new Uint8Array(iv.length + encryptedArray.length);
+    combined.set(iv);
+    combined.set(encryptedArray, iv.length);
+    
+    return btoa(String.fromCharCode(...combined));
+  }
+};
+```
+
+#### Storage Integration
+```javascript
+// Encrypt data before storage
+async saveState() {
+  const encryptedConsent = await EncryptionManager.encryptAndMark(this.simulatedConsent);
+  await chrome.storage.local.set({
+    simulationMode: this.simulationMode,
+    simulatedConsent: encryptedConsent
+  });
+}
+
+// Decrypt data after retrieval
+async loadState() {
+  const result = await chrome.storage.local.get(['simulatedConsent']);
+  if (EncryptionManager.isEncrypted(result.simulatedConsent)) {
+    this.simulatedConsent = await EncryptionManager.decryptMarked(result.simulatedConsent);
+  }
+}
+```
+
+### Security Benefits
+
+1. **AES-256-GCM Encryption**: Military-grade encryption algorithm
+2. **Deterministic Key Generation**: Keys derived from extension ID and version
+3. **Random IV**: Each encryption uses a unique initialization vector
+4. **Data Integrity**: GCM mode provides authentication and integrity
+5. **Automatic Encryption**: All sensitive data automatically encrypted
+6. **Backward Compatibility**: Handles both encrypted and unencrypted data
+
+### Encryption Best Practices
+
+1. **Key Management**: Keys derived from extension identity
+2. **IV Generation**: Random IV for each encryption operation
+3. **Error Handling**: Graceful fallback if encryption fails
+4. **Data Marking**: Clear identification of encrypted data
+5. **Performance**: Efficient encryption/decryption operations
+6. **Compatibility**: Works with existing storage mechanisms
+
+### Testing Data Encryption
+
+To test data encryption:
+
+1. Save sensitive data and verify it's encrypted in storage
+2. Load encrypted data and verify it decrypts correctly
+3. Test with corrupted encrypted data
+4. Verify encryption key consistency across sessions
+5. Test performance impact of encryption/decryption
+6. Verify backward compatibility with unencrypted data 

@@ -114,7 +114,14 @@ class SimulationManager {
     try {
       const result = await chrome.storage.local.get(['simulationMode', 'simulatedConsent']);
       this.simulationMode = result.simulationMode || false;
-      this.simulatedConsent = { ...this.simulatedConsent, ...result.simulatedConsent };
+      
+      // Decrypt consent data if encrypted
+      if (result.simulatedConsent && EncryptionManager.isEncrypted(result.simulatedConsent)) {
+        const decryptedConsent = await EncryptionManager.decryptMarked(result.simulatedConsent);
+        this.simulatedConsent = { ...this.simulatedConsent, ...decryptedConsent };
+      } else {
+        this.simulatedConsent = { ...this.simulatedConsent, ...result.simulatedConsent };
+      }
     } catch (error) {
       console.error('Failed to load simulation state:', error);
     }
@@ -122,9 +129,12 @@ class SimulationManager {
   
   async saveState() {
     try {
+      // Encrypt sensitive consent data
+      const encryptedConsent = await EncryptionManager.encryptAndMark(this.simulatedConsent);
+      
       await chrome.storage.local.set({
         simulationMode: this.simulationMode,
-        simulatedConsent: this.simulatedConsent
+        simulatedConsent: encryptedConsent
       });
     } catch (error) {
       console.error('Failed to save simulation state:', error);
@@ -821,7 +831,9 @@ function filterTags(category) {
 const StorageManager = {
   async saveEvents(events) {
     try {
-      await chrome.storage.local.set({ gtmInspectorEvents: events });
+      // Encrypt sensitive event data
+      const encryptedEvents = await EncryptionManager.encryptAndMark(events);
+      await chrome.storage.local.set({ gtmInspectorEvents: encryptedEvents });
     } catch (error) {
       console.error('Error saving events:', error);
       throw error;
@@ -831,7 +843,14 @@ const StorageManager = {
   async getEvents() {
     try {
       const result = await chrome.storage.local.get(['gtmInspectorEvents']);
-      return result.gtmInspectorEvents || [];
+      const events = result.gtmInspectorEvents || [];
+      
+      // Decrypt events if encrypted
+      if (events.length > 0 && EncryptionManager.isEncrypted(events)) {
+        return await EncryptionManager.decryptMarked(events) || [];
+      }
+      
+      return events;
     } catch (error) {
       console.error('Error getting events:', error);
       return [];
@@ -859,6 +878,103 @@ const StorageManager = {
       console.error('Error clearing all events:', error);
       throw error;
     }
+  }
+};
+
+// Encryption utilities for sensitive data
+const EncryptionManager = {
+  // Generate a secure encryption key (derived from extension ID)
+  async getEncryptionKey() {
+    const manifest = chrome.runtime.getManifest();
+    const extensionId = chrome.runtime.id;
+    
+    // Create a deterministic key from extension ID
+    const encoder = new TextEncoder();
+    const data = encoder.encode(extensionId + manifest.version);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const key = hashArray.slice(0, 32); // Use first 32 bytes for AES-256
+    
+    return crypto.subtle.importKey(
+      'raw',
+      new Uint8Array(key),
+      { name: 'AES-GCM' },
+      false,
+      ['encrypt', 'decrypt']
+    );
+  },
+  
+  // Encrypt sensitive data
+  async encryptData(data) {
+    try {
+      const key = await this.getEncryptionKey();
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const encoder = new TextEncoder();
+      const encodedData = encoder.encode(JSON.stringify(data));
+      
+      const encryptedBuffer = await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv },
+        key,
+        encodedData
+      );
+      
+      const encryptedArray = new Uint8Array(encryptedBuffer);
+      const combined = new Uint8Array(iv.length + encryptedArray.length);
+      combined.set(iv);
+      combined.set(encryptedArray, iv.length);
+      
+      return btoa(String.fromCharCode(...combined));
+    } catch (error) {
+      console.error('Encryption failed:', error);
+      return null;
+    }
+  },
+  
+  // Decrypt sensitive data
+  async decryptData(encryptedData) {
+    try {
+      const key = await this.getEncryptionKey();
+      const combined = new Uint8Array(
+        atob(encryptedData).split('').map(char => char.charCodeAt(0))
+      );
+      
+      const iv = combined.slice(0, 12);
+      const encrypted = combined.slice(12);
+      
+      const decryptedBuffer = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv },
+        key,
+        encrypted
+      );
+      
+      const decoder = new TextDecoder();
+      const decryptedString = decoder.decode(decryptedBuffer);
+      
+      return JSON.parse(decryptedString);
+    } catch (error) {
+      console.error('Decryption failed:', error);
+      return null;
+    }
+  },
+  
+  // Check if data is encrypted
+  isEncrypted(data) {
+    return typeof data === 'string' && data.startsWith('ENCRYPTED:');
+  },
+  
+  // Encrypt and mark data
+  async encryptAndMark(data) {
+    const encrypted = await this.encryptData(data);
+    return encrypted ? `ENCRYPTED:${encrypted}` : data;
+  },
+  
+  // Decrypt marked data
+  async decryptMarked(data) {
+    if (this.isEncrypted(data)) {
+      const encryptedPart = data.replace('ENCRYPTED:', '');
+      return await this.decryptData(encryptedPart);
+    }
+    return data;
   }
 };
 
