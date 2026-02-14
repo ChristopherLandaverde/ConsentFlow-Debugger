@@ -1,19 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "GTM Consent Mode Inspector", 
-  "version": "1.0.4",
-  "description": "Inspects GTM-enabled websites and shows which tags are blocked or allowed based on Consent Mode settings",
-  "content_security_policy": {
-    "extension_pages": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self';"
-  },
+  "name": "ConsentFlow Debugger",
+  "version": "2.0.0",
+  "description": "Detects and diagnoses Google Consent Mode v2 implementation issues: race conditions, missing defaults, GCS/GCD signal mismatches, and tag firing violations.",
   "permissions": [
-    "scripting", 
-    "storage",
-    "notifications",
-    "tabs",
-    "activeTab"
+    "activeTab",
+    "scripting",
+    "storage"
   ],
-  "host_permissions": [],
   "action": {
     "default_popup": "popup/popup.html"
   },
@@ -24,13 +18,13 @@
     {
       "matches": ["http://*/*", "https://*/*"],
       "js": ["content.js"],
-      "run_at": "document_idle",
+      "run_at": "document_start",
       "all_frames": false
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["injected-script.js"],
+      "resources": ["injected.js"],
       "matches": ["http://*/*", "https://*/*"]
     }
   ]

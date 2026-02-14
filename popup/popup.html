@@ -2,259 +2,79 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self';">
-  <title>GTM Consent Inspector</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none';">
+  <title>ConsentFlow Debugger</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
+  <!-- Header -->
   <header>
-    <h1>GTM Consent Inspector</h1>
+    <h1>ConsentFlow Debugger</h1>
+    <div id="headerStatus" class="header-status">Connecting...</div>
   </header>
-  
-  <div class="status-container">
-    <div id="gtmStatus" class="status">Checking for GTM...</div>
-    <div id="consentModeStatus" class="status">Checking for Consent Mode...</div>
+
+  <!-- Scorecard -->
+  <div id="scorecard" class="scorecard">
+    <div class="score-item" id="scoreRules"><span class="score-num">-</span><span class="score-label">Rules</span></div>
+    <div class="score-item" id="scoreTags"><span class="score-num">-</span><span class="score-label">Tags</span></div>
+    <div class="score-item" id="scoreHits"><span class="score-num">-</span><span class="score-label">Hits</span></div>
+    <div class="score-item" id="scoreCMP"><span class="score-num">-</span><span class="score-label">CMP</span></div>
   </div>
 
+  <!-- Tabs -->
   <div class="tabs">
-    <button class="tab-button active" data-tab="overview">Overview</button>
-    <button class="tab-button" data-tab="tags">Tags</button>
-    <button class="tab-button" data-tab="consent">Consent</button>
-    <button class="tab-button" data-tab="events">Events</button>
+    <button class="tab active" data-tab="flow">Flow</button>
+    <button class="tab" data-tab="rules">Rules</button>
+    <button class="tab" data-tab="network">Network</button>
+    <button class="tab" data-tab="state">State</button>
   </div>
 
-  <!-- Overview Tab -->
-  <div id="overview-tab" class="tab-content active">
-    <h2>GTM Overview</h2>
-    <div class="status-grid">
-      <div class="status-item">
-        <span class="label">GTM Container:</span>
-        <span class="value" id="gtmContainerValue">Not detected</span>
-      </div>
-      <div class="status-item">
-        <span class="label">Consent Mode:</span>
-        <span class="value" id="overviewConsentValue">Not detected</span>
-      </div>
-      <div class="status-item">
-        <span class="label">Tags Found:</span>
-        <span class="value" id="totalTagsFound">0</span>
-      </div>
-      <div class="status-item">
-        <span class="label">Tags Blocked:</span>
-        <span class="value" id="totalTagsBlocked">0</span>
-      </div>
+  <!-- Flow Tab: Consent Timeline -->
+  <div id="flow-tab" class="panel active">
+    <div class="panel-header">
+      <h2>Consent Flow Timeline</h2>
+      <button id="refreshBtn" class="icon-btn" title="Refresh">Refresh</button>
     </div>
-    
-    <div class="action-buttons">
-      <button id="refreshOverview" class="action-button primary">🔄 Refresh</button>
-      <button id="diagnoseTab" class="action-button">🔍 Diagnose</button>
+    <div id="timeline" class="timeline">
+      <div class="empty">Waiting for page data...</div>
     </div>
   </div>
 
-  <!-- Tags Tab -->
-  <div id="tags-tab" class="tab-content">
-    <h2>Tag Status</h2>
-    <div class="filter-controls">
-      <button class="filter-btn active" data-filter="all">All</button>
-      <button class="filter-btn" data-filter="analytics">Analytics</button>
-      <button class="filter-btn" data-filter="advertising">Advertising</button>
-      <button class="filter-btn" data-filter="functionality">Functionality</button>
+  <!-- Rules Tab: Validation Results -->
+  <div id="rules-tab" class="panel">
+    <div class="panel-header">
+      <h2>Validation Rules</h2>
     </div>
-    
-    <div class="tag-list" id="tagList">
-      <div class="tag-item empty-state">No tags detected yet...</div>
-    </div>
-    
-    <div class="action-buttons">
-      <button id="refreshTags" class="action-button">🔄 Refresh Tags</button>
+    <div id="rulesList" class="rules-list">
+      <div class="empty">Loading rules...</div>
     </div>
   </div>
 
-  <!-- Consent Tab -->
-  <div id="consent-tab" class="tab-content">
-    <h2>Consent Simulator</h2>
-    
-    <!-- Simulation Mode Toggle -->
-    <div class="simulation-mode-container">
-      <div class="simulation-toggle">
-        <label class="toggle-switch">
-          <input type="checkbox" id="simulationMode">
-          <span class="toggle-slider"></span>
-        </label>
-        <div class="simulation-label">
-          <span class="simulation-icon">🧪</span>
-          <span class="simulation-text">Simulation Mode</span>
-          <span class="simulation-status" id="simulationStatus">OFF</span>
-        </div>
-      </div>
-      <div class="simulation-description">
-        When enabled, the extension uses simulated consent values instead of real CMP values for event logging.
-      </div>
+  <!-- Network Tab: GCS/GCD Decoded Requests -->
+  <div id="network-tab" class="panel">
+    <div class="panel-header">
+      <h2>Google Consent Signals</h2>
     </div>
-    
-    <!-- Simulated Consent Controls (shown when simulation mode is ON) -->
-    <div id="simulatedConsentControls" class="simulated-consent-controls" style="display: none;">
-      <h3>Simulated Consent State</h3>
-      <div class="consent-categories">
-        <div class="consent-category">
-          <label class="consent-toggle">
-            <input type="checkbox" id="sim_analytics_storage" checked>
-            <span class="toggle-slider"></span>
-          </label>
-          <div class="consent-info">
-            <span class="consent-name">Analytics Storage</span>
-            <span class="consent-description">Required for analytics and performance measurement</span>
-          </div>
-        </div>
-        
-        <div class="consent-category">
-          <label class="consent-toggle">
-            <input type="checkbox" id="sim_ad_storage" checked>
-            <span class="toggle-slider"></span>
-          </label>
-          <div class="consent-info">
-            <span class="consent-name">Ad Storage</span>
-            <span class="consent-description">Required for advertising and marketing</span>
-          </div>
-        </div>
-        
-        <div class="consent-category">
-          <label class="consent-toggle">
-            <input type="checkbox" id="sim_functionality_storage" checked>
-            <span class="toggle-slider"></span>
-          </label>
-          <div class="consent-info">
-            <span class="consent-name">Functionality Storage</span>
-            <span class="consent-description">Required for enhanced functionality</span>
-          </div>
-        </div>
-        
-        <div class="consent-category">
-          <label class="consent-toggle">
-            <input type="checkbox" id="sim_personalization_storage" checked>
-            <span class="toggle-slider"></span>
-          </label>
-          <div class="consent-info">
-            <span class="consent-name">Personalization Storage</span>
-            <span class="consent-description">Required for content personalization</span>
-          </div>
-        </div>
-        
-        <div class="consent-category">
-          <label class="consent-toggle">
-            <input type="checkbox" id="sim_security_storage" checked disabled>
-            <span class="toggle-slider"></span>
-          </label>
-          <div class="consent-info">
-            <span class="consent-name">Security Storage</span>
-            <span class="consent-description">Always granted for security purposes</span>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Quick Preset Buttons -->
-      <div class="simulation-presets">
-        <h4>Quick Presets</h4>
-        <div class="preset-buttons">
-          <button class="preset-btn" data-preset="all-granted">✅ All Granted</button>
-          <button class="preset-btn" data-preset="all-denied">❌ All Denied</button>
-          <button class="preset-btn" data-preset="analytics-only">📊 Analytics Only</button>
-          <button class="preset-btn" data-preset="marketing-only">📢 Marketing Only</button>
-          <button class="preset-btn" data-preset="essential-only">🔒 Essential Only</button>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Original Consent Controls (shown when simulation mode is OFF) -->
-    <div id="realConsentControls" class="real-consent-controls">
-      <h3>Current Consent State</h3>
-      <div class="consent-categories">
-        <div class="consent-category">
-          <label class="consent-toggle">
-            <input type="checkbox" id="analytics_storage" disabled>
-            <span class="toggle-slider"></span>
-          </label>
-          <div class="consent-info">
-            <span class="consent-name">Analytics Storage</span>
-            <span class="consent-description">Current CMP setting</span>
-          </div>
-        </div>
-        
-        <div class="consent-category">
-          <label class="consent-toggle">
-            <input type="checkbox" id="ad_storage" disabled>
-            <span class="toggle-slider"></span>
-          </label>
-          <div class="consent-info">
-            <span class="consent-name">Ad Storage</span>
-            <span class="consent-description">Current CMP setting</span>
-          </div>
-        </div>
-        
-        <div class="consent-category">
-          <label class="consent-toggle">
-            <input type="checkbox" id="functionality_storage" disabled>
-            <span class="toggle-slider"></span>
-          </label>
-          <div class="consent-info">
-            <span class="consent-name">Functionality Storage</span>
-            <span class="consent-description">Current CMP setting</span>
-          </div>
-        </div>
-        
-        <div class="consent-category">
-          <label class="consent-toggle">
-            <input type="checkbox" id="personalization_storage" disabled>
-            <span class="toggle-slider"></span>
-          </label>
-          <div class="consent-info">
-            <span class="consent-name">Personalization Storage</span>
-            <span class="consent-description">Current CMP setting</span>
-          </div>
-        </div>
-        
-        <div class="consent-category">
-          <label class="consent-toggle">
-            <input type="checkbox" id="security_storage" checked disabled>
-            <span class="toggle-slider"></span>
-          </label>
-          <div class="consent-info">
-            <span class="consent-name">Security Storage</span>
-            <span class="consent-description">Always granted</span>
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <div class="action-buttons">
-      <button id="applyConsent" class="btn btn-primary">⚡ Apply Settings</button>
+    <div id="networkList" class="network-list">
+      <div class="empty">No Google requests captured yet.</div>
     </div>
   </div>
 
-  <!-- Events Tab -->
-  <div id="events-tab" class="tab-content">
-    <h2>Event Log</h2>
-    <div class="filter-controls">
-      <button class="filter-btn active" data-event-filter="all">All</button>
-      <button class="filter-btn" data-event-filter="real">📊 Real</button>
-      <button class="filter-btn" data-event-filter="simulated">🧪 Simulated</button>
-      <button class="filter-btn" data-event-filter="consent">🍪 Consent</button>
-      <button class="filter-btn" data-event-filter="gtm">📈 GTM</button>
+  <!-- State Tab: Current Consent State -->
+  <div id="state-tab" class="panel">
+    <div class="panel-header">
+      <h2>Current Consent State</h2>
     </div>
-    <div class="event-log" id="eventLog">
-      <div class="event-item empty-state">Waiting for events...</div>
-    </div>
-    <div class="action-buttons">
-      <button id="refreshEvents" class="action-button">🔄 Refresh</button>
-      <button id="clearLog" class="action-button">🗑️ Clear Log</button>
+    <div id="consentGrid" class="consent-grid"></div>
+    <h3 class="sub-heading">Detected CMP</h3>
+    <div id="cmpInfo" class="cmp-info">None detected</div>
+    <h3 class="sub-heading">Detected Tags</h3>
+    <div id="tagsList" class="tags-list">
+      <div class="empty">No tags detected.</div>
     </div>
   </div>
-  
-  <footer>
-    <div class="version">GTM Inspector MVP</div>
-  </footer>
-  
-  <!-- Simplified Scripts -->
+
+  <footer>ConsentFlow Debugger v2.0</footer>
   <script src="popup.js"></script>
 </body>
 </html>
