@@ -5,6 +5,15 @@
   let currentState = null;
   let refreshTimer = null;
 
+  // Verdict configuration for tag impact display
+  var VERDICT_CONFIG = {
+    violation:        { label: 'VIOLATION',        cls: 'violation',        color: 'var(--red)' },
+    blocked:          { label: 'BLOCKED',           cls: 'blocked',          color: 'var(--yellow)' },
+    firing:           { label: 'FIRING',            cls: 'firing',           color: 'var(--green)' },
+    idle:             { label: 'IDLE',              cls: 'idle',             color: 'var(--yellow)' },
+    no_consent_mode:  { label: 'NO CONSENT MODE',   cls: 'no-consent-mode',  color: 'var(--blue)' }
+  };
+
   // ─── Tab Switching ──────────────────────────────────────────
   document.querySelectorAll('.tab').forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -95,7 +104,8 @@
     var passes = rules.filter(function (r) { return r.status === 'pass'; }).length;
 
     setScore('scoreRules', passes + '/' + rules.length, fails > 0 ? 'bad' : 'good');
-    setScore('scoreTags', String((state.tags || []).length), '');
+    var hasViolations = (state.tagImpact || []).some(function (t) { return t.verdict === 'violation'; });
+    setScore('scoreTags', String((state.tags || []).length), hasViolations ? 'bad' : '');
     setScore('scoreHits', String((state.networkHits || []).length), '');
     setScore('scoreCMP', state.cmp && state.cmp.detected ? state.cmp.name : 'None',
       state.cmp && state.cmp.detected ? 'good' : '');
@@ -237,15 +247,17 @@
     var hits = state.networkHits || [];
 
     if (hits.length === 0) {
-      container.innerHTML = '<div class="empty">No Google analytics requests captured yet. Interact with the page or wait for tags to fire.</div>';
+      container.innerHTML = '<div class="empty">No vendor requests captured yet. Interact with the page or wait for tags to fire. Tracking: Google, Facebook, LinkedIn, TikTok, Hotjar, Clarity, Pinterest, Snapchat.</div>';
       return;
     }
 
     var html = '';
     hits.forEach(function (hit) {
+      var vendorLabel = hit.vendor ? hit.vendor.charAt(0).toUpperCase() + hit.vendor.slice(1) : '';
       html += '<div class="net-card">'
         + '<div class="net-header">'
         + '<span class="net-method">' + esc(hit.method) + '</span>'
+        + (vendorLabel ? '<span class="net-vendor">' + esc(vendorLabel) + '</span>' : '')
         + '<span class="net-host">' + esc(hit.host) + '</span>'
         + '<span class="net-time">' + Math.round(hit.ms) + 'ms</span>'
         + '</div>';
@@ -319,29 +331,84 @@
       cmpEl.className = 'cmp-info';
     }
 
-    // Tags
-    var tagsList = document.getElementById('tagsList');
-    var tags = state.tags || [];
-    if (tags.length === 0) {
-      tagsList.innerHTML = '<div class="empty">No tracking tags detected.</div>';
-    } else {
-      var thtml = '';
-      tags.forEach(function (tag) {
-        var consentNeeded = (tag.consentTypes || []).join(', ');
-        var allGranted = (tag.consentTypes || []).every(function (ct) {
-          return consent[ct] === 'granted';
-        });
-        thtml += '<div class="tag-card ' + (allGranted ? 'allowed' : 'blocked') + '">'
-          + '<div class="tag-name">' + esc(tag.name) + '</div>'
-          + '<div class="tag-meta">'
-          + '<span class="tag-type">' + esc(tag.type) + '</span>'
-          + '<span class="tag-consent">Needs: ' + esc(consentNeeded || 'none') + '</span>'
-          + '<span class="tag-status">' + (allGranted ? 'ALLOWED' : 'BLOCKED') + '</span>'
-          + '</div>'
-          + '</div>';
-      });
-      tagsList.innerHTML = thtml;
+    // Tag Impact Analysis
+    renderTagImpact(state);
+    renderImplQuality(state);
+  }
+
+  // ─── Tag Impact ────────────────────────────────────────────────
+  function renderTagImpact(state) {
+    var container = document.getElementById('tagImpact');
+    var impacts = state.tagImpact || [];
+
+    if (impacts.length === 0) {
+      container.innerHTML = '<div class="empty">No tracking tags detected.</div>';
+      return;
     }
+
+    // Sort: violations first, then blocked, no_consent_mode, idle, firing
+    var verdictOrder = { violation: 0, blocked: 1, no_consent_mode: 2, idle: 3, firing: 4 };
+    impacts.sort(function (a, b) {
+      return (verdictOrder[a.verdict] || 5) - (verdictOrder[b.verdict] || 5);
+    });
+
+    var html = '';
+    impacts.forEach(function (item) {
+      var cfg = VERDICT_CONFIG[item.verdict] || { label: item.verdict, cls: '', color: 'var(--text3)' };
+      var consentNeeded = (item.consentTypes || []).join(', ');
+      html += '<div class="ti-card ' + cfg.cls + '">'
+        + '<div class="ti-header">'
+        + '<span class="ti-name">' + esc(item.name) + '</span>'
+        + '<span class="ti-verdict ' + cfg.cls + '">' + cfg.label + '</span>'
+        + '</div>'
+        + '<div class="ti-body">'
+        + '<div class="ti-row"><span class="ti-type">' + esc(item.type) + '</span></div>'
+        + '<div class="ti-row"><span class="ti-consent">Needs: ' + esc(consentNeeded || 'none') + '</span></div>'
+        + '<div class="ti-row"><span class="ti-requests">' + item.requestCount + ' request' + (item.requestCount !== 1 ? 's' : '') + ' captured</span></div>'
+        + '</div>'
+        + '</div>';
+    });
+
+    container.innerHTML = html;
+  }
+
+  // ─── Implementation Quality ────────────────────────────────────
+  function renderImplQuality(state) {
+    var container = document.getElementById('implQuality');
+    var impacts = state.tagImpact || [];
+
+    if (impacts.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+
+    var hasViolations = impacts.some(function (t) { return t.verdict === 'violation'; });
+    var allNoConsent = impacts.every(function (t) { return t.verdict === 'no_consent_mode'; });
+    var someNoConsent = impacts.some(function (t) { return t.verdict === 'no_consent_mode'; });
+
+    var grade, message, cls;
+    if (hasViolations) {
+      grade = 'CRITICAL';
+      message = 'Tags are firing despite denied consent. This is a compliance violation.';
+      cls = 'critical';
+    } else if (allNoConsent) {
+      grade = 'NOT IMPLEMENTED';
+      message = 'No Consent Mode detected. All tags fire without consent controls.';
+      cls = 'not-implemented';
+    } else if (someNoConsent) {
+      grade = 'PARTIAL';
+      message = 'Consent Mode is active but some tags lack consent integration.';
+      cls = 'partial';
+    } else {
+      grade = 'GOOD';
+      message = 'Consent Mode is properly configured for all detected tags.';
+      cls = 'good';
+    }
+
+    container.innerHTML = '<div class="impl-banner ' + cls + '">'
+      + '<span class="impl-grade">' + grade + '</span>'
+      + '<span class="impl-message">' + esc(message) + '</span>'
+      + '</div>';
   }
 
   // ─── Helpers ────────────────────────────────────────────────

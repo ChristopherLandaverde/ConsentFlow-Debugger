@@ -240,6 +240,108 @@
     'google.com/pagead'
   ];
 
+  // Multi-vendor domain fragments for broad network capture
+  var VENDOR_DOMAINS = {
+    google: ['google-analytics.com', 'analytics.google.com', 'googletagmanager.com',
+             'googlesyndication.com', 'googleadservices.com', 'doubleclick.net', 'google.com/pagead'],
+    facebook: ['facebook.net', 'facebook.com/tr', 'fbcdn.net', 'meta.com'],
+    linkedin: ['snap.licdn.com', 'linkedin.com/li/'],
+    tiktok: ['analytics.tiktok.com', 'tiktokapi.com'],
+    hotjar: ['hotjar.com', 'hotjar.io'],
+    clarity: ['clarity.ms'],
+    pinterest: ['ct.pinterest.com', 'pinimg.com/ct'],
+    snapchat: ['sc-static.net', 'tr.snapchat.com']
+  };
+
+  // Map tag names from detectTags() to their vendor key
+  var TAG_VENDOR_MAP = {
+    'Google Analytics 4': 'google',
+    'Google Tag Manager': 'google',
+    'Google Ads': 'google',
+    'Facebook Pixel': 'facebook',
+    'LinkedIn Insight': 'linkedin',
+    'TikTok Pixel': 'tiktok',
+    'Hotjar': 'hotjar',
+    'Microsoft Clarity': 'clarity',
+    'Pinterest Tag': 'pinterest',
+    'Snapchat Pixel': 'snapchat'
+  };
+
+  // Reverse lookup: URL string → vendor key
+  function identifyVendor(urlStr) {
+    try {
+      var url = new URL(urlStr, window.location.origin);
+      var full = url.hostname + url.pathname;
+      var vendors = Object.keys(VENDOR_DOMAINS);
+      for (var i = 0; i < vendors.length; i++) {
+        var fragments = VENDOR_DOMAINS[vendors[i]];
+        for (var j = 0; j < fragments.length; j++) {
+          if (full.indexOf(fragments[j]) !== -1) return vendors[i];
+        }
+      }
+    } catch { /* ignore */ }
+    return null;
+  }
+
+  // Correlate tags × consent state × actual network requests → verdicts
+  function computeTagImpact() {
+    var tags = state.tags || [];
+    var consent = state.currentConsent || {};
+    var hasConsentMode = !!state.consentDefaults;
+    var results = [];
+
+    for (var i = 0; i < tags.length; i++) {
+      var tag = tags[i];
+      var vendor = TAG_VENDOR_MAP[tag.name] || null;
+
+      // Count network requests for this vendor
+      var vendorHits = [];
+      if (vendor) {
+        for (var j = 0; j < state.networkHits.length; j++) {
+          if (state.networkHits[j].vendor === vendor) vendorHits.push(state.networkHits[j]);
+        }
+      }
+
+      var hasRequests = vendorHits.length > 0;
+      var verdict;
+
+      if (!hasConsentMode) {
+        verdict = 'no_consent_mode';
+      } else {
+        // Check if any required consent type is denied
+        var consentTypes = tag.consentTypes || [];
+        var anyDenied = false;
+        for (var k = 0; k < consentTypes.length; k++) {
+          if (consent[consentTypes[k]] === 'denied') {
+            anyDenied = true;
+            break;
+          }
+        }
+
+        if (anyDenied && hasRequests) {
+          verdict = 'violation';
+        } else if (anyDenied && !hasRequests) {
+          verdict = 'blocked';
+        } else if (!anyDenied && hasRequests) {
+          verdict = 'firing';
+        } else {
+          verdict = 'idle';
+        }
+      }
+
+      results.push({
+        name: tag.name,
+        type: tag.type,
+        vendor: vendor,
+        consentTypes: tag.consentTypes,
+        requestCount: vendorHits.length,
+        verdict: verdict
+      });
+    }
+
+    return results;
+  }
+
   function isGoogleAnalyticsUrl(urlStr) {
     try {
       const url = new URL(urlStr, window.location.origin);
@@ -248,7 +350,8 @@
   }
 
   function captureNetworkHit(urlStr, method) {
-    if (!isGoogleAnalyticsUrl(urlStr)) return;
+    var vendor = identifyVendor(urlStr);
+    if (!vendor) return;
     try {
       const url = new URL(urlStr, window.location.origin);
       const params = url.searchParams;
@@ -256,19 +359,33 @@
         url: url.pathname,
         host: url.hostname,
         method: method,
+        vendor: vendor,
         ms: ts(),
         wall: Date.now(),
-        gcs: params.get('gcs'),
-        gcd: params.get('gcd'),
-        npa: params.get('npa'),
-        tid: params.get('tid') || params.get('id'),
-        en: params.get('en'),   // event name in GA4
         decoded: {}
       };
 
-      if (hit.gcs) hit.decoded.gcs = decodeGCS(hit.gcs);
-      if (hit.gcd) hit.decoded.gcd = decodeGCD(hit.gcd);
-      if (hit.npa) hit.decoded.npa = hit.npa === '1' ? 'non-personalized (ad_personalization denied)' : 'personalized';
+      // Google-specific param decoding
+      if (vendor === 'google') {
+        hit.gcs = params.get('gcs');
+        hit.gcd = params.get('gcd');
+        hit.npa = params.get('npa');
+        hit.tid = params.get('tid') || params.get('id');
+        hit.en = params.get('en');   // event name in GA4
+        if (hit.gcs) hit.decoded.gcs = decodeGCS(hit.gcs);
+        if (hit.gcd) hit.decoded.gcd = decodeGCD(hit.gcd);
+        if (hit.npa) hit.decoded.npa = hit.npa === '1' ? 'non-personalized (ad_personalization denied)' : 'personalized';
+      }
+
+      // Facebook param extraction
+      if (vendor === 'facebook') {
+        hit.ev = params.get('ev');   // Facebook event name
+      }
+
+      // TikTok param extraction
+      if (vendor === 'tiktok') {
+        hit.event = params.get('event');   // TikTok event name
+      }
 
       state.networkHits.push(hit);
       addEvent('network_hit', hit, 'network');
@@ -585,11 +702,12 @@
       consentDefaults: state.consentDefaults,
       consentUpdates: state.consentUpdates,
       currentConsent: safeClone(state.currentConsent),
-      networkHits: state.networkHits.slice(-100),
+      networkHits: state.networkHits.slice(-200),
       configCalls: state.configCalls,
       cmp: state.cmp,
       tags: state.tags,
       validation: state.validation,
+      tagImpact: computeTagImpact(),
       ready: state.ready
     };
   }

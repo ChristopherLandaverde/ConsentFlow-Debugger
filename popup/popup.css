@@ -414,44 +414,144 @@ h3.sub-heading {
 }
 .cmp-info.detected { color: var(--green); }
 
-/* ─── Tags ───────────────────────────────────────── */
-.tags-list {
+/* ─── Tag Impact Analysis ────────────────────────── */
+.tag-impact-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
-.tag-card {
+.ti-card {
   background: var(--bg2);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 8px 10px;
+  border-radius: var(--radius);
+  padding: 0;
   border-left: 3px solid var(--text3);
+  overflow: hidden;
 }
-.tag-card.allowed { border-left-color: var(--green); }
-.tag-card.blocked { border-left-color: var(--red); }
-.tag-name {
+.ti-card.firing { border-left-color: var(--green); }
+.ti-card.blocked { border-left-color: var(--yellow); }
+.ti-card.violation { border-left-color: var(--red); }
+.ti-card.idle { border-left-color: var(--yellow); }
+.ti-card.no-consent-mode { border-left-color: var(--blue); }
+
+.ti-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+}
+.ti-name {
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
-  margin-bottom: 3px;
 }
-.tag-meta {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 10px;
+.ti-verdict {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
 }
-.tag-type {
+.ti-verdict.firing { background: rgba(74,222,128,.15); color: var(--green); }
+.ti-verdict.blocked { background: rgba(251,191,36,.15); color: var(--yellow); }
+.ti-verdict.violation { background: rgba(248,113,113,.15); color: var(--red); }
+.ti-verdict.idle { background: rgba(251,191,36,.15); color: var(--yellow); }
+.ti-verdict.no-consent-mode { background: rgba(96,165,250,.15); color: var(--blue); }
+
+.ti-body {
+  padding: 6px 10px;
+}
+.ti-row {
+  font-size: 11px;
+  color: var(--text2);
+  padding: 1px 0;
+}
+.ti-type {
   padding: 1px 6px;
   border-radius: 3px;
   background: rgba(124,92,255,.15);
   color: var(--accent);
   font-weight: 600;
+  font-size: 10px;
 }
-.tag-consent { color: var(--text3); }
-.tag-status { font-weight: 700; }
-.tag-card.allowed .tag-status { color: var(--green); }
-.tag-card.blocked .tag-status { color: var(--red); }
+.ti-requests {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text3);
+}
+.ti-consent {
+  color: var(--text3);
+  font-size: 10px;
+}
+
+/* ─── Implementation Quality Banner ──────────────── */
+.impl-quality {
+  margin: 8px 0;
+}
+.impl-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.impl-grade {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+.impl-message {
+  font-size: 11px;
+  line-height: 1.4;
+}
+.impl-banner.critical {
+  background: rgba(248,113,113,.1);
+  border-color: rgba(248,113,113,.3);
+}
+.impl-banner.critical .impl-grade { background: rgba(248,113,113,.2); color: var(--red); }
+.impl-banner.critical .impl-message { color: var(--red); }
+
+.impl-banner.not-implemented {
+  background: rgba(96,165,250,.1);
+  border-color: rgba(96,165,250,.3);
+}
+.impl-banner.not-implemented .impl-grade { background: rgba(96,165,250,.2); color: var(--blue); }
+.impl-banner.not-implemented .impl-message { color: var(--blue); }
+
+.impl-banner.partial {
+  background: rgba(251,191,36,.1);
+  border-color: rgba(251,191,36,.3);
+}
+.impl-banner.partial .impl-grade { background: rgba(251,191,36,.2); color: var(--yellow); }
+.impl-banner.partial .impl-message { color: var(--yellow); }
+
+.impl-banner.good {
+  background: rgba(74,222,128,.1);
+  border-color: rgba(74,222,128,.3);
+}
+.impl-banner.good .impl-grade { background: rgba(74,222,128,.2); color: var(--green); }
+.impl-banner.good .impl-message { color: var(--green); }
+
+/* ─── Vendor Badge in Network Tab ────────────────── */
+.net-vendor {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(124,92,255,.15);
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
 
 /* ─── Footer ─────────────────────────────────────── */
 footer {
