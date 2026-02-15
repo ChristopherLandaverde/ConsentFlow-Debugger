@@ -1,180 +1,104 @@
 # ConsentFlow Debugger
 
-> **Professional Chrome Extension for Google Tag Manager Consent Mode Debugging**
+**Debug GTM Consent Mode v2 in real time.**
 
-[![Version](https://img.shields.io/badge/version-1.0.4-blue.svg)](https://github.com/yourusername/consentflow-debugger)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Chrome Web Store](https://img.shields.io/badge/Chrome-Web%20Store-brightgreen.svg)](https://chrome.google.com/webstore)
+[![Version](https://img.shields.io/badge/version-2.0.0-036461.svg)](https://github.com/ChristopherLandaverde/ConsentFlow-Debugger)
+[![License](https://img.shields.io/badge/license-MIT-036461.svg)](LICENSE)
+[![Website](https://img.shields.io/badge/website-consentflow-036461.svg)](https://consentflow-psi.vercel.app)
 
-ConsentFlow Debugger is a powerful Chrome extension designed for developers, analysts, and compliance teams who need to debug, validate, and monitor Google Tag Manager Consent Mode implementations in real-time.
+Free, open-source Chrome extension for developers, analysts, and compliance teams who need to debug and validate Google Tag Manager Consent Mode implementations. Detect race conditions, missing defaults, GCS/GCD mismatches, and tag firing violations before they cost you data and compliance.
 
----
-
-## ✨ Key Features
-
-### 🔍 Real-Time Inspection
-- **Live GTM Detection**: Automatically detects Google Tag Manager containers and consent implementations.
-- **Consent State Monitoring**: Real-time visibility into `analytics_storage`, `ad_storage`, and other consent categories.
-- **Tag Status Analysis**: See which tags are firing or being blocked based on current consent state.
-
-### 🧪 Advanced Simulation
-- **Consent Scenario Testing**: Simulate different user consent choices without affecting actual cookies.
-- **Before/After Analysis**: Compare tag behavior under different consent configurations.
-- **Impact Assessment**: Understand how consent changes affect your marketing stack.
-
-### 📊 Comprehensive Event Logging
-- **Activity Timeline**: Complete log of consent changes, tag firings, and CMP interactions.
-- **Event Filtering**: Filter by consent events, GTM events, real vs simulated activities.
-- **Export Capabilities**: Export debugging data for analysis and compliance reporting.
-
-### 🛠️ Developer-Friendly Tools
-- **CMP Integration**: Works with Cookiebot. (More CMPS coming soon)
-- **Debug Diagnostics**: Automated checks for common implementation issues.
-- **Performance Monitoring**: Track consent mode impact on page performance.
+**All processing runs entirely in your browser — no data ever leaves your machine.**
 
 ---
 
-## 🚀 Quick Start
+## Features
 
-### Installation
-1. Install from the [Chrome Web Store](https://chrome.google.com/webstore) *(link pending)*.
-2. Pin the extension to your toolbar for easy access.
-3. Navigate to any website with GTM and Consent Mode.
-4. Click the extension icon to start debugging.
+**Real-Time Consent Monitoring** — Watch consent state changes as they happen. See `analytics_storage`, `ad_storage`, and all consent types update live.
 
-### Basic Usage
+**Violation Detection** — Automatically catch tags firing without proper consent, missing default commands, and race conditions before they become compliance issues.
 
-The extension automatically detects:
-- ✅ GTM containers (e.g., `GTM-XXXXXX`)
-- ✅ Consent Mode implementation
-- ✅ Active consent management platforms
-- ✅ Current consent state
+**GCS/GCD Signal Decoding** — Decode Google Consent Signals from network requests. See exactly what consent data Google is receiving.
+
+**Consent Simulation** — Test different consent scenarios without touching real cookies. See before/after tag behavior instantly.
+
+**18+ Validation Rules** — Automated checks catch implementation issues with pass/fail/warn results and actionable recommendations.
+
+**Multi-Vendor Tag Impact** — Analyze tag behavior across GA4, Google Ads, Meta, LinkedIn, TikTok, Hotjar, Clarity, and more.
 
 ---
 
-## 💼 Use Cases
+## Quick Start
 
-### For Developers
-- Validate GTM Consent Mode implementation during development.
-- Debug tag firing issues related to consent settings.
-- Test consent flows before production deployment.
-
-### For Analysts
-- Understand which tags are affected by consent choices.
-- Analyze the impact of consent mode on data collection.
-- Troubleshoot discrepancies in analytics data.
-
-### For Compliance Teams
-- Verify GDPR compliance of tracking implementations.
-- Document consent flows for audits.
-- Monitor consent behavior across different user scenarios.
-
-### For QA Teams
-- Test consent implementations across different browsers.
-- Validate consent behavior in various geographic regions.
-- Ensure consistent consent experience.
+1. **Download** — Clone or download this repository.
+2. **Load the extension** — Open `chrome://extensions/`, enable Developer Mode, click "Load unpacked", and select this directory.
+3. **Visit any page with GTM** — ConsentFlow automatically detects the container.
+4. **Debug** — Click the extension icon to see consent state, tag violations, validation results, and GCS/GCD signals live.
 
 ---
 
-## 🔧 Technical Details
+## Who It's For
 
-### Supported Platforms
-- ✅ Google Tag Manager
-- ✅ Google Analytics 4
-- ✅ Google Ads
-- ✅ Cookiebot
+**Analytics Engineers** — Validate that your GTM consent implementation is firing correctly and not leaking data before consent is granted.
 
-### Browser Compatibility
+**Compliance & Legal Teams** — Verify that your site respects user consent choices and meets GDPR/ePrivacy requirements at the tag level.
+
+**QA Teams** — Catch consent-related bugs before they reach production. Simulate scenarios and validate tag behavior systematically.
+
+**Agency & Freelance Consultants** — Audit client implementations quickly. Export findings and deliver actionable consent reports.
+
+---
+
+## Supported Platforms
+
+| Platform | Status |
+|----------|--------|
+| Google Tag Manager | Supported |
+| Google Analytics 4 | Supported |
+| Google Ads | Supported |
+| Meta (Facebook) Pixel | Supported |
+| LinkedIn Insight Tag | Supported |
+| TikTok Pixel | Supported |
+| Hotjar | Supported |
+| Microsoft Clarity | Supported |
+| Pinterest Tag | Supported |
+| Snapchat Pixel | Supported |
+| Cookiebot (CMP) | Supported |
+
+## Browser Compatibility
+
 - Chrome 88+
 - Edge 88+
 - Brave (Chromium-based)
 
-### Privacy & Security
-- 🔒 **No Data Collection**: Operates locally — no data sent to external servers.
-- 🛡️ **Secure by Design**: Implements Content Security Policy and input validation.
-- 🔐 **Encrypted Storage**: Sensitive debugging data encrypted using AES-256-GCM.
-- ⚡ **Rate Limited**: Protection against abuse and performance issues.
+---
+
+## Privacy & Security
+
+- **100% client-side** — No data collection, no external servers, no accounts.
+- **Encrypted storage** — Sensitive debugging data encrypted using AES-256-GCM.
+- **Content Security Policy** — Full CSP implementation with input validation.
+- **Rate limited** — Protection against abuse and performance issues.
 
 ---
 
-## 📋 Requirements
-- Chrome browser version 88 or higher.
-- Website with Google Tag Manager implementation.
-- Valid Consent Mode setup (for full functionality).
+## Contributing
 
----
-
-## 🎯 Getting Started
-
-### 1. Basic Inspection
-- Open the extension on any website.
-- Check the "Overview" tab for GTM detection status.
-- View current consent state and container information.
-
-### 2. Tag Analysis
-- Switch to "Tags" tab.
-- See which tags are allowed/blocked.
-- Filter by tag type (analytics, advertising, functionality).
-
-### 3. Consent Simulation
-- Go to "Consent" tab.
-- Enable "Simulation Mode".
-- Test different consent scenarios.
-- Observe impact on tag behavior.
-
-### 4. Event Monitoring
-- Open "Events" tab.
-- Monitor real-time consent and tag events.
-- Filter events by type and source.
-- Export data for further analysis.
-
----
-
-## 🔍 Advanced Features
-
-### Simulation Mode
-Test consent scenarios without affecting actual user experience:
-- Analytics Storage: ✅ Granted / ❌ Denied
-- Ad Storage: ✅ Granted / ❌ Denied
-- Functionality Storage: ✅ Granted / ❌ Denied
-- Personalization Storage: ✅ Granted / ❌ Denied
-
-
-
-### Diagnostic Reports
-Automated checks for common issues:
-- ❌ GTM not detected
-- ⚠️ Consent Mode not implemented
-- ✅ Proper consent flow detected
-- 🔧 Configuration recommendations
-
----
-
-## 📚 Documentation
-- Installation Guide
-- User Manual
-- Developer Documentation
-- Troubleshooting
-- FAQ
-
----
-
-## 🤝 Contributing
-
-We welcome contributions! Please see our **Contributing Guide** for details.
-
-### Development Setup
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/consentflow-debugger.git
+git clone https://github.com/ChristopherLandaverde/ConsentFlow-Debugger.git
+cd ConsentFlow-Debugger
 
-# Install dependencies
-cd consentflow-debugger
-npm install
-
-# Load extension in Chrome
+# Load in Chrome:
 # 1. Open chrome://extensions/
-# 2. Enable Developer mode
+# 2. Enable Developer Mode
 # 3. Click "Load unpacked"
-# 4. Select the project directory
+# 4. Select this directory
+```
 
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
+
+Built by [Christopher Landaverde](https://focosys.io)
