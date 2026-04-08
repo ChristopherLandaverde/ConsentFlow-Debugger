@@ -26,6 +26,9 @@
   });
 
   document.getElementById('refreshBtn').addEventListener('click', fetchState);
+  document.getElementById('reviewCtaButton').addEventListener('click', function () {
+    chrome.tabs.create({ url: 'https://focosys.io/review' });
+  });
 
   // ─── Data Fetching ──────────────────────────────────────────
   function fetchState() {
@@ -77,6 +80,7 @@
     renderRules(state);
     renderNetwork(state);
     renderState(state);
+    renderCta(state);
   }
 
   // ─── Header ─────────────────────────────────────────────────
@@ -409,6 +413,41 @@
       + '<span class="impl-grade">' + grade + '</span>'
       + '<span class="impl-message">' + esc(message) + '</span>'
       + '</div>';
+  }
+
+  function renderCta(state) {
+    var container = document.getElementById('reviewCta');
+    var label = document.getElementById('reviewCtaLabel');
+    var text = document.getElementById('reviewCtaText');
+    var rules = state.validation || [];
+    var fails = rules.filter(function (r) { return r.status === 'fail'; }).length;
+    var warns = rules.filter(function (r) { return r.status === 'warn'; }).length;
+    var impacts = state.tagImpact || [];
+    var hasViolation = impacts.some(function (item) { return item.verdict === 'violation'; });
+    var hasNoConsentMode = impacts.some(function (item) { return item.verdict === 'no_consent_mode'; });
+
+    if (hasViolation) {
+      label.textContent = 'Need help fixing this consent violation?';
+      text.textContent = 'Tags are firing in a way that can create real compliance exposure. I can help trace the root cause.';
+      container.className = 'review-cta critical';
+      return;
+    }
+
+    if (fails > 0 || hasNoConsentMode) {
+      label.textContent = 'Need help fixing this implementation?';
+      text.textContent = 'If the stack still looks broken after debugging, the issue is usually upstream in GTM, consent wiring, or tag governance.';
+      container.className = 'review-cta';
+      return;
+    }
+
+    if (warns > 0) {
+      label.textContent = 'Want a second set of eyes on these warnings?';
+      text.textContent = 'Warnings usually mean edge-case signal loss, partial Consent Mode coverage, or stale implementation logic.';
+      container.className = 'review-cta';
+      return;
+    }
+
+    container.className = 'review-cta hidden';
   }
 
   // ─── Helpers ────────────────────────────────────────────────

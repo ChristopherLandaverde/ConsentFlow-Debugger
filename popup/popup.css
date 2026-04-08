@@ -553,6 +553,52 @@ h3.sub-heading {
   letter-spacing: 0.03em;
 }
 
+.review-cta {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid rgba(124,92,255,.35);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(124,92,255,.12), rgba(37,37,54,.85));
+}
+.review-cta.hidden {
+  display: none;
+}
+.review-cta.critical {
+  border-color: rgba(248,113,113,.35);
+  background: linear-gradient(180deg, rgba(248,113,113,.12), rgba(37,37,54,.88));
+}
+.review-cta-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+.review-cta-text {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text2);
+}
+.review-cta-button {
+  width: 100%;
+  margin-top: 10px;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 12px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform .12s ease, opacity .12s ease;
+}
+.review-cta-button:hover {
+  opacity: 0.92;
+}
+.review-cta-button:active {
+  transform: translateY(1px);
+}
+
 /* ─── Footer ─────────────────────────────────────── */
 footer {
   margin-top: 12px;
