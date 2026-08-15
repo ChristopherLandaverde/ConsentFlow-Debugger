@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!-- Google Tag Manager -->
+  <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+  new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+  'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+  })(window,document,'script','dataLayer','GTM-PCJ3Q5RK');</script>
+  <!-- End Google Tag Manager -->
+
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ConsentFlow Debugger - Debug GTM Consent Mode v2 in Real Time</title>
+  <meta name="description" content="Free Chrome extension to debug and validate Google Tag Manager Consent Mode v2 implementations. Detect race conditions, missing defaults, and tag firing violations in real time.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwindcss.config = {
+      theme: {
+        extend: {
+          colors: {
+            teal: {
+              50: '#f0fdfa',
+              100: '#ccfbf1',
+              200: '#99f6e4',
+              300: '#5eead4',
+              400: '#2dd4bf',
+              500: '#14b8a6',
+              600: '#036461',
+              700: '#0f766e',
+              800: '#115e59',
+              900: '#134e4a',
+            }
+          },
+          fontFamily: {
+            sans: ['Manrope', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    html { scroll-behavior: smooth; }
+    ::selection { background: #036461; color: #fff; }
+  </style>
+</head>
+<body class="bg-white text-slate-800 antialiased leading-relaxed">
+  <!-- Google Tag Manager (noscript) -->
+  <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-PCJ3Q5RK"
+  height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+  <!-- End Google Tag Manager (noscript) -->
+
+
+  <!-- Nav -->
+  <nav class="sticky top-0 w-full bg-white border-b border-gray-200 z-50" style="min-height:80px;">
+    <div class="max-w-[1240px] mx-auto px-6 h-20 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2.5">
+        <div class="w-9 h-9 bg-teal-600 rounded flex items-center justify-center">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+        </div>
+        <span class="font-bold text-xl text-slate-900">ConsentFlow</span>
+      </a>
+      <div class="hidden sm:flex items-center gap-8">
+        <a href="#features" class="text-sm font-medium text-slate-600 hover:text-teal-600 transition-colors">Features</a>
+        <a href="#how-it-works" class="text-sm font-medium text-slate-600 hover:text-teal-600 transition-colors">How It Works</a>
+        <a href="#who" class="text-sm font-medium text-slate-600 hover:text-teal-600 transition-colors">Who It's For</a>
+        <a href="https://github.com/ChristopherLandaverde/ConsentFlow-Debugger" target="_blank" rel="noopener" class="inline-flex items-center gap-2 px-5 py-2.5 bg-teal-600 text-white text-sm font-medium rounded hover:bg-teal-700 transition-colors" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+          Get it on GitHub
+        </a>
+      </div>
+      <!-- Mobile menu button -->
+      <a href="https://github.com/ChristopherLandaverde/ConsentFlow-Debugger" target="_blank" rel="noopener" class="sm:hidden inline-flex items-center gap-2 px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded hover:bg-teal-700 transition-colors">
+        GitHub
+      </a>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="bg-[#F0F5FA]">
+    <div class="max-w-[1240px] mx-auto px-6 py-20 sm:py-28">
+      <div class="max-w-3xl">
+        <span class="inline-block px-3 py-1 bg-teal-600 text-white text-xs font-semibold rounded-full tracking-wide uppercase mb-6">Free &amp; Open Source</span>
+        <h1 class="text-4xl sm:text-5xl font-extrabold text-slate-900 leading-tight mb-6" style="line-height:1.4em;">
+          Debug GTM Consent Mode v2 in real time.
+        </h1>
+        <p class="text-lg text-slate-600 mb-10 max-w-2xl" style="line-height:1.65;">
+          Detect race conditions, missing defaults, GCS/GCD mismatches, and tag firing violations before they cost you data and compliance. All processing runs entirely in your browser.
+        </p>
+        <div class="flex flex-col sm:flex-row items-start gap-4">
+          <a href="https://github.com/ChristopherLandaverde/ConsentFlow-Debugger" target="_blank" rel="noopener" class="inline-flex items-center gap-2 px-7 py-3.5 bg-teal-600 text-white font-semibold rounded hover:bg-teal-700 transition-all" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+            Download from GitHub
+          </a>
+          <a href="#features" class="inline-flex items-center gap-2 px-7 py-3.5 border border-teal-600 text-teal-600 font-semibold rounded hover:bg-teal-600 hover:text-white transition-all">
+            See what it does
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Trust bar -->
+  <section class="border-b border-gray-200 bg-white">
+    <div class="max-w-[1240px] mx-auto px-6 py-5 flex flex-wrap items-center justify-center gap-10 text-sm text-slate-500 font-medium">
+      <div class="flex items-center gap-2">
+        <svg class="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        100% client-side processing
+      </div>
+      <div class="flex items-center gap-2">
+        <svg class="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        MIT Licensed
+      </div>
+      <div class="flex items-center gap-2">
+        <svg class="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Chrome, Edge &amp; Brave
+      </div>
+      <div class="flex items-center gap-2">
+        <svg class="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        No data collection
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section id="features" class="bg-white">
+    <div class="max-w-[1240px] mx-auto px-6 py-20 sm:py-24">
+      <div class="text-center mb-16">
+        <h2 class="text-3xl sm:text-4xl font-bold text-slate-900 mb-4" style="line-height:1.3em;">Everything you need to debug Consent Mode</h2>
+        <p class="text-slate-500 text-lg max-w-2xl mx-auto" style="line-height:1.65;">Stop guessing. See exactly what's happening with consent signals, tag firing, and CMP integration.</p>
+      </div>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
+
+        <!-- Feature 1 -->
+        <div class="bg-white rounded-md p-8 border border-gray-200 hover:shadow-md transition-all" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          <div class="w-11 h-11 bg-teal-600 rounded flex items-center justify-center mb-5">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"/></svg>
+          </div>
+          <h3 class="font-semibold text-lg text-slate-900 mb-2">Real-Time Consent Monitoring</h3>
+          <p class="text-slate-500 text-[15px]" style="line-height:1.65;">Watch consent state changes as they happen. See analytics_storage, ad_storage, and all consent types update live.</p>
+        </div>
+
+        <!-- Feature 2 -->
+        <div class="bg-white rounded-md p-8 border border-gray-200 hover:shadow-md transition-all" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          <div class="w-11 h-11 bg-teal-600 rounded flex items-center justify-center mb-5">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
+          </div>
+          <h3 class="font-semibold text-lg text-slate-900 mb-2">Violation Detection</h3>
+          <p class="text-slate-500 text-[15px]" style="line-height:1.65;">Automatically catch tags firing without proper consent, missing default commands, and race conditions before they become compliance issues.</p>
+        </div>
+
+        <!-- Feature 3 -->
+        <div class="bg-white rounded-md p-8 border border-gray-200 hover:shadow-md transition-all" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          <div class="w-11 h-11 bg-teal-600 rounded flex items-center justify-center mb-5">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5"/></svg>
+          </div>
+          <h3 class="font-semibold text-lg text-slate-900 mb-2">GCS/GCD Signal Decoding</h3>
+          <p class="text-slate-500 text-[15px]" style="line-height:1.65;">Decode Google Consent Signals from network requests. See exactly what consent data Google is receiving.</p>
+        </div>
+
+        <!-- Feature 4 -->
+        <div class="bg-white rounded-md p-8 border border-gray-200 hover:shadow-md transition-all" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          <div class="w-11 h-11 bg-teal-600 rounded flex items-center justify-center mb-5">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611l-.772.13c-1.687.282-3.41.418-5.138.418s-3.451-.136-5.138-.418l-.772-.13c-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/></svg>
+          </div>
+          <h3 class="font-semibold text-lg text-slate-900 mb-2">Consent Simulation</h3>
+          <p class="text-slate-500 text-[15px]" style="line-height:1.65;">Test different consent scenarios without touching real cookies. See before/after tag behavior instantly.</p>
+        </div>
+
+        <!-- Feature 5 -->
+        <div class="bg-white rounded-md p-8 border border-gray-200 hover:shadow-md transition-all" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          <div class="w-11 h-11 bg-teal-600 rounded flex items-center justify-center mb-5">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z"/></svg>
+          </div>
+          <h3 class="font-semibold text-lg text-slate-900 mb-2">18+ Validation Rules</h3>
+          <p class="text-slate-500 text-[15px]" style="line-height:1.65;">Automated checks catch implementation issues with pass/fail/warn results and actionable recommendations.</p>
+        </div>
+
+        <!-- Feature 6 -->
+        <div class="bg-white rounded-md p-8 border border-gray-200 hover:shadow-md transition-all" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          <div class="w-11 h-11 bg-teal-600 rounded flex items-center justify-center mb-5">
+            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z"/><path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6z"/></svg>
+          </div>
+          <h3 class="font-semibold text-lg text-slate-900 mb-2">Multi-Vendor Tag Impact</h3>
+          <p class="text-slate-500 text-[15px]" style="line-height:1.65;">Analyze tag behavior across GA4, Google Ads, Meta, LinkedIn, TikTok, Hotjar, Clarity, and more.</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section id="how-it-works" class="bg-[#F0F5FA]">
+    <div class="max-w-[1240px] mx-auto px-6 py-20 sm:py-24">
+      <div class="text-center mb-16">
+        <h2 class="text-3xl sm:text-4xl font-bold text-slate-900 mb-4" style="line-height:1.3em;">Up and running in 60 seconds</h2>
+        <p class="text-slate-500 text-lg">No accounts. No configuration. Just install and go.</p>
+      </div>
+      <div class="grid sm:grid-cols-3 gap-10">
+        <div class="bg-white rounded-md p-8 text-center" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          <div class="w-14 h-14 bg-teal-600 text-white font-bold text-xl rounded-full flex items-center justify-center mx-auto mb-5">1</div>
+          <h3 class="font-semibold text-lg text-slate-900 mb-3">Install the extension</h3>
+          <p class="text-slate-500 text-[15px]" style="line-height:1.65;">Download from GitHub and load as an unpacked extension in Chrome, Edge, or Brave.</p>
+        </div>
+        <div class="bg-white rounded-md p-8 text-center" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          <div class="w-14 h-14 bg-teal-600 text-white font-bold text-xl rounded-full flex items-center justify-center mx-auto mb-5">2</div>
+          <h3 class="font-semibold text-lg text-slate-900 mb-3">Visit any page with GTM</h3>
+          <p class="text-slate-500 text-[15px]" style="line-height:1.65;">Navigate to a site using Google Tag Manager. ConsentFlow automatically detects the container.</p>
+        </div>
+        <div class="bg-white rounded-md p-8 text-center" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          <div class="w-14 h-14 bg-teal-600 text-white font-bold text-xl rounded-full flex items-center justify-center mx-auto mb-5">3</div>
+          <h3 class="font-semibold text-lg text-slate-900 mb-3">Debug consent in real time</h3>
+          <p class="text-slate-500 text-[15px]" style="line-height:1.65;">Open the extension to see consent state, tag violations, validation results, and GCS/GCD signals live.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Who it's for -->
+  <section id="who" class="bg-white">
+    <div class="max-w-[1240px] mx-auto px-6 py-20 sm:py-24">
+      <div class="text-center mb-16">
+        <h2 class="text-3xl sm:text-4xl font-bold text-slate-900 mb-4" style="line-height:1.3em;">Built for people who care about consent</h2>
+        <p class="text-slate-500 text-lg max-w-2xl mx-auto" style="line-height:1.65;">Whether you're implementing, auditing, or signing off on consent &mdash; ConsentFlow gives you the visibility you need.</p>
+      </div>
+      <div class="grid sm:grid-cols-2 gap-8 max-w-4xl mx-auto">
+        <div class="bg-white rounded-md p-8 border border-gray-200" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-3 h-3 bg-teal-600 rounded-full"></span>
+            <h3 class="font-semibold text-lg text-slate-900">Analytics Engineers</h3>
+          </div>
+          <p class="text-slate-500 text-[15px]" style="line-height:1.65;">Validate that your GTM consent implementation is firing correctly and not leaking data before consent is granted.</p>
+        </div>
+        <div class="bg-white rounded-md p-8 border border-gray-200" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-3 h-3 bg-teal-600 rounded-full"></span>
+            <h3 class="font-semibold text-lg text-slate-900">Compliance &amp; Legal Teams</h3>
+          </div>
+          <p class="text-slate-500 text-[15px]" style="line-height:1.65;">Verify that your site respects user consent choices and meets GDPR/ePrivacy requirements at the tag level.</p>
+        </div>
+        <div class="bg-white rounded-md p-8 border border-gray-200" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-3 h-3 bg-teal-600 rounded-full"></span>
+            <h3 class="font-semibold text-lg text-slate-900">QA Teams</h3>
+          </div>
+          <p class="text-slate-500 text-[15px]" style="line-height:1.65;">Catch consent-related bugs before they reach production. Simulate scenarios and validate tag behavior systematically.</p>
+        </div>
+        <div class="bg-white rounded-md p-8 border border-gray-200" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-3 h-3 bg-teal-600 rounded-full"></span>
+            <h3 class="font-semibold text-lg text-slate-900">Agency &amp; Freelance Consultants</h3>
+          </div>
+          <p class="text-slate-500 text-[15px]" style="line-height:1.65;">Audit client implementations quickly. Export findings and deliver actionable consent reports.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="bg-[#F0F5FA]">
+    <div class="max-w-[1240px] mx-auto px-6 py-20 sm:py-24">
+      <div class="bg-white rounded-md p-12 sm:p-16 text-center max-w-3xl mx-auto" style="box-shadow:0 1px 2px rgba(0,0,0,0.05); border: 1px solid #D1D5DB;">
+        <h2 class="text-3xl sm:text-4xl font-bold text-slate-900 mb-4" style="line-height:1.3em;">Stop guessing about consent.</h2>
+        <p class="text-slate-500 text-lg mb-10" style="line-height:1.65;">ConsentFlow Debugger is free, open source, and runs entirely in your browser. No accounts, no data collection, no strings attached.</p>
+        <a href="https://github.com/ChristopherLandaverde/ConsentFlow-Debugger" target="_blank" rel="noopener" class="inline-flex items-center gap-2 px-8 py-4 bg-teal-600 text-white font-semibold rounded hover:bg-teal-700 transition-all text-lg" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+          <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577100  22397 100  22397   0      0 178.8k      0                              0100  22397 100  22397   0      0 178.7k      0                              0100  22397 100  22397   0      0 178.7k      0                              0
+v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+          Get ConsentFlow Debugger
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="bg-white border-t border-gray-200">
+    <div class="max-w-[1240px] mx-auto px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-500">
+      <div class="flex items-center gap-2.5">
+        <div class="w-6 h-6 bg-teal-600 rounded flex items-center justify-center">
+          <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/></svg>
+        </div>
+        ConsentFlow Debugger
+      </div>
+      <div class="flex items-center gap-6">
+        <a href="https://github.com/ChristopherLandaverde/ConsentFlow-Debugger" target="_blank" rel="noopener" class="hover:text-teal-600 transition-colors">GitHub</a>
+        <a href="https://focosys.io" target="_blank" rel="noopener" class="hover:text-teal-600 transition-colors">Made by Christopher Landaverde</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>
