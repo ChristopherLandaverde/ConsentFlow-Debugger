@@ -102,3 +102,31 @@ cd ConsentFlow-Debugger
 MIT — see [LICENSE](LICENSE) for details.
 
 Built by [Christopher Landaverde](https://focosys.io)
+
+## Website deployment
+
+The production landing page is checked in as `index.html` and deployed through the Vercel project `consentflow`. It preserves the public ConsentFlow page and installs Google Tag Manager container `GTM-PCJ3Q5RK` in the standard script and noscript positions.
+
+Use a preview before changing the production alias:
+
+```bash
+vercel deploy --yes --target preview
+vercel curl https://<preview-url>
+```
+
+Confirm the preview contains `GTM-PCJ3Q5RK` and preserves the landing-page title and navigation. Production promotion is an explicit operation:
+
+```bash
+vercel deploy --prod --yes
+```
+
+After promotion, verify `https://consentflow-psi.vercel.app` loads the container and
+that the disposable `#workflow-smoke-form` behaves as follows:
+
+- Native validation blocks empty and invalid email values without emitting an event.
+- One valid submission reveals the success message and pushes exactly one
+  `gtm_observability_smoke_success` event.
+- The event contains only `form_id` and `form_name`; the entered value is never read or
+  included in analytics.
+
+Vercel credentials, `.vercel/`, and `.env*` files must remain uncommitted.
