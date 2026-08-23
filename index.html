@@ -260,6 +260,27 @@
     </div>
   </section>
 
+  <!-- Disposable tracking verification -->
+  <section class="bg-white" aria-labelledby="workflow-smoke-heading">
+    <div class="max-w-[1240px] mx-auto px-6 py-20 sm:py-24">
+      <div class="max-w-3xl mx-auto rounded-md border border-gray-200 bg-[#F0F5FA] p-8 sm:p-10" style="box-shadow:0 1px 2px rgba(0,0,0,0.05);">
+        <p class="text-sm font-semibold uppercase tracking-wide text-teal-600 mb-3">Tracking verification</p>
+        <h2 id="workflow-smoke-heading" class="text-3xl font-bold text-slate-900 mb-4" style="line-height:1.3em;">Run the disposable form check</h2>
+        <p class="text-slate-600 mb-8" style="line-height:1.65;">
+          Use a test email value to verify the published analytics workflow. The value is not submitted, stored, or included in the tracking event.
+        </p>
+        <form id="workflow-smoke-form" aria-label="Disposable workflow smoke form" class="max-w-xl grid gap-3">
+          <label for="workflow-smoke-email" class="font-semibold text-slate-900">Work email</label>
+          <input id="workflow-smoke-email" name="email" type="email" autocomplete="email" required class="w-full rounded border border-gray-300 bg-white px-4 py-3 text-slate-900 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-100">
+          <button type="submit" class="mt-2 justify-self-start rounded bg-teal-600 px-6 py-3 font-semibold text-white transition-colors hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:ring-offset-2">
+            Run verification
+          </button>
+        </form>
+        <p id="workflow-smoke-success" class="mt-5 font-semibold text-teal-700" role="status" hidden>Verification request received.</p>
+      </div>
+    </div>
+  </section>
+
   <!-- CTA -->
   <section class="bg-[#F0F5FA]">
     <div class="max-w-[1240px] mx-auto px-6 py-20 sm:py-24">
@@ -291,5 +312,27 @@ v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.
     </div>
   </footer>
 
+  <script>
+    (() => {
+      const form = document.querySelector('#workflow-smoke-form');
+      const success = document.querySelector('#workflow-smoke-success');
+      if (!(form instanceof HTMLFormElement) || !(success instanceof HTMLElement)) return;
+
+      let signaled = false;
+      form.addEventListener('submit', (event) => {
+        event.preventDefault();
+        success.hidden = false;
+        if (signaled) return;
+
+        signaled = true;
+        window.dataLayer = window.dataLayer || [];
+        window.dataLayer.push({
+          event: 'gtm_observability_smoke_success',
+          form_id: form.id,
+          form_name: form.getAttribute('aria-label')
+        });
+      });
+    })();
+  </script>
 </body>
 </html>
