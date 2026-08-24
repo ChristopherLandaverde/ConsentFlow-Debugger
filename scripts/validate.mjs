@@ -10,6 +10,9 @@ const runtimeFiles = [
   "popup/popup.css",
   "popup/popup.js",
   "index.html",
+  "measurement-playground.js",
+  "assets/consentflow-measurement-checklist.pdf",
+  "assets/measurement-form-result.html",
 ];
 
 for (const file of runtimeFiles) {
@@ -26,6 +29,7 @@ for (const file of [
   "bookmarklet.js",
   "content.js",
   "injected.js",
+  "measurement-playground.js",
   "popup/popup.js",
   "universal-bookmarklet.js",
   "universal-cookiebot-integration.js",

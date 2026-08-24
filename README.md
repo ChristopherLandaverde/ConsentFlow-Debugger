@@ -130,3 +130,20 @@ that the disposable `#workflow-smoke-form` behaves as follows:
   included in analytics.
 
 Vercel credentials, `.vercel/`, and `.env*` files must remain uncommitted.
+
+## Website measurement playground
+
+The landing page includes a clearly labelled test section with natural browser targets
+for GA4 enhanced measurement:
+
+- Page load and SPA history page views
+- 90% scroll depth
+- Outbound link clicks
+- Fixed-term site search
+- YouTube video engagement with `enablejsapi=1`
+- A real PDF download
+- Native form start and submit using the fixed `measurement-test` token
+
+The playground never calls `gtag` or pushes manual analytics events. It exists to prove
+the connected GA4 configuration through browser collection requests. The separate
+workflow smoke form retains its custom `gtm_observability_smoke_success` contract.
