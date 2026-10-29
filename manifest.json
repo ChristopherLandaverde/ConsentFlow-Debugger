@@ -11,8 +11,7 @@
   },
   "permissions": [
     "activeTab",
-    "scripting",
-    "storage"
+    "scripting"
   ],
   "action": {
     "default_title": "ConsentFlow Debugger",

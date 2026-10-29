@@ -166,7 +166,6 @@ What each manifest entry is for:
 | `web_accessible_resources`: `injected.js` | Lets the content script load `injected.js` into the page's context via a `<script>` tag. |
 | `activeTab` | Access to the current tab when you click the toolbar icon. |
 | `scripting` | Lets the background worker inject `content.js` into a tab that was already open before the extension was installed or reloaded. |
-| `storage` | Declared but not used by the current code. |
 
 ## Architecture
 
