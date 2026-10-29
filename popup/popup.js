@@ -321,7 +321,7 @@
       var html = '';
       keys.forEach(function (k) {
         var val = consent[k];
-        html += '<div class="cs-row ' + val + '">'
+        html += '<div class="cs-row ' + esc(val).replace(/"/g, '&quot;') + '">'
           + '<span class="cs-key">' + esc(k) + '</span>'
           + '<span class="cs-val">' + esc(val) + '</span>'
           + '</div>';

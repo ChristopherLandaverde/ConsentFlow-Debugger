@@ -367,14 +367,10 @@ describe("State tab", () => {
     assert.match(popup.html("tagImpact"), /No tracking tags detected/);
   });
 
-  test(
-    "keeps page-controlled consent values out of HTML attributes",
-    { todo: "known issue: the consent value is escaped as text but inserted raw into the cs-row class attribute" },
-    () => {
-      const popup = show(baseState({ currentConsent: { ad_storage: 'x"><a href="https://evil.example">' } }));
-      assert.doesNotMatch(popup.html("consentGrid"), /<a href/);
-    },
-  );
+  test("keeps page-controlled consent values out of HTML attributes", () => {
+    const popup = show(baseState({ currentConsent: { ad_storage: '" onmouseover="x' } }));
+    assert.doesNotMatch(popup.html("consentGrid"), /class="[^"]*"\s+onmouseover=/);
+  });
 });
 
 describe("review call to action", () => {
