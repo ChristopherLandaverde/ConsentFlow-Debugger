@@ -221,7 +221,11 @@
 
     // Sort: fails first, then warns, then info, then pass
     var order = { fail: 0, warn: 1, info: 2, pass: 3 };
-    rules.sort(function (a, b) { return (order[a.status] || 4) - (order[b.status] || 4); });
+    rules.sort(function (a, b) {
+      var aOrder = order[a.status] !== undefined ? order[a.status] : 4;
+      var bOrder = order[b.status] !== undefined ? order[b.status] : 4;
+      return aOrder - bOrder;
+    });
 
     var html = '';
     rules.forEach(function (rule) {

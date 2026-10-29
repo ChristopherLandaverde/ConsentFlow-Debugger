@@ -199,14 +199,10 @@ describe("Rules tab", () => {
     assert.deepEqual(modifiers(popup.html("rulesList"), "rule-card"), ["warn", "info", "pass"]);
   });
 
-  test(
-    "lists failed rules first",
-    { todo: "known bug: order[status] || 4 turns fail (0) into 4, so failures sort last" },
-    () => {
-      const popup = show(baseState({ validation: [rule("p", "pass"), rule("w", "warn"), rule("f", "fail")] }));
-      assert.deepEqual(modifiers(popup.html("rulesList"), "rule-card"), ["fail", "warn", "pass"]);
-    },
-  );
+  test("lists failed rules first", () => {
+    const popup = show(baseState({ validation: [rule("p", "pass"), rule("w", "warn"), rule("f", "fail")] }));
+    assert.deepEqual(modifiers(popup.html("rulesList"), "rule-card"), ["fail", "warn", "pass"]);
+  });
 
   test("escapes rule text", () => {
     const popup = show(baseState({ validation: [rule("a", "fail", { detail: 'CMP (<b>"x"</b>)' })] }));
