@@ -160,6 +160,22 @@ describe("dataLayer interception", () => {
     assert.equal(types(page).filter((t) => t === "datalayer_event").length, 1);
   });
 
+  test("records a different entry pushed while a replacement push is forwarding", () => {
+    // A replacement push that emits its own event while handling another must not lose it.
+    const page = loadPage();
+    const dl = page.window.dataLayer;
+    const previous = dl.push;
+    dl.push = function (entry) {
+      if (entry && entry.event === "outer") previous.call(dl, { event: "nested" });
+      return previous.apply(dl, arguments);
+    };
+    page.push({ event: "outer" });
+    const names = page.debugState().timeline
+      .filter((e) => e.type === "datalayer_event")
+      .map((e) => e.detail.event);
+    assert.deepEqual(names.sort(), ["nested", "outer"]);
+  });
+
   test("passes pushes through to the real array", () => {
     const page = loadPage();
     page.push({ event: "a" }, { event: "b" });
@@ -244,6 +260,30 @@ describe("config call capture", () => {
     page.gtag("config", "G-LATE");
     assert.deepEqual(calls, [["config", "G-LATE"]]);
     assert.ok(page.debugState().configCalls.some((c) => c.id === "G-LATE"));
+  });
+
+  test("records config once when the page defines the standard gtag snippet", () => {
+    // The real snippet: function gtag(){dataLayer.push(arguments);} — the call reaches
+    // dataLayer, so the gtag wrapper must not record it a second time.
+    const page = loadPage();
+    page.window.gtag = function () {
+      page.window.dataLayer.push(arguments);
+    };
+    page.gtag("config", "G-SNIPPET");
+    assert.deepEqual(
+      page.debugState().configCalls.map((c) => c.id),
+      ["G-SNIPPET"],
+    );
+  });
+
+  test("still records a custom gtag that never pushes to dataLayer", () => {
+    const page = loadPage();
+    page.window.gtag = function () {};
+    page.gtag("config", "G-CUSTOM");
+    assert.deepEqual(
+      page.debugState().configCalls.map((c) => c.id),
+      ["G-CUSTOM"],
+    );
   });
 
   test("records a single config call made through the gtag trap once", () => {
