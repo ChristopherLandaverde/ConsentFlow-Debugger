@@ -189,10 +189,8 @@
     } else {
       // gtag doesn't exist yet — create a trap that records calls
       // When GTM creates the real gtag, it replays through dataLayer,
-      // which we already intercept. But direct gtag() calls before
-      // GTM loads need to be captured.
+      // which we already intercept, including calls made before GTM loads.
       window.gtag = function () {
-        captureGtagCall(arguments);
         window.dataLayer.push(arguments);
       };
     }
