@@ -15,5 +15,7 @@ export function loadFindings() {
     buildFindings: (state) => plain(api.buildFindings(state)),
     computeVerdict: (state) => plain(api.computeVerdict(state)),
     tagCopy: (impact, state) => plain(api.tagCopy(impact, state)),
+    badgeText: (count) => api.badgeText(count),
+    badgeFor: (verdict) => plain(api.badgeFor(verdict)),
   };
 }
