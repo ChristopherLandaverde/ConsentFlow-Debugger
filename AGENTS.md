@@ -45,8 +45,8 @@ plus `npm audit --audit-level=moderate`.
   `window.postMessage` with `source: 'cf-debug-injected'` / `'cf-debug-content'`; a test
   enforces this boundary. Don't expose extension APIs to the page.
 - `background.js` only injects `content.js` on demand. `popup/` renders state and escapes
-  page-derived text with `esc()` before inserting HTML. Escape anything new you render; one
-  known gap (consent values in the `cs-row` class attribute) is a `todo` test.
+  page-derived text with `esc()` before inserting HTML, including inside attributes. Escape
+  anything new you render.
 - The extension makes no network requests and stores nothing. Keep it that way; any change
   to permissions or data handling needs a `needs-decision` issue.
 - Plain ES5/ES2017-style scripts, no modules, no bundler, no dependencies in the extension.
@@ -69,9 +69,8 @@ keep the extension files loadable that way: plain scripts, browser globals only.
 - Change behavior in `injected.js` or the popup: add or update a test in the matching
   `tests/*.test.mjs` file. Assert on observable output (`window.__cfDebug`, the `get-state`
   reply, rendered HTML), not on internals.
-- `todo` tests record known bugs whose fix changes what users see (sort order, a duplicate
-  config event, an unescaped attribute). Fixing one means removing its `todo` flag; that is a
-  user-visible change, so it goes to Christopher's review.
+- A known bug can be recorded as a `node:test` `todo` test until it is fixed; fixing it means
+  removing the flag. There are none today.
 - Not covered: `content.js` / `background.js` relaying and real Chrome. For changes there,
   load the extension unpacked, check real pages with and without Consent Mode, and say in the
   PR what you checked.

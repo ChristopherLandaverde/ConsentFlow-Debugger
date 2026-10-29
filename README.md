@@ -243,10 +243,7 @@ so race-condition timings are exact. What is covered:
 | `tests/popup.test.mjs` | Fetching state (including the inject-and-retry path), header and scorecard counts, the Flow, Rules, Network and State tabs, verdict labels and the implementation grade, the review button, HTML escaping, and one page-to-popup run that feeds `injected.js` output into the popup |
 | `tests/static-validation.test.mjs` | The `postMessage` boundary in `content.js`, landing-page checks and a committed-secret scan |
 
-A few tests are marked `todo`: they describe intended behavior the code doesn't have yet
-(failed rules and violations should sort first in the popup; a `gtag('config')` call is
-recorded twice when the page had no `gtag`; consent values reach a class attribute
-unescaped). They are reported in the test output but don't fail the run.
+Every test runs as a real assertion; there are no `todo` or skipped tests.
 
 `npm run validate` confirms the extension and website files exist, that `manifest.json`
 declares a content script, and that every JavaScript file passes `node --check`.
