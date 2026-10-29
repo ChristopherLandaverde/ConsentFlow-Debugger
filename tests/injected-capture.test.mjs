@@ -190,6 +190,7 @@ describe("config call capture", () => {
     });
     page.gtag("config", "G-OWN");
     assert.deepEqual(calls, [["config", "G-OWN"]]);
+    assert.equal(page.debugState().configCalls.length, 1);
     assert.deepEqual(
       page.debugState().configCalls.map((c) => c.id),
       ["G-OWN"],
@@ -207,15 +208,11 @@ describe("config call capture", () => {
     assert.ok(page.debugState().configCalls.some((c) => c.id === "G-LATE"));
   });
 
-  test(
-    "records a single config call made through the gtag trap once",
-    { todo: "known bug: the trap records it from gtag() and again from its dataLayer push" },
-    () => {
-      const page = loadPage();
-      page.gtag("config", "G-ONCE");
-      assert.equal(page.debugState().configCalls.length, 1);
-    },
-  );
+  test("records a single config call made through the gtag trap once", () => {
+    const page = loadPage();
+    page.gtag("config", "G-ONCE");
+    assert.equal(page.debugState().configCalls.length, 1);
+  });
 
   test("forwards trap gtag() calls to dataLayer when the page has no gtag yet", () => {
     const page = loadPage();

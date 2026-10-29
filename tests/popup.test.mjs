@@ -199,14 +199,10 @@ describe("Rules tab", () => {
     assert.deepEqual(modifiers(popup.html("rulesList"), "rule-card"), ["warn", "info", "pass"]);
   });
 
-  test(
-    "lists failed rules first",
-    { todo: "known bug: order[status] || 4 turns fail (0) into 4, so failures sort last" },
-    () => {
-      const popup = show(baseState({ validation: [rule("p", "pass"), rule("w", "warn"), rule("f", "fail")] }));
-      assert.deepEqual(modifiers(popup.html("rulesList"), "rule-card"), ["fail", "warn", "pass"]);
-    },
-  );
+  test("lists failed rules first", () => {
+    const popup = show(baseState({ validation: [rule("p", "pass"), rule("w", "warn"), rule("f", "fail")] }));
+    assert.deepEqual(modifiers(popup.html("rulesList"), "rule-card"), ["fail", "warn", "pass"]);
+  });
 
   test("escapes rule text", () => {
     const popup = show(baseState({ validation: [rule("a", "fail", { detail: 'CMP (<b>"x"</b>)' })] }));
@@ -341,14 +337,10 @@ describe("State tab", () => {
     ]);
   });
 
-  test(
-    "lists violations first",
-    { todo: "known bug: verdictOrder[verdict] || 5 turns violation (0) into 5, so violations sort last" },
-    () => {
-      const popup = show(baseState({ tagImpact: [impact("A", "firing"), impact("B", "violation")] }));
-      assert.deepEqual(texts(popup.html("tagImpact"), "ti-name"), ["B", "A"]);
-    },
-  );
+  test("lists violations first", () => {
+    const popup = show(baseState({ tagImpact: [impact("A", "firing"), impact("B", "violation")] }));
+    assert.deepEqual(texts(popup.html("tagImpact"), "ti-name"), ["B", "A"]);
+  });
 
   const grades = [
     [["violation", "firing"], "CRITICAL", "critical"],
@@ -371,14 +363,10 @@ describe("State tab", () => {
     assert.match(popup.html("tagImpact"), /No tracking tags detected/);
   });
 
-  test(
-    "keeps page-controlled consent values out of HTML attributes",
-    { todo: "known issue: the consent value is escaped as text but inserted raw into the cs-row class attribute" },
-    () => {
-      const popup = show(baseState({ currentConsent: { ad_storage: 'x"><a href="https://evil.example">' } }));
-      assert.doesNotMatch(popup.html("consentGrid"), /<a href/);
-    },
-  );
+  test("keeps page-controlled consent values out of HTML attributes", () => {
+    const popup = show(baseState({ currentConsent: { ad_storage: '" onmouseover="x' } }));
+    assert.doesNotMatch(popup.html("consentGrid"), /class="[^"]*"\s+onmouseover=/);
+  });
 });
 
 describe("review call to action", () => {
