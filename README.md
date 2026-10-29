@@ -131,7 +131,7 @@ release yet, install from source.
 3. Use the four tabs:
    - **Flow**: the timeline of consent defaults, consent updates, `config` calls, GTM load and
      vendor requests, with millisecond timestamps.
-   - **Rules**: the seven validation rules, failures first.
+   - **Rules**: the seven validation rules with their status and an explanation.
    - **Network**: captured vendor requests with decoded GCS, GCD and NPA.
    - **State**: current consent values, detected CMP, implementation grade and tag verdicts.
 4. Interact with the consent banner (accept, reject, customise) and watch the popup. It
@@ -208,25 +208,34 @@ Requires Node.js 22 (the version CI uses). There are no runtime or dev dependenc
 
 ```bash
 npm ci --ignore-scripts
-npm test           # node --test tests/static-validation.test.mjs
+npm test           # node --test "tests/*.test.mjs"
 npm run validate   # node scripts/validate.mjs
 ```
 
-What these check today:
+`npm test` runs the real `injected.js` and `popup/popup.js` inside `node:vm` contexts with
+a small stand-in for the page (`tests/helpers/page.mjs`) and for the popup's DOM and the
+`chrome` API (`tests/helpers/popup-dom.mjs`). The test controls the clock and the timers,
+so race-condition timings are exact. What is covered:
 
-- `npm run validate` confirms the extension and website files exist, that `manifest.json`
-  declares a content script, and that every JavaScript file passes `node --check` (syntax
-  only).
-- `npm test` runs `tests/static-validation.test.mjs`: static checks on source text. One test
-  covers the extension (the content script talks to the page only through `postMessage`); the
-  rest cover the landing page (GTM container, smoke form, measurement playground, checklist
-  PDF, page size) and scan the tree for committed secrets.
+| File | Behavior tested |
+|---|---|
+| `tests/injected-capture.test.mjs` | Consent `default` / `update` capture via `gtag()`, array and arguments-object pushes, entries already in `dataLayer`, first-default-wins, update-before-default, GTM replacing `dataLayer.push`, a page replacing `gtag`, config calls, `gtm.js` and other events |
+| `tests/injected-signals.test.mjs` | GCS, GCD and NPA decoding, `tid` / `en`, capture through `fetch`, `sendBeacon` and `XMLHttpRequest` (calls passed through unchanged), vendor attribution, non-vendor requests ignored |
+| `tests/injected-rules.test.mjs` | All seven validation rules (pass, fail, warn, info cases), the default-before-config race, CMP and tag detection, the five tag verdicts, the `get-state` message and the 300/200 export limits |
+| `tests/popup.test.mjs` | Fetching state (including the inject-and-retry path), header and scorecard counts, the Flow, Rules, Network and State tabs, verdict labels and the implementation grade, the review button, HTML escaping, and one page-to-popup run that feeds `injected.js` output into the popup |
+| `tests/static-validation.test.mjs` | The `postMessage` boundary in `content.js`, landing-page checks and a committed-secret scan |
 
-The other test scripts in `package.json` (`test:architecture`, `test:integration`, `test:e2e`,
-`test:performance`, `lint:security`) currently run that same file, and so do the CI jobs named
-after them. There are no behavioral tests yet for consent capture, GCS/GCD decoding, the
-validation rules or the popup; they are in progress. Until then, test changes by loading the
-extension unpacked and checking it against real pages with and without Consent Mode.
+A few tests are marked `todo`: they describe intended behavior the code doesn't have yet
+(failed rules and violations should sort first in the popup; a `gtag('config')` call is
+recorded twice when the page had no `gtag`; consent values reach a class attribute
+unescaped). They are reported in the test output but don't fail the run.
+
+`npm run validate` confirms the extension and website files exist, that `manifest.json`
+declares a content script, and that every JavaScript file passes `node --check`.
+
+Not covered by automated tests: `content.js` and `background.js` message relaying, real
+Chrome behavior (loading at `document_start`, the popup's layout and CSS) and real sites.
+Check those by loading the extension unpacked and trying pages with and without Consent Mode.
 
 ## Contributing
 
@@ -235,7 +244,8 @@ Issues and pull requests are welcome.
 1. Fork the repo and create a branch from `main`.
 2. Make your change. Keep the page-context / content-script boundary: `content.js` must talk
    to `injected.js` only through `window.postMessage`.
-3. Run `npm ci --ignore-scripts && npm test && npm run validate`.
+3. Run `npm ci --ignore-scripts && npm test && npm run validate`, and add or update tests
+   in `tests/` for behavior you change.
 4. Load the extension unpacked, reload it after each change, and check it on a real page.
    Mention in the PR which sites or scenarios you tried.
 5. Open a pull request describing what changed and why.
