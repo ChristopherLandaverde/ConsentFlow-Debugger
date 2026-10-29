@@ -25,13 +25,13 @@ outgoing Google requests, and flags race conditions, missing defaults and tags t
 requests while their consent is denied. All analysis happens in your browser.
 
 <p align="center">
-  <img src="docs/media/popup-broken.png" width="380" alt="The ConsentFlow popup on a local test page with sample data: the verdict reads 2 consent problems on this page, and the first finding, Google tag configured before the consent default, shows what was observed, why it matters, two fix steps and how to verify">
-  <img src="docs/media/popup-not-enough-data.png" width="380" alt="The ConsentFlow popup on a local test page with consent defaults and no Google requests yet: the verdict reads Not enough data yet, 5 of 9 checks ran and passed, and lists the checks that still need a banner choice or a Google request">
+  <img src="docs/media/popup-broken.png" width="380" alt="ConsentFlow popup captured on a local fixture that loads Google's real gtag.js: BROKEN verdict with two consent problems, and the first finding shows the observed timing, consequence, fix and verification step">
+  <img src="docs/media/popup-verified.png" width="380" alt="ConsentFlow popup captured on a local verified fixture: the verdict says consent is wired correctly, with all nine checks passed">
 </p>
 
 <p align="center">
-  <img src="docs/media/demo.gif" width="960" alt="The GA4 training demo after Deny All is selected, followed by the earlier four-tab ConsentFlow popup opening and switching from Flow to Rules">
-  <br><sub>The recording shows the earlier four-tab popup; the screenshots above show the current one.</sub>
+  <img src="docs/media/demo.gif" width="960" alt="Real Chromium captures of the local fixture loading, the ConsentFlow popup showing its BROKEN verdict and top finding fix, the Open full trace control, and the side panel timeline and requests">
+  <br><sub>The GIF follows the local broken fixture from page load through the popup to the side panel. The popup is shown at 380 px and the side panel at about 400 px wide.</sub>
 </p>
 
 **Quick start** (Chrome, no build step; details under [Install](#install)):
