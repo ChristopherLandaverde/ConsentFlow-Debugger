@@ -66,7 +66,7 @@
       reason: 'No Google request with a consent signal yet.',
       consequence: 'What consent Google was told cannot be compared with the page yet.',
       fix: ['Browse the page or reload it, then reopen ConsentFlow.'],
-      verify: 'Requests to google-analytics.com or doubleclick.net appear with their `gcs` value.',
+      verify: 'Requests to google-analytics.com or doubleclick.net appear with their `gcs` value, the consent state each request carries.',
       evidence: { label: 'Google requests with gcs', value: '0 captured' }
     }
   };
@@ -243,7 +243,7 @@
       if (r.status === 'pass') {
         return {
           title: 'Google requests match the consent on the page',
-          observed: plural(d.checked, 'Google request') + ' checked; each `gcs` value matched consent when sent.',
+          observed: plural(d.checked, 'Google request') + ' checked; each `gcs` value (the consent state a request carries) matched consent when sent.',
           consequence: 'Google receives the same consent the visitor gave on the page.',
           fix: ['Nothing to change.'],
           verify: 'Choose in the banner and reopen ConsentFlow; this check should still pass.',
@@ -425,7 +425,7 @@
         consequence: CONSEQUENCE_BY_TYPE[t.type] || CONSEQUENCE_BY_TYPE.advertising,
         fix: isGoogle
           ? ['For basic Consent Mode, add `Require additional consent` for ' + codeList(types) + ' on the tag in GTM.',
-             'For advanced Consent Mode, confirm each request sends `gcs=G100` while consent is denied.']
+             'For advanced Consent Mode, confirm each request carries `gcs=G100` (consent state: both denied) while consent is denied.']
           : ['In GTM, open the ' + t.name + ' tag and add `Require additional consent` for ' + codeList(types) + '.',
              "Or fire it on your CMP's consent-granted event instead of All Pages."],
         verify: 'Reject the banner and reload. No requests to ' + host + ' should appear before you accept.',
