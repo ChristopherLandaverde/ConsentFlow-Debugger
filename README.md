@@ -14,6 +14,10 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/ChristopherLandaverde/ConsentFlow-Debugger?color=036461" alt="License: MIT"></a>
 </p>
 
+<p align="center">
+  <a href="#install">Install</a> · <a href="#how-to-use">How to use</a> · <a href="#what-it-detects">What it detects</a> · <a href="#privacy-and-permissions">Privacy</a> · <a href="https://consentflow-psi.vercel.app">Landing page</a>
+</p>
+
 ConsentFlow Debugger is a free, open-source Chrome extension (Manifest V3) for analytics
 engineers, QA and consultants who need to check a Google Consent Mode v2 implementation on a
 live page. It records the consent commands a page issues, decodes the consent signals in
@@ -21,87 +25,20 @@ outgoing Google requests, and flags race conditions, missing defaults and tags t
 requests while their consent is denied. All analysis happens in your browser.
 
 <p align="center">
-  <img src="docs/media/ga4-demo-flow.png" width="460" alt="ConsentFlow Debugger on the GA4 All-in-One training demo, showing denied consent defaults and a captured Google tag configuration">
-  <img src="docs/media/consent-studio-rules.png" width="460" alt="ConsentFlow Debugger on consent.studio, showing a denied default and passing Consent Mode v2 validation rules">
+  <img src="docs/media/popup-broken.png" width="380" alt="The ConsentFlow popup on a local test page with sample data: the verdict reads 2 consent problems on this page, and the first finding, Google tag configured before the consent default, shows what was observed, why it matters, two fix steps and how to verify">
+  <img src="docs/media/popup-not-enough-data.png" width="380" alt="The ConsentFlow popup on a local test page with consent defaults and no Google requests yet: the verdict reads Not enough data yet, 5 of 9 checks ran and passed, and lists the checks that still need a banner choice or a Google request">
 </p>
 
 <p align="center">
-  <img src="docs/media/demo.gif" width="960" alt="The GA4 training demo after Deny All is selected, followed by the ConsentFlow popup opening and switching from Flow to Rules">
+  <img src="docs/media/demo.gif" width="960" alt="The GA4 training demo after Deny All is selected, followed by the earlier four-tab ConsentFlow popup opening and switching from Flow to Rules">
+  <br><sub>The recording shows the earlier four-tab popup; the screenshots above show the current one.</sub>
 </p>
 
-## What it detects
+**Quick start** (Chrome, no build step; details under [Install](#install)):
 
-**Consent Mode commands.** Every `consent` `default` and `update` command that reaches
-`dataLayer`, whether pushed directly or through `gtag()`, in both array and arguments-object
-form, including entries already in `dataLayer` before the extension's script ran. Each one is
-timestamped and the merged current consent state is shown.
-
-**Race conditions.** Three kinds:
-
-- The first `gtag('config', ...)` call compared with the consent default. If config comes
-  first, the rule fails and reports how many milliseconds late the default was.
-- A consent `update` captured before any `default` (or an update on a page with no default at
-  all). The rule fails: a default processed after an update can override the choice the user
-  already made, and tags that fire before the default run with implicit `granted` consent.
-- Requests sent before consent. Each captured request records the consent state at the moment
-  it was sent, from the captured consent timeline and, for Google requests, from the request's
-  own `gcs` / `gcd`. A request sent while a consent type its tag needs was `denied` counts as a
-  violation even if consent was granted later.
-
-**GCS / GCD signals.** For requests to Google endpoints (Google Analytics, Google Tag Manager,
-Google Ads, DoubleClick, Google Syndication), the `gcs` parameter is decoded into
-`analytics_storage` / `ad_storage`, the `gcd` parameter into `ad_storage`,
-`analytics_storage`, `ad_user_data` and `ad_personalization` with default/update source, and
-`npa` into personalized / non-personalized. The tracking ID (`tid`) and GA4 event name (`en`)
-are shown too.
-
-**Validation rules.** Eight checks, each reported as pass, fail, warn or info with an explanation:
-
-| Rule | Checks |
-|---|---|
-| Consent Default Exists | A `consent` `default` command is present |
-| Default Before Config | The default precedes the first `config` call (race condition) |
-| Consent Mode v2 Types | The default declares `ad_user_data` and `ad_personalization` |
-| `wait_for_update` Configured | When a CMP is detected, the default sets `wait_for_update` |
-| Consent Update Received | At least one `consent` `update` arrived |
-| GCS Signal Consistency | Each decoded `gcs` value matches the consent state at the moment the request was sent |
-| No Duplicate Defaults | Only one `consent` `default` was issued |
-| Default Before Update | No `consent` `update` arrived before the default (race condition) |
-
-**Tags and tag firing violations.** Detects ten tags from page globals and script URLs (Google
-Analytics 4, Google Tag Manager, Google Ads, Meta/Facebook Pixel, LinkedIn Insight, TikTok
-Pixel, Hotjar, Microsoft Clarity, Pinterest Tag, Snapchat Pixel). Each tag is mapped to the
-consent types it needs and to the requests captured for its vendor, then given a verdict. A
-tag card shows how many of its requests were sent while required consent was denied:
-
-| Verdict | Meaning |
-|---|---|
-| `VIOLATION` | At least one request to the vendor was sent while a required consent type was `denied` at that moment, even if consent was granted later |
-| `BLOCKED` | A required consent type is `denied` now and no request was sent while it was denied |
-| `FIRING` | None of its required consent types is `denied`, and requests were captured, all sent after consent |
-| `IDLE` | None of its required consent types is `denied`, and no requests were captured yet |
-| `NO CONSENT MODE` | The page has no consent default at all |
-
-An overall grade (Critical, Not implemented, Partial, Good) summarises the verdicts.
-
-**Consent management platforms.** Cookiebot, OneTrust, IAB TCF (`__tcfapi`), CookieYes,
-CookieConsent, Osano, Klaro and Cookie Information by their globals, plus Usercentrics and
-iubenda by script URL.
-
-### Known limits
-
-- Requests are captured only when made through `fetch`, `XMLHttpRequest` or
-  `navigator.sendBeacon`. Image pixels and script loads are not seen, so a vendor that only
-  uses `<img>` beacons can show as `IDLE` or `BLOCKED` while it is in fact sending data.
-- Any request to a vendor sent while a required consent type was denied counts toward
-  `VIOLATION`, including Google's cookieless pings under advanced Consent Mode (a request whose
-  own `gcs` reports the type as denied). Check the request's GCS/GCD in the Network tab before
-  treating such a violation as data collected without consent.
-- Only the top-level frame is inspected; iframes are not.
-- State is kept per page load. Reload the page to start a fresh capture.
-- If a tab was already open when the extension was installed or reloaded, the content script
-  is injected on demand but misses everything that happened earlier. Reload the tab.
-- The timeline keeps the latest 300 events and the latest 200 network requests.
+1. `git clone https://github.com/ChristopherLandaverde/ConsentFlow-Debugger.git`
+2. In `chrome://extensions/`, turn on Developer mode, click **Load unpacked** and pick the cloned folder.
+3. Reload a page that uses Google Consent Mode and click the ConsentFlow icon. The first line is the verdict.
 
 ## Install
 
@@ -140,20 +77,105 @@ release yet, install from source.
 
 1. Open (or reload) the page you want to check. The extension starts capturing at
    `document_start`, before Google Tag Manager loads, so a reload gives the complete picture.
-2. Click the ConsentFlow Debugger icon. The header shows the number of failed rules or warnings,
-   and a scorecard shows rules passed, tags detected, requests captured and the detected CMP.
-3. Use the four tabs:
-   - **Flow**: the timeline of consent defaults, consent updates, `config` calls, GTM load and
-     vendor requests, with millisecond timestamps.
-   - **Rules**: the eight validation rules with their status and an explanation.
-   - **Network**: captured vendor requests with decoded GCS, GCD and NPA, and the consent state
-     when each request was sent.
-   - **State**: current consent values, detected CMP, implementation grade and tag verdicts.
-4. Interact with the consent banner (accept, reject, customise) and watch the popup. It
-   refreshes every 4 seconds; **Refresh** fetches immediately.
+   No page of your own handy? The landing page's [measurement test section](https://consentflow-psi.vercel.app/#measurement-playground)
+   loads a disposable GTM container.
+2. Click the ConsentFlow Debugger icon. The popup shows, top to bottom:
+   - **The verdict**: one sentence with its status, `× BROKEN`, `! REVIEW`, `– INCOMPLETE` or
+     `✓ VERIFIED`. With too little data it says "Not enough data yet." and names the next step.
+   - **Problems**, most severe first, each with what was observed, why it matters, how to fix
+     it and how to verify the fix. **Show evidence** lists the timings, requests and values
+     behind it.
+   - **Checks that need more data**, with what each needs and what to do next.
+   - **Passed checks**, collapsed into one row.
+   - **Reload and recheck**, which reloads the tab and captures from the start.
+   - **Show captured data**: the current consent state and CMP, the timeline of consent
+     commands, `config` calls, GTM load and vendor requests (in ms after page start), and each
+     request's decoded consent next to the consent on the page when it was sent.
+3. Interact with the consent banner (accept, reject, customise). The click closes the popup;
+   reopen it to see the result. While open, it refreshes every 4 seconds without collapsing
+   what you expanded.
 
-When there are failures or warnings, the popup shows a "Book a free 30-min review" button.
-Clicking it opens `https://focosys.io/review` in a new tab; no page data is sent with it.
+When something is broken or needs review, a "Discuss a system review ↗" link appears below
+everything else. Clicking it opens `https://focosys.io/review` in a new tab; no page data is
+sent with it.
+
+## What it detects
+
+**Consent Mode commands.** Every `consent` `default` and `update` command that reaches
+`dataLayer`, whether pushed directly or through `gtag()`, in both array and arguments-object
+form, including entries already in `dataLayer` before the extension's script ran. Each one is
+timestamped and the merged current consent state is shown.
+
+**Race conditions.** Three kinds:
+
+- The first `gtag('config', ...)` call compared with the consent default. If config comes
+  first, the rule fails and reports how many milliseconds late the default was.
+- A consent `update` captured before any `default` (or an update on a page with no default at
+  all). The rule fails: a default processed after an update can override the choice the user
+  already made, and tags that fire before the default run with implicit `granted` consent.
+- Requests sent before consent. Each captured request records the consent state at the moment
+  it was sent, from the captured consent timeline and, for Google requests, from the request's
+  own `gcs` / `gcd`. A request sent while a consent type its tag needs was `denied` counts as a
+  violation even if consent was granted later.
+
+**GCS / GCD signals.** For requests to Google endpoints (Google Analytics, Google Tag Manager,
+Google Ads, DoubleClick, Google Syndication), the `gcs` parameter is decoded into
+`analytics_storage` / `ad_storage`, the `gcd` parameter into `ad_storage`,
+`analytics_storage`, `ad_user_data` and `ad_personalization` with default/update source, and
+`npa` into personalized / non-personalized. The tracking ID (`tid`) and GA4 event name (`en`)
+are shown too.
+
+**Validation rules.** Eight checks, each reported as pass, fail, warn or not checked. A check
+that lacked the data it needs (no `config` call, no consent update, no Google request with a
+`gcs` value, no consent default, or no supported CMP) is reported as not checked with the
+reason, never as a pass:
+
+| Rule | Checks |
+|---|---|
+| Consent Default Exists | A `consent` `default` command is present |
+| Default Before Config | The default precedes the first `config` call (race condition) |
+| Consent Mode v2 Types | The default declares `ad_user_data` and `ad_personalization` |
+| `wait_for_update` Configured | When a CMP is detected, the default sets `wait_for_update` |
+| Consent Update Received | At least one `consent` `update` arrived |
+| GCS Signal Consistency | Each decoded `gcs` value matches the consent state at the moment the request was sent |
+| No Duplicate Defaults | Only one `consent` `default` was issued |
+| Default Before Update | No `consent` `update` arrived before the default (race condition) |
+
+**Tags and tag firing violations.** Detects ten tags from page globals and script URLs (Google
+Analytics 4, Google Tag Manager, Google Ads, Meta/Facebook Pixel, LinkedIn Insight, TikTok
+Pixel, Hotjar, Microsoft Clarity, Pinterest Tag, Snapchat Pixel). Each tag is mapped to the
+consent types it needs and to the requests captured for its vendor, then given a verdict. Each
+tag finding says how many of its requests were sent while required consent was denied:
+
+| Verdict | Meaning |
+|---|---|
+| `VIOLATION` | At least one request to the vendor was sent while a required consent type was `denied` at that moment, even if consent was granted later |
+| `BLOCKED` | A required consent type is `denied` now and no request was sent while it was denied |
+| `FIRING` | None of its required consent types is `denied`, and requests were captured, all sent after consent |
+| `IDLE` | None of its required consent types is `denied`, and no requests were captured yet |
+| `NO CONSENT MODE` | The page has no consent default at all |
+
+In the popup, `VIOLATION` is a broken finding, `BLOCKED` and `FIRING` count as passed checks,
+`IDLE` is not checked yet, and `NO CONSENT MODE` is reported inside the missing-default finding.
+
+**Consent management platforms.** Cookiebot, OneTrust, IAB TCF (`__tcfapi`), CookieYes,
+CookieConsent, Osano, Klaro and Cookie Information by their globals, plus Usercentrics and
+iubenda by script URL.
+
+### Known limits
+
+- Requests are captured only when made through `fetch`, `XMLHttpRequest` or
+  `navigator.sendBeacon`. Image pixels and script loads are not seen, so a vendor that only
+  uses `<img>` beacons can show as `IDLE` or `BLOCKED` while it is in fact sending data.
+- Any request to a vendor sent while a required consent type was denied counts toward
+  `VIOLATION`, including Google's cookieless pings under advanced Consent Mode (a request whose
+  own `gcs` reports the type as denied). Check the request's `gcs` under **Show captured data** before
+  treating such a violation as data collected without consent.
+- Only the top-level frame is inspected; iframes are not.
+- State is kept per page load. Reload the page to start a fresh capture.
+- If a tab was already open when the extension was installed or reloaded, the content script
+  is injected on demand but misses everything that happened earlier. Reload the tab.
+- The timeline keeps the latest 300 events and the latest 200 network requests.
 
 ## Privacy and permissions
 
@@ -192,7 +214,8 @@ vulnerability privately.
 | `injected.js` | Page context | Capture engine. Wraps `dataLayer.push`, `gtag`, `fetch`, `XMLHttpRequest`, `sendBeacon`; decodes GCS/GCD; detects CMPs and tags; runs the validation rules (500 ms after DOMContentLoaded, then every 3 s); computes tag verdicts. |
 | `content.js` | Content script (isolated world), `document_start` | Injects `injected.js`, caches the latest state it posts, and answers the popup's `getState` and `ping` messages. |
 | `background.js` | Service worker | On request from the popup, injects `content.js` into a tab that doesn't have it yet. |
-| `popup/` | Extension popup | Requests state from the active tab every 4 s and renders the scorecard and the Flow, Rules, Network and State tabs. |
+| `popup/findings.js` | Extension popup | Turns the state into findings (observed, consequence, fix, verify, evidence) and one verdict. |
+| `popup/popup.js` | Extension popup | Requests state from the active tab every 4 s and renders the verdict, findings and captured data. Fonts are bundled in `popup/fonts/` (SIL Open Font License 1.1). |
 
 ```mermaid
 sequenceDiagram
@@ -230,7 +253,7 @@ npm test           # node --test "tests/*.test.mjs"
 npm run validate   # node scripts/validate.mjs
 ```
 
-`npm test` runs the real `injected.js` and `popup/popup.js` inside `node:vm` contexts with
+`npm test` runs the real `injected.js`, `popup/findings.js` and `popup/popup.js` inside `node:vm` contexts with
 a small stand-in for the page (`tests/helpers/page.mjs`) and for the popup's DOM and the
 `chrome` API (`tests/helpers/popup-dom.mjs`). The test controls the clock and the timers,
 so race-condition timings are exact. What is covered:
@@ -239,8 +262,9 @@ so race-condition timings are exact. What is covered:
 |---|---|
 | `tests/injected-capture.test.mjs` | Consent `default` / `update` capture via `gtag()`, array and arguments-object pushes, entries already in `dataLayer`, first-default-wins, update-before-default, GTM replacing `dataLayer.push`, a page replacing `gtag`, config calls, `gtm.js` and other events |
 | `tests/injected-signals.test.mjs` | GCS, GCD and NPA decoding, `tid` / `en`, capture through `fetch`, `sendBeacon` and `XMLHttpRequest` (calls passed through unchanged), vendor attribution, non-vendor requests ignored |
-| `tests/injected-rules.test.mjs` | All eight validation rules (pass, fail, warn, info cases), the default-before-config and update-before-default races, CMP and tag detection, the five tag verdicts judged by consent at the time of each request, the `get-state` message and the 300/200 export limits |
-| `tests/popup.test.mjs` | Fetching state (including the inject-and-retry path), header and scorecard counts, the Flow, Rules, Network and State tabs, verdict labels and the implementation grade, the review button, HTML escaping, and one page-to-popup run that feeds `injected.js` output into the popup |
+| `tests/injected-rules.test.mjs` | All eight validation rules (pass, fail, warn, not checked cases), the default-before-config and update-before-default races, CMP and tag detection, the five tag verdicts judged by consent at the time of each request, the `get-state` message and the 300/200 export limits |
+| `tests/findings.test.mjs` | The verdict for every state (including "Not enough data yet" with zero Google requests), finding order, and the copy model: every rule status and tag verdict has observed, consequence, fix, verify and evidence, with a copy lint |
+| `tests/popup.test.mjs` | Fetching state (including the inject-and-retry path), loading, error and content states, the verdict, findings, disclosures, the review link, live refresh keeping expanded items, scroll and focus, captured data, HTML escaping, and page-to-popup runs that feed `injected.js` output into the popup |
 | `tests/static-validation.test.mjs` | The `postMessage` boundary in `content.js`, landing-page checks and a committed-secret scan |
 
 Every test runs as a real assertion; there are no `todo` or skipped tests.
@@ -250,7 +274,8 @@ declares a content script, and that every JavaScript file passes `node --check`.
 
 Not covered by automated tests: `content.js` and `background.js` message relaying, real
 Chrome behavior (loading at `document_start`, the popup's layout and CSS) and real sites.
-Check those by loading the extension unpacked and trying pages with and without Consent Mode.
+Check those by loading the extension unpacked and trying pages with and without Consent Mode;
+`tests/fixtures/popup-states.html` is a local page that produces each popup state.
 
 ## Contributing
 

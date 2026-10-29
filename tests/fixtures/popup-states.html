@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ConsentFlow popup states fixture</title>
+  <!--
+    Local test page for checking the popup in real Chrome. Serve this folder over http
+    (content scripts don't run on file://), load the extension unpacked, open
+    http://localhost:<port>/popup-states.html?s=<scenario> and open the popup.
+
+    Scenarios: none, zero, broken, review, verified, slow.
+    Requests go to the real vendor hosts; they are captured before they are sent, so it
+    doesn't matter whether they succeed. Timers space the commands out, because the
+    extension's capture script loads asynchronously at document_start.
+  -->
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    var scenario = new URLSearchParams(location.search).get('s') || 'none';
+    var DENIED = { ad_storage: 'denied', analytics_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' };
+    function at(ms, fn) { setTimeout(fn, ms); }
+    function send(url) { try { fetch(url, { mode: 'no-cors', keepalive: true }).catch(function () {}); } catch (e) {} }
+    var GA4 = 'https://region1.google-analytics.com/g/collect?v=2&tid=G-FIXTURE';
+
+    if (scenario === 'none') {
+      at(100, function () { gtag('config', 'G-FIXTURE'); });
+      at(300, function () { send(GA4 + '&en=page_view'); });
+      window.fbq = function () {};
+      at(400, function () { send('https://www.facebook.com/tr?id=1&ev=PageView'); });
+    }
+    if (scenario === 'zero') {
+      at(100, function () { gtag('consent', 'default', DENIED); });
+      at(150, function () { gtag('config', 'G-FIXTURE'); });
+    }
+    if (scenario === 'broken') {
+      window.fbq = function () {};
+      at(60, function () { gtag('config', 'G-FIXTURE'); });
+      at(390, function () { gtag('consent', 'default', DENIED); });
+      at(450, function () { send('https://www.facebook.com/tr?id=1&ev=PageView'); });
+      at(1200, function () { send('https://www.facebook.com/tr?id=1&ev=ViewContent'); });
+    }
+    if (scenario === 'review') {
+      window.Cookiebot = {};
+      at(60, function () { gtag('consent', 'default', { ad_storage: 'denied', analytics_storage: 'denied' }); });
+      at(120, function () { gtag('config', 'G-FIXTURE'); });
+      at(200, function () { send(GA4 + '&gcs=G100&en=page_view'); });
+      at(700, function () { gtag('consent', 'update', { ad_storage: 'granted', analytics_storage: 'granted' }); });
+    }
+    if (scenario === 'verified') {
+      window.OneTrust = {};
+      at(60, function () { gtag('consent', 'default', Object.assign({ wait_for_update: 500 }, DENIED)); });
+      at(120, function () { gtag('config', 'G-FIXTURE'); });
+      at(700, function () { gtag('consent', 'update', { analytics_storage: 'granted' }); });
+      at(800, function () { send(GA4 + '&gcs=G110&en=page_view'); });
+    }
+  </script>
+  <!-- Tag detection looks for the gtag.js script tag. -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FIXTURE"></script>
+  <script>
+    // slow: hold DOMContentLoaded so the popup shows its loading state.
+    if (scenario === 'slow') document.write('<script src="/slow.js"><\/script>');
+  </script>
+</head>
+<body>
+  <h1>ConsentFlow popup states fixture</h1>
+  <p>Scenario: <code id="scenario"></code></p>
+  <script>document.getElementById('scenario').textContent = scenario;</script>
+</body>
+</html>

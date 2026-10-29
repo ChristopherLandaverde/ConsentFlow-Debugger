@@ -7,83 +7,37 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <!-- Header -->
-  <header>
-    <h1>ConsentFlow Debugger</h1>
-    <div id="headerStatus" class="header-status">Connecting...</div>
+  <header class="bar">
+    <img class="mark" src="../icons/icon-32.png" width="16" height="16" alt="">
+    <span class="product">ConsentFlow</span>
+    <span id="pageMeta" class="bar-meta"></span>
   </header>
 
-  <!-- Scorecard -->
-  <div id="scorecard" class="scorecard">
-    <div class="score-item" id="scoreRules"><span class="score-num">-</span><span class="score-label">Rules</span></div>
-    <div class="score-item" id="scoreTags"><span class="score-num">-</span><span class="score-label">Tags</span></div>
-    <div class="score-item" id="scoreHits"><span class="score-num">-</span><span class="score-label">Hits</span></div>
-    <div class="score-item" id="scoreCMP"><span class="score-num">-</span><span class="score-label">CMP</span></div>
-  </div>
+  <main>
+    <!-- The verdict: one sentence, computed once, feeds every summary on this screen. -->
+    <section id="verdict" class="verdict" data-state="loading" aria-live="polite" aria-atomic="true">
+      <p id="verdictLabel" class="status-tag loading">– READING PAGE</p>
+      <h1 id="verdictTitle" class="verdict-title">Reading this page…</h1>
+      <p id="verdictDetail" class="verdict-detail">Capture starts when the page loads. Results appear in a few seconds.</p>
+      <div id="progress" class="progress" role="progressbar" aria-label="Reading the page"><span></span></div>
+      <button id="errorAction" class="btn primary" type="button" hidden>Reload page</button>
+    </section>
 
-  <!-- Tabs -->
-  <div class="tabs">
-    <button class="tab active" data-tab="flow">Flow</button>
-    <button class="tab" data-tab="rules">Rules</button>
-    <button class="tab" data-tab="network">Network</button>
-    <button class="tab" data-tab="state">State</button>
-  </div>
+    <section id="findings" class="findings" aria-label="Findings" hidden></section>
 
-  <!-- Flow Tab: Consent Timeline -->
-  <div id="flow-tab" class="panel active">
-    <div class="panel-header">
-      <h2>Consent Flow Timeline</h2>
-      <button id="refreshBtn" class="icon-btn" title="Refresh">Refresh</button>
+    <div id="actions" class="actions" hidden>
+      <button id="recheckBtn" class="btn primary" type="button">Reload and recheck</button>
+      <span id="checkedAt" class="meta"></span>
     </div>
-    <div id="timeline" class="timeline">
-      <div class="empty">Waiting for page data...</div>
-    </div>
-  </div>
 
-  <!-- Rules Tab: Validation Results -->
-  <div id="rules-tab" class="panel">
-    <div class="panel-header">
-      <h2>Validation Rules</h2>
-    </div>
-    <div id="rulesList" class="rules-list">
-      <div class="empty">Loading rules...</div>
-    </div>
-  </div>
+    <section id="trace" class="trace" aria-label="Captured on this page" hidden></section>
 
-  <!-- Network Tab: GCS/GCD Decoded Requests -->
-  <div id="network-tab" class="panel">
-    <div class="panel-header">
-      <h2>Google Consent Signals</h2>
-    </div>
-    <div id="networkList" class="network-list">
-      <div class="empty">No Google requests captured yet.</div>
-    </div>
-  </div>
+    <p id="reviewCta" class="review-cta" hidden>
+      Stuck on this? <button id="reviewCtaButton" class="link" type="button">Discuss a system review ↗</button>
+    </p>
+  </main>
 
-  <!-- State Tab: Current Consent State -->
-  <div id="state-tab" class="panel">
-    <div class="panel-header">
-      <h2>Current Consent State</h2>
-    </div>
-    <div id="consentGrid" class="consent-grid"></div>
-    <h3 class="sub-heading">Detected CMP</h3>
-    <div id="cmpInfo" class="cmp-info">None detected</div>
-    <div id="implQuality" class="impl-quality"></div>
-    <h3 class="sub-heading">Tag Impact Analysis</h3>
-    <div id="tagImpact" class="tag-impact-list">
-      <div class="empty">No tags detected.</div>
-    </div>
-  </div>
-
-  <div id="reviewCta" class="review-cta hidden">
-    <div class="review-cta-copy">
-      <div id="reviewCtaLabel" class="review-cta-label">Need help fixing this stack?</div>
-      <div id="reviewCtaText" class="review-cta-text">If the implementation still looks broken after debugging, the issue is usually upstream.</div>
-    </div>
-    <button id="reviewCtaButton" class="review-cta-button">Book a free 30-min review</button>
-  </div>
-
-  <footer>ConsentFlow Debugger v2.0</footer>
+  <script src="findings.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

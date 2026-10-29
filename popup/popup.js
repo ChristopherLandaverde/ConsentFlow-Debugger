@@ -1,55 +1,90 @@
 // ConsentFlow Debugger — Popup UI
+// A glance: the verdict sentence, the findings with their fixes, then passes and the
+// captured data behind labelled disclosures. Everything is rendered from
+// CFFindings.computeVerdict() / buildFindings() (popup/findings.js).
 (function () {
   'use strict';
 
-  let currentState = null;
-  let refreshTimer = null;
+  var F = globalThis.CFFindings;
+  var REFRESH_MS = 4000;
+  var RETRY_MS = 2500;
+  var RELOAD_GRACE_MS = 1500;
+  var REVIEW_URL = 'https://focosys.io/review';
 
-  // Verdict configuration for tag impact display
-  var VERDICT_CONFIG = {
-    violation:        { label: 'VIOLATION',        cls: 'violation',        color: 'var(--red)' },
-    blocked:          { label: 'BLOCKED',           cls: 'blocked',          color: 'var(--yellow)' },
-    firing:           { label: 'FIRING',            cls: 'firing',           color: 'var(--green)' },
-    idle:             { label: 'IDLE',              cls: 'idle',             color: 'var(--yellow)' },
-    no_consent_mode:  { label: 'NO CONSENT MODE',   cls: 'no-consent-mode',  color: 'var(--blue)' }
+  var ui = {
+    open: {},          // disclosure key → true when expanded; survives every refresh
+    lastKey: null,     // last rendered content; unchanged content is not re-rendered
+    lastVerdict: null, // last verdict text, so the live region only speaks on change
+    tabId: null,
+    reloadUntil: 0     // ignore replies from the old page right after a reload
   };
 
-  // ─── Tab Switching ──────────────────────────────────────────
-  document.querySelectorAll('.tab').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      document.querySelectorAll('.tab').forEach(function (b) { b.classList.remove('active'); });
-      document.querySelectorAll('.panel').forEach(function (p) { p.classList.remove('active'); });
-      btn.classList.add('active');
-      var panel = document.getElementById(btn.dataset.tab + '-tab');
-      if (panel) panel.classList.add('active');
-    });
-  });
+  var STATUS_TAGS = {
+    broken: { cls: 'broken', symbol: '×', word: 'BROKEN' },
+    review: { cls: 'review', symbol: '!', word: 'REVIEW' },
+    not_checked: { cls: 'not-checked', symbol: '–', word: 'NOT CHECKED' },
+    verified: { cls: 'verified', symbol: '✓', word: 'VERIFIED' }
+  };
 
-  document.getElementById('refreshBtn').addEventListener('click', fetchState);
-  document.getElementById('reviewCtaButton').addEventListener('click', function () {
-    chrome.tabs.create({ url: 'https://focosys.io/review' });
-  });
+  var ERRORS = {
+    noTab: {
+      title: 'No page to inspect.',
+      detail: 'Open a website in this window, then reopen ConsentFlow.',
+      action: false
+    },
+    systemPage: {
+      title: "Chrome pages can't be inspected.",
+      detail: 'Open a website, then reopen ConsentFlow.',
+      action: false
+    },
+    noResponse: {
+      title: "Can't read this page yet.",
+      detail: 'The page loaded before ConsentFlow could start. Reload it to capture from the start.',
+      action: true
+    }
+  };
 
-  // ─── Data Fetching ──────────────────────────────────────────
+  function el(id) { return document.getElementById(id); }
+
+  // ─── Wiring ─────────────────────────────────────────────────
+  el('recheckBtn').addEventListener('click', reloadAndRecheck);
+  el('errorAction').addEventListener('click', reloadAndRecheck);
+  el('reviewCtaButton').addEventListener('click', function () {
+    chrome.tabs.create({ url: REVIEW_URL });
+  });
+  el('findings').addEventListener('click', onDisclosure);
+  el('trace').addEventListener('click', onDisclosure);
+
+  function onDisclosure(event) {
+    var target = event && event.target;
+    var button = target && target.closest ? target.closest('[data-toggle]') : null;
+    if (!button) return;
+    var key = button.getAttribute('data-toggle');
+    ui.open[key] = !ui.open[key];
+    ui.lastKey = null;
+    if (ui.state) renderContent(ui.state, key);
+  }
+
+  // ─── Data fetching ──────────────────────────────────────────
   function fetchState() {
     chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
-      if (!tabs[0]) {
-        showError('No active tab');
-        return;
-      }
-      var tabId = tabs[0].id;
+      var tab = tabs && tabs[0];
+      if (!tab) { showError('noTab'); return; }
+      ui.tabId = tab.id;
+      setHost(tab.url);
 
-      // Try sending to content script directly
-      chrome.tabs.sendMessage(tabId, { action: 'getState' }, function (response) {
+      chrome.tabs.sendMessage(tab.id, { action: 'getState' }, function (response) {
         if (chrome.runtime.lastError || !response) {
-          // Content script not ready — try injecting via background
-          chrome.runtime.sendMessage({ action: 'ensureContentScript', tabId: tabId }, function () {
+          // Content script not in the tab yet: ask the background to inject it, then retry.
+          if (ui.view !== 'content') showLoading('Connecting to the page…');
+          chrome.runtime.sendMessage({ action: 'ensureContentScript', tabId: tab.id }, function (result) {
+            if (result && result.reason === 'system-page') { showError('systemPage'); return; }
             setTimeout(function () {
-              chrome.tabs.sendMessage(tabId, { action: 'getState' }, function (r) {
-                if (r) { render(r); }
-                else { showError('Content script not responding. Try refreshing the page.'); }
+              chrome.tabs.sendMessage(tab.id, { action: 'getState' }, function (r) {
+                if (chrome.runtime.lastError || !r) { showError('noResponse'); return; }
+                render(r);
               });
-            }, 2500);
+            }, RETRY_MS);
           });
           return;
         }
@@ -58,425 +93,334 @@
     });
   }
 
-  function showError(msg) {
-    document.getElementById('headerStatus').textContent = msg;
-    document.getElementById('headerStatus').className = 'header-status error';
+  function reloadAndRecheck() {
+    if (ui.tabId === null) { fetchState(); return; }
+    chrome.tabs.reload(ui.tabId);
+    ui.reloadUntil = Date.now() + RELOAD_GRACE_MS;
+    ui.lastKey = null;
+    showLoading('Reloading the page. Results appear in a few seconds.');
   }
 
-  // ─── Render Everything ──────────────────────────────────────
+  function setHost(url) {
+    var host = '';
+    try { host = url ? new URL(url).hostname : ''; } catch (e) { host = ''; }
+    setText(el('pageMeta'), host);
+  }
+
+  // ─── View states: loading → error → content ─────────────────
   function render(state) {
-    if (!state) { showError('No data received'); return; }
-    currentState = state;
-
-    if (!state.ready) {
-      document.getElementById('headerStatus').textContent = 'Analyzing page...';
-      document.getElementById('headerStatus').className = 'header-status loading';
+    if (!state || !state.ready || Date.now() < ui.reloadUntil) {
+      showLoading();
       return;
     }
-
-    renderHeader(state);
-    renderScorecard(state);
-    renderTimeline(state);
-    renderRules(state);
-    renderNetwork(state);
-    renderState(state);
-    renderCta(state);
+    ui.state = state;
+    renderContent(state);
   }
 
-  // ─── Header ─────────────────────────────────────────────────
-  function renderHeader(state) {
-    var el = document.getElementById('headerStatus');
-    var fails = (state.validation || []).filter(function (r) { return r.status === 'fail'; }).length;
-    var warns = (state.validation || []).filter(function (r) { return r.status === 'warn'; }).length;
+  function showLoading(detail) {
+    ui.view = 'loading';
+    ui.lastKey = null;
+    setVerdict('loading', '– READING PAGE', 'Reading this page…',
+      detail || 'Capture starts when the page loads. Results appear in a few seconds.');
+    el('progress').hidden = false;
+    el('errorAction').hidden = true;
+    hideContent();
+  }
 
-    if (fails > 0) {
-      el.textContent = fails + ' issue' + (fails > 1 ? 's' : '') + ' found';
-      el.className = 'header-status error';
-    } else if (warns > 0) {
-      el.textContent = warns + ' warning' + (warns > 1 ? 's' : '');
-      el.className = 'header-status warn';
-    } else {
-      el.textContent = 'No issues detected';
-      el.className = 'header-status ok';
+  function showError(kind) {
+    var e = ERRORS[kind];
+    ui.view = 'error';
+    ui.lastKey = null;
+    setVerdict('error', '– NOT CONNECTED', e.title, e.detail);
+    el('progress').hidden = true;
+    el('errorAction').hidden = !e.action;
+    hideContent();
+  }
+
+  function hideContent() {
+    el('findings').hidden = true;
+    el('actions').hidden = true;
+    el('trace').hidden = true;
+    el('reviewCta').hidden = true;
+  }
+
+  function renderContent(state, focusKey) {
+    var findings = F.buildFindings(state);
+    var verdict = F.computeVerdict(state, findings);
+    ui.view = 'content';
+
+    setVerdict(verdict.status, verdict.label, verdict.title, verdict.detail);
+    el('progress').hidden = true;
+    el('errorAction').hidden = true;
+    setText(el('checkedAt'), 'Checked ' + clock(new Date()) + ' · this page load');
+    el('actions').hidden = false;
+    el('reviewCta').hidden = !verdict.showReviewCta;
+
+    var key = JSON.stringify([findings, traceSummary(state), ui.open]);
+    if (key === ui.lastKey) return; // nothing changed: keep scroll, focus and DOM as they are
+    ui.lastKey = key;
+
+    var active = document.activeElement;
+    var activeKey = focusKey || (active && active.getAttribute ? active.getAttribute('data-toggle') : null);
+    var scroller = document.scrollingElement;
+    var scrollTop = scroller ? scroller.scrollTop : 0;
+
+    el('findings').innerHTML = findingsHtml(findings);
+    el('findings').hidden = false;
+    el('trace').innerHTML = traceHtml(state);
+    el('trace').hidden = false;
+
+    if (scroller) scroller.scrollTop = scrollTop;
+    if (activeKey && typeof document.querySelector === 'function') {
+      var again = document.querySelector('[data-toggle="' + activeKey + '"]');
+      if (again && again.focus) again.focus();
     }
   }
 
-  // ─── Scorecard ──────────────────────────────────────────────
-  function renderScorecard(state) {
-    var rules = state.validation || [];
-    var fails = rules.filter(function (r) { return r.status === 'fail'; }).length;
-    var passes = rules.filter(function (r) { return r.status === 'pass'; }).length;
-
-    setScore('scoreRules', passes + '/' + rules.length, fails > 0 ? 'bad' : 'good');
-    var hasViolations = (state.tagImpact || []).some(function (t) { return t.verdict === 'violation'; });
-    setScore('scoreTags', String((state.tags || []).length), hasViolations ? 'bad' : '');
-    setScore('scoreHits', String((state.networkHits || []).length), '');
-    setScore('scoreCMP', state.cmp && state.cmp.detected ? state.cmp.name : 'None',
-      state.cmp && state.cmp.detected ? 'good' : '');
+  function setVerdict(state, label, title, detail) {
+    var text = label + '|' + title + '|' + detail;
+    if (text === ui.lastVerdict) return; // the live region only speaks when the verdict changes
+    ui.lastVerdict = text;
+    el('verdict').setAttribute('data-state', state);
+    el('verdictLabel').className = 'status-tag ' + (STATUS_TAGS[state] ? STATUS_TAGS[state].cls : state);
+    setText(el('verdictLabel'), label);
+    setText(el('verdictTitle'), title);
+    setText(el('verdictDetail'), detail);
   }
 
-  function setScore(id, value, cls) {
-    var el = document.getElementById(id);
-    el.querySelector('.score-num').textContent = value;
-    el.className = 'score-item' + (cls ? ' ' + cls : '');
-  }
-
-  // ─── Timeline ───────────────────────────────────────────────
-  function renderTimeline(state) {
-    var container = document.getElementById('timeline');
-    var events = state.timeline || [];
-
-    if (events.length === 0) {
-      container.innerHTML = '<div class="empty">No consent flow events captured yet.</div>';
-      return;
-    }
-
-    // Show only the most relevant events (consent, config, gtm_load, network_hit)
-    var relevant = events.filter(function (e) {
-      return ['consent_default', 'consent_update', 'config', 'gtm_load', 'network_hit'].indexOf(e.type) !== -1;
-    });
-
-    // If no relevant events, show all
-    if (relevant.length === 0) relevant = events.slice(0, 50);
-
+  // ─── Findings ───────────────────────────────────────────────
+  function findingsHtml(findings) {
+    var problems = findings.filter(function (f) { return f.status === 'broken' || f.status === 'review'; });
+    var notChecked = findings.filter(function (f) { return f.status === 'not_checked'; });
+    var passed = findings.filter(function (f) { return f.status === 'verified'; });
     var html = '';
-    relevant.forEach(function (evt) {
-      var cls = typeClass(evt.type);
-      var label = typeLabel(evt.type);
-      var detail = formatDetail(evt);
-      html += '<div class="tl-event ' + cls + '">'
-        + '<div class="tl-dot"></div>'
-        + '<div class="tl-body">'
-        + '<div class="tl-head">'
-        + '<span class="tl-label">' + esc(label) + '</span>'
-        + '<span class="tl-time">' + evt.ms + 'ms</span>'
-        + '</div>'
-        + '<div class="tl-detail">' + esc(detail) + '</div>'
-        + '</div>'
-        + '</div>';
-    });
 
-    // Show datalayer_event count at the bottom
-    var otherCount = events.length - relevant.length;
-    if (otherCount > 0) {
-      html += '<div class="tl-summary">' + otherCount + ' other dataLayer events (expand in DevTools)</div>';
+    if (problems.length) {
+      html += '<ol class="problems">';
+      problems.forEach(function (f) { html += problemHtml(f); });
+      html += '</ol>';
     }
 
-    container.innerHTML = html;
-  }
-
-  function typeClass(type) {
-    var map = {
-      consent_default: 'consent', consent_update: 'consent',
-      config: 'config', gtm_load: 'gtm',
-      network_hit: 'network', datalayer_event: 'event'
-    };
-    return map[type] || 'event';
-  }
-
-  function typeLabel(type) {
-    var map = {
-      consent_default: 'CONSENT DEFAULT',
-      consent_update: 'CONSENT UPDATE',
-      config: 'CONFIG',
-      gtm_load: 'GTM LOADED',
-      network_hit: 'NETWORK HIT',
-      datalayer_event: 'EVENT'
-    };
-    return map[type] || type;
-  }
-
-  function formatDetail(evt) {
-    if (!evt.detail) return '';
-    if (evt.type === 'consent_default' || evt.type === 'consent_update') {
-      return Object.keys(evt.detail).map(function (k) {
-        return k + ': ' + evt.detail[k];
-      }).join(', ');
-    }
-    if (evt.type === 'config') {
-      return evt.detail.measurementId || '';
-    }
-    if (evt.type === 'network_hit') {
-      var d = evt.detail;
-      var parts = [d.host];
-      if (d.gcs) parts.push('GCS=' + d.gcs);
-      if (d.en) parts.push('event=' + d.en);
-      return parts.join(' | ');
-    }
-    if (evt.type === 'datalayer_event') {
-      return evt.detail.event || '';
-    }
-    return JSON.stringify(evt.detail).substring(0, 120);
-  }
-
-  // ─── Rules ──────────────────────────────────────────────────
-  function renderRules(state) {
-    var container = document.getElementById('rulesList');
-    var rules = state.validation || [];
-
-    if (rules.length === 0) {
-      container.innerHTML = '<div class="empty">No validation data yet.</div>';
-      return;
+    if (notChecked.length) {
+      html += '<div class="group">'
+        + '<h2 class="group-title">' + tagHtml('not_checked') + ' '
+        + esc(notChecked.length + (notChecked.length === 1 ? ' check needs' : ' checks need') + ' more data') + '</h2>'
+        + '<ul class="nc-list">';
+      notChecked.forEach(function (f) { html += notCheckedHtml(f); });
+      html += '</ul></div>';
     }
 
-    // Sort: fails first, then warns, then info, then pass
-    var order = { fail: 0, warn: 1, info: 2, pass: 3 };
-    rules.sort(function (a, b) {
-      var aOrder = order[a.status] !== undefined ? order[a.status] : 4;
-      var bOrder = order[b.status] !== undefined ? order[b.status] : 4;
-      return aOrder - bOrder;
-    });
-
-    var html = '';
-    rules.forEach(function (rule) {
-      var icon = statusIcon(rule.status);
-      html += '<div class="rule-card ' + rule.status + '">'
-        + '<div class="rule-header">'
-        + '<span class="rule-icon">' + icon + '</span>'
-        + '<span class="rule-name">' + esc(rule.name) + '</span>'
-        + '<span class="rule-badge ' + rule.status + '">' + rule.status.toUpperCase() + '</span>'
-        + '</div>'
-        + '<div class="rule-desc">' + esc(rule.description) + '</div>'
-        + '<div class="rule-detail">' + esc(rule.detail) + '</div>'
-        + '</div>';
-    });
-
-    container.innerHTML = html;
+    if (passed.length) {
+      var open = !!ui.open.passed;
+      html += '<div class="group">'
+        + disclosureButton('passed', 'passed-list', open,
+          (open ? 'Hide ' : 'Show ') + passed.length + (passed.length === 1 ? ' passed check' : ' passed checks'))
+        + '<ul id="passed-list" class="passed-list"' + (open ? '' : ' hidden') + '>';
+      passed.forEach(function (f) {
+        html += '<li><p class="passed-title"><span class="sym verified" aria-hidden="true">✓</span>'
+          + '<span class="visually-hidden">Verified: </span>' + fmt(f.title) + '</p>'
+          + '<p class="passed-observed">' + fmt(f.observed) + '</p></li>';
+      });
+      html += '</ul></div>';
+    }
+    return html;
   }
 
-  function statusIcon(status) {
-    var map = { pass: 'PASS', fail: 'FAIL', warn: 'WARN', info: 'INFO' };
-    return map[status] || '?';
+  function problemHtml(f) {
+    var k = keyOf(f.id);
+    var evKey = 'ev-' + k;
+    var open = !!ui.open[evKey];
+    return '<li class="finding ' + f.status + '">'
+      + '<article aria-labelledby="t-' + k + '">'
+      + tagHtml(f.status)
+      + '<h2 id="t-' + k + '" class="finding-title">' + fmt(f.title) + '</h2>'
+      + '<dl class="steps">'
+      + '<dt>Observed</dt><dd>' + fmt(f.observed) + '</dd>'
+      + '<dt>Why</dt><dd>' + fmt(f.consequence) + '</dd>'
+      + '<dt>Fix</dt><dd>' + fixHtml(f.fix) + '</dd>'
+      + '<dt>Verify</dt><dd>' + fmt(f.verify) + '</dd>'
+      + '</dl>'
+      + disclosureButton(evKey, 'p-' + evKey, open, open ? 'Hide evidence' : 'Show evidence')
+      + evidenceHtml('p-' + evKey, f.evidence, open)
+      + '</article></li>';
   }
 
-  // ─── Network ────────────────────────────────────────────────
-  function renderNetwork(state) {
-    var container = document.getElementById('networkList');
+  function notCheckedHtml(f) {
+    var k = keyOf(f.id);
+    var dKey = 'nc-' + k;
+    var open = !!ui.open[dKey];
+    return '<li class="nc-item">'
+      + '<p class="nc-title">' + fmt(f.title) + '</p>'
+      + '<p class="nc-line"><span class="nc-label">Needs</span><span>' + fmt(f.observed) + '</span></p>'
+      + '<p class="nc-line"><span class="nc-label">Next</span><span>' + fmt(f.fix[0]) + '</span></p>'
+      + disclosureButton(dKey, 'p-' + dKey, open, open ? 'Hide details' : 'Show details')
+      + '<div id="p-' + dKey + '" class="nc-details"' + (open ? '' : ' hidden') + '>'
+      + '<dl class="steps">'
+      + '<dt>Why</dt><dd>' + fmt(f.consequence) + '</dd>'
+      + '<dt>Then</dt><dd>' + fmt(f.verify) + '</dd>'
+      + '</dl>'
+      + evidenceHtml(null, f.evidence, true)
+      + '</div></li>';
+  }
+
+  function fixHtml(steps) {
+    if (steps.length === 1) return fmt(steps[0]);
+    return '<ol class="fix-steps">' + steps.map(function (s) { return '<li>' + fmt(s) + '</li>'; }).join('') + '</ol>';
+  }
+
+  function evidenceHtml(id, rows, open) {
+    return '<dl' + (id ? ' id="' + id + '"' : '') + ' class="evidence"' + (open ? '' : ' hidden') + '>'
+      + rows.map(function (r) {
+        return '<div class="ev-row"><dt>' + esc(r.label) + '</dt><dd>' + esc(r.value) + '</dd></div>';
+      }).join('')
+      + '</dl>';
+  }
+
+  function tagHtml(status) {
+    var t = STATUS_TAGS[status];
+    return '<p class="status-tag ' + t.cls + '"><span aria-hidden="true">' + t.symbol + '</span> ' + t.word + '</p>';
+  }
+
+  function disclosureButton(key, controls, open, label) {
+    return '<button type="button" class="disclosure" data-toggle="' + key + '" aria-controls="' + controls + '"'
+      + ' aria-expanded="' + (open ? 'true' : 'false') + '">' + esc(label) + '</button>';
+  }
+
+  // ─── Captured data (until the side panel ships) ─────────────
+  var RELEVANT = ['consent_default', 'consent_update', 'config', 'gtm_load', 'network_hit'];
+  var EVENT_LABELS = {
+    consent_default: 'Consent default',
+    consent_update: 'Consent update',
+    config: 'Google tag config',
+    gtm_load: 'GTM loaded',
+    network_hit: 'Request'
+  };
+
+  function traceSummary(state) {
+    return [
+      (state.timeline || []).length,
+      (state.networkHits || []).length,
+      state.currentConsent || {},
+      state.cmp ? state.cmp.name : null
+    ];
+  }
+
+  function traceHtml(state) {
+    var events = (state.timeline || []).filter(function (e) { return RELEVANT.indexOf(e.type) !== -1; });
     var hits = state.networkHits || [];
+    var open = !!ui.open.trace;
+    var label = (open ? 'Hide' : 'Show') + ' captured data: ' + events.length + ' events, ' + hits.length
+      + (hits.length === 1 ? ' request' : ' requests');
+    var html = disclosureButton('trace', 'trace-body', open, label)
+      + '<div id="trace-body" class="trace-body"' + (open ? '' : ' hidden') + '>';
+    if (!open) return html + '</div>';
 
-    if (hits.length === 0) {
-      container.innerHTML = '<div class="empty">No vendor requests captured yet. Interact with the page or wait for tags to fire. Tracking: Google, Facebook, LinkedIn, TikTok, Hotjar, Clarity, Pinterest, Snapchat.</div>';
-      return;
-    }
-
-    var html = '';
-    hits.forEach(function (hit) {
-      var vendorLabel = hit.vendor ? hit.vendor.charAt(0).toUpperCase() + hit.vendor.slice(1) : '';
-      html += '<div class="net-card">'
-        + '<div class="net-header">'
-        + '<span class="net-method">' + esc(hit.method) + '</span>'
-        + (vendorLabel ? '<span class="net-vendor">' + esc(vendorLabel) + '</span>' : '')
-        + '<span class="net-host">' + esc(hit.host) + '</span>'
-        + '<span class="net-time">' + Math.round(hit.ms) + 'ms</span>'
-        + '</div>';
-
-      if (hit.en) {
-        html += '<div class="net-row"><span class="net-key">Event</span><span class="net-val">' + esc(hit.en) + '</span></div>';
-      }
-      if (hit.tid) {
-        html += '<div class="net-row"><span class="net-key">Tracking ID</span><span class="net-val">' + esc(hit.tid) + '</span></div>';
-      }
-
-      // Decoded GCS
-      if (hit.decoded && hit.decoded.gcs && !hit.decoded.gcs.error) {
-        var gcs = hit.decoded.gcs;
-        html += '<div class="net-section">GCS (Consent State in Request)</div>';
-        html += '<div class="net-row"><span class="net-key">analytics_storage</span><span class="net-val ' + gcs.analytics_storage + '">' + gcs.analytics_storage + '</span></div>';
-        html += '<div class="net-row"><span class="net-key">ad_storage</span><span class="net-val ' + gcs.ad_storage + '">' + gcs.ad_storage + '</span></div>';
-        html += '<div class="net-row gcs-raw"><span class="net-key">raw</span><span class="net-val mono">' + esc(gcs.raw) + '</span></div>';
-      }
-
-      // Decoded GCD
-      if (hit.decoded && hit.decoded.gcd && !hit.decoded.gcd.error) {
-        var gcd = hit.decoded.gcd;
-        html += '<div class="net-section">GCD (Consent Detail)</div>';
-        var gcdKeys = Object.keys(gcd).filter(function (k) { return k !== 'raw'; });
-        gcdKeys.forEach(function (k) {
-          html += '<div class="net-row"><span class="net-key">' + esc(k) + '</span><span class="net-val">' + esc(gcd[k]) + '</span></div>';
-        });
-        html += '<div class="net-row gcs-raw"><span class="net-key">raw</span><span class="net-val mono">' + esc(gcd.raw) + '</span></div>';
-      }
-
-      // NPA
-      if (hit.decoded && hit.decoded.npa) {
-        html += '<div class="net-row"><span class="net-key">NPA</span><span class="net-val">' + esc(hit.decoded.npa) + '</span></div>';
-      }
-
-      // Consent captured from the timeline at the moment this request was sent
-      if (hit.consentAtRequest) {
-        var atKeys = Object.keys(hit.consentAtRequest).filter(function (k) { return k !== 'wait_for_update' && k !== 'region'; });
-        var atText = atKeys.length === 0 ? 'none set yet' : atKeys.map(function (k) {
-          return k + ': ' + hit.consentAtRequest[k];
-        }).join(', ');
-        html += '<div class="net-row"><span class="net-key">Consent when sent</span><span class="net-val">' + esc(atText) + '</span></div>';
-      }
-
-      html += '</div>';
-    });
-
-    container.innerHTML = html;
-  }
-
-  // ─── State ──────────────────────────────────────────────────
-  function renderState(state) {
-    // Current consent
-    var grid = document.getElementById('consentGrid');
+    // Consent state now, denied first
     var consent = state.currentConsent || {};
     var keys = Object.keys(consent).filter(function (k) { return k !== 'wait_for_update' && k !== 'region'; });
+    keys.sort(function (a, b) { return (consent[a] === 'denied' ? 0 : 1) - (consent[b] === 'denied' ? 0 : 1); });
+    html += '<h2 class="trace-heading">Consent now</h2>';
+    html += keys.length
+      ? '<dl class="kv">' + keys.map(function (k) {
+        return '<div class="ev-row"><dt>' + esc(k) + '</dt><dd>' + consentValue(consent[k]) + '</dd></div>';
+      }).join('') + '</dl>'
+      : '<p class="trace-empty">No consent state set on this page.</p>';
+    html += '<p class="trace-line"><span class="nc-label">CMP</span>'
+      + '<span>' + esc(state.cmp && state.cmp.detected ? state.cmp.name : 'No supported CMP recognized') + '</span></p>';
 
-    if (keys.length === 0) {
-      grid.innerHTML = '<div class="empty">No consent state detected. Consent Mode may not be implemented on this page.</div>';
+    // Timeline
+    html += '<h2 class="trace-heading">Timeline</h2>';
+    if (!events.length) {
+      html += '<p class="trace-empty">No consent or tag events captured yet.</p>';
     } else {
-      var html = '';
-      keys.forEach(function (k) {
-        var val = consent[k];
-        html += '<div class="cs-row ' + esc(val).replace(/"/g, '&quot;') + '">'
-          + '<span class="cs-key">' + esc(k) + '</span>'
-          + '<span class="cs-val">' + esc(val) + '</span>'
-          + '</div>';
+      html += '<ol class="timeline">';
+      events.slice(-40).forEach(function (e) {
+        html += '<li><span class="t-time">+' + esc(Math.round(Number(e.ms) || 0)) + ' ms</span>'
+          + '<span class="t-label">' + esc(EVENT_LABELS[e.type] || e.type) + '</span>'
+          + eventDetail(e) + '</li>';
       });
-      grid.innerHTML = html;
+      html += '</ol>';
+      var others = (state.timeline || []).length - events.length;
+      if (others > 0) html += '<p class="trace-empty">Plus ' + esc(others) + ' other dataLayer events.</p>';
     }
 
-    // CMP
-    var cmpEl = document.getElementById('cmpInfo');
-    if (state.cmp && state.cmp.detected) {
-      cmpEl.textContent = state.cmp.name;
-      cmpEl.className = 'cmp-info detected';
+    // Requests
+    html += '<h2 class="trace-heading">Requests</h2>';
+    if (!hits.length) {
+      html += '<p class="trace-empty">No vendor requests yet. Browse the page, then reopen ConsentFlow.</p>';
     } else {
-      cmpEl.textContent = 'No CMP detected on this page.';
-      cmpEl.className = 'cmp-info';
+      html += '<ol class="requests">';
+      hits.slice(-30).forEach(function (h) {
+        html += '<li><span class="t-time">+' + esc(Math.round(Number(h.ms) || 0)) + ' ms</span>'
+          + '<span class="t-label">' + esc(h.host || '') + (h.en ? ' · ' + esc(h.en) : '') + '</span>'
+          + requestConsent(h) + '</li>';
+      });
+      html += '</ol>';
     }
-
-    // Tag Impact Analysis
-    renderTagImpact(state);
-    renderImplQuality(state);
+    return html + '</div>';
   }
 
-  // ─── Tag Impact ────────────────────────────────────────────────
-  function renderTagImpact(state) {
-    var container = document.getElementById('tagImpact');
-    var impacts = state.tagImpact || [];
-
-    if (impacts.length === 0) {
-      container.innerHTML = '<div class="empty">No tracking tags detected.</div>';
-      return;
+  function eventDetail(e) {
+    var d = e.detail || {};
+    if (e.type === 'consent_default' || e.type === 'consent_update') {
+      var keys = Object.keys(d).filter(function (k) { return k !== 'region'; });
+      return '<dl class="kv t-detail">' + keys.map(function (k) {
+        return '<div class="ev-row"><dt>' + esc(k) + '</dt><dd>'
+          + (k === 'wait_for_update' ? esc(d[k] + ' ms') : consentValue(d[k])) + '</dd></div>';
+      }).join('') + '</dl>';
     }
+    if (e.type === 'config') return '<span class="t-detail mono">' + esc(d.measurementId || '') + '</span>';
+    if (e.type === 'network_hit') return '<span class="t-detail mono">' + esc(d.host || '') + '</span>';
+    return '';
+  }
 
-    // Sort: violations first, then blocked, no_consent_mode, idle, firing
-    var verdictOrder = { violation: 0, blocked: 1, no_consent_mode: 2, idle: 3, firing: 4 };
-    impacts.sort(function (a, b) {
-      var aOrder = verdictOrder[a.verdict] !== undefined ? verdictOrder[a.verdict] : 5;
-      var bOrder = verdictOrder[b.verdict] !== undefined ? verdictOrder[b.verdict] : 5;
-      return aOrder - bOrder;
+  // What consent the request carried (its own gcs) next to what the page had when it was sent.
+  function requestConsent(h) {
+    var gcs = h.decoded && h.decoded.gcs && !h.decoded.gcs.error ? h.decoded.gcs : null;
+    var at = h.consentAtRequest || {};
+    var types = ['analytics_storage', 'ad_storage'].filter(function (k) { return (gcs && gcs[k]) || k in at; });
+    if (!types.length) return '<p class="t-detail trace-empty">No consent set when sent.</p>';
+    var html = '<div class="t-detail req-grid" role="table" aria-label="Consent for this request">'
+      + '<div class="req-row" role="row"><span role="columnheader">Type</span><span role="columnheader">Carried</span><span role="columnheader">On page</span></div>';
+    types.forEach(function (k) {
+      html += '<div class="req-row" role="row"><span role="cell" class="mono">' + esc(k) + '</span>'
+        + '<span role="cell">' + (gcs && gcs[k] ? consentValue(gcs[k]) : '–') + '</span>'
+        + '<span role="cell">' + (k in at ? consentValue(at[k]) : 'not set') + '</span></div>';
     });
-
-    var html = '';
-    impacts.forEach(function (item) {
-      var cfg = VERDICT_CONFIG[item.verdict] || { label: item.verdict, cls: '', color: 'var(--text3)' };
-      var consentNeeded = (item.consentTypes || []).join(', ');
-      html += '<div class="ti-card ' + cfg.cls + '">'
-        + '<div class="ti-header">'
-        + '<span class="ti-name">' + esc(item.name) + '</span>'
-        + '<span class="ti-verdict ' + cfg.cls + '">' + cfg.label + '</span>'
-        + '</div>'
-        + '<div class="ti-body">'
-        + '<div class="ti-row"><span class="ti-type">' + esc(item.type) + '</span></div>'
-        + '<div class="ti-row"><span class="ti-consent">Needs: ' + esc(consentNeeded || 'none') + '</span></div>'
-        + '<div class="ti-row"><span class="ti-requests">' + item.requestCount + ' request' + (item.requestCount !== 1 ? 's' : '') + ' captured</span></div>'
-        + (item.preConsentCount > 0
-          ? '<div class="ti-row"><span class="ti-preconsent">' + Number(item.preConsentCount) + ' sent while required consent was denied</span></div>'
-          : '')
-        + '</div>'
-        + '</div>';
-    });
-
-    container.innerHTML = html;
+    if (gcs) html += '<p class="raw">gcs ' + esc(gcs.raw) + '</p>';
+    return html + '</div>';
   }
 
-  // ─── Implementation Quality ────────────────────────────────────
-  function renderImplQuality(state) {
-    var container = document.getElementById('implQuality');
-    var impacts = state.tagImpact || [];
-
-    if (impacts.length === 0) {
-      container.innerHTML = '';
-      return;
-    }
-
-    var hasViolations = impacts.some(function (t) { return t.verdict === 'violation'; });
-    var allNoConsent = impacts.every(function (t) { return t.verdict === 'no_consent_mode'; });
-    var someNoConsent = impacts.some(function (t) { return t.verdict === 'no_consent_mode'; });
-
-    var grade, message, cls;
-    if (hasViolations) {
-      grade = 'CRITICAL';
-      message = 'Tags are firing despite denied consent. This is a compliance violation.';
-      cls = 'critical';
-    } else if (allNoConsent) {
-      grade = 'NOT IMPLEMENTED';
-      message = 'No Consent Mode detected. All tags fire without consent controls.';
-      cls = 'not-implemented';
-    } else if (someNoConsent) {
-      grade = 'PARTIAL';
-      message = 'Consent Mode is active but some tags lack consent integration.';
-      cls = 'partial';
-    } else {
-      grade = 'GOOD';
-      message = 'Consent Mode is properly configured for all detected tags.';
-      cls = 'good';
-    }
-
-    container.innerHTML = '<div class="impl-banner ' + cls + '">'
-      + '<span class="impl-grade">' + grade + '</span>'
-      + '<span class="impl-message">' + esc(message) + '</span>'
-      + '</div>';
-  }
-
-  function renderCta(state) {
-    var container = document.getElementById('reviewCta');
-    var label = document.getElementById('reviewCtaLabel');
-    var text = document.getElementById('reviewCtaText');
-    var rules = state.validation || [];
-    var fails = rules.filter(function (r) { return r.status === 'fail'; }).length;
-    var warns = rules.filter(function (r) { return r.status === 'warn'; }).length;
-    var impacts = state.tagImpact || [];
-    var hasViolation = impacts.some(function (item) { return item.verdict === 'violation'; });
-    var hasNoConsentMode = impacts.some(function (item) { return item.verdict === 'no_consent_mode'; });
-
-    if (hasViolation) {
-      label.textContent = 'Need help fixing this consent violation?';
-      text.textContent = 'Tags are firing in a way that can create real compliance exposure. I can help trace the root cause.';
-      container.className = 'review-cta critical';
-      return;
-    }
-
-    if (fails > 0 || hasNoConsentMode) {
-      label.textContent = 'Need help fixing this implementation?';
-      text.textContent = 'If the stack still looks broken after debugging, the issue is usually upstream in GTM, consent wiring, or tag governance.';
-      container.className = 'review-cta';
-      return;
-    }
-
-    if (warns > 0) {
-      label.textContent = 'Want a second set of eyes on these warnings?';
-      text.textContent = 'Warnings usually mean edge-case signal loss, partial Consent Mode coverage, or stale implementation logic.';
-      container.className = 'review-cta';
-      return;
-    }
-
-    container.className = 'review-cta hidden';
+  function consentValue(v) {
+    if (v === 'denied') return '<span class="cv denied"><span aria-hidden="true">×</span> denied</span>';
+    if (v === 'granted') return '<span class="cv granted"><span aria-hidden="true">✓</span> granted</span>';
+    return esc(v);
   }
 
   // ─── Helpers ────────────────────────────────────────────────
-  function esc(str) {
-    if (typeof str !== 'string') str = String(str);
-    var div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
+  function esc(value) {
+    return String(value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // Escape, then render `code` spans as <code>.
+  function fmt(text) {
+    return esc(text).replace(/`([^`]+)`/g, '<code>$1</code>');
+  }
+
+  function keyOf(id) { return String(id).replace(/[^A-Za-z0-9_-]/g, '_'); }
+
+  function setText(node, text) {
+    if (node.textContent !== text) node.textContent = text;
+  }
+
+  function clock(d) {
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
   }
 
   // ─── Init ───────────────────────────────────────────────────
   fetchState();
-  refreshTimer = setInterval(fetchState, 4000);
+  setInterval(fetchState, REFRESH_MS);
 })();
