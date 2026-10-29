@@ -70,11 +70,15 @@
     const inFlight = new Set();
     function intercept(target) {
       return function () {
+        // Decide what outer interceptors already carry before claiming anything, so an
+        // object passed twice in this one call is recorded twice, like the array stores it.
+        const carriedByOuter = [];
+        for (let i = 0; i < arguments.length; i++) carriedByOuter.push(inFlight.has(arguments[i]));
         const claimed = [];
         for (let i = 0; i < arguments.length; i++) {
           const entry = arguments[i];
-          if (entry && typeof entry === 'object') {
-            if (inFlight.has(entry)) continue;
+          if (carriedByOuter[i]) continue;
+          if (entry && typeof entry === 'object' && !inFlight.has(entry)) {
             inFlight.add(entry);
             claimed.push(entry);
           }

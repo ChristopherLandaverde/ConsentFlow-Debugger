@@ -176,6 +176,14 @@ describe("dataLayer interception", () => {
     assert.deepEqual(names.sort(), ["nested", "outer"]);
   });
 
+  test("records the same object twice when one push passes it twice", () => {
+    const page = loadPage();
+    const entry = { event: "twice" };
+    page.window.dataLayer.push(entry, entry);
+    assert.equal(page.window.dataLayer.length, 2);
+    assert.equal(types(page).filter((t) => t === "datalayer_event").length, 2);
+  });
+
   test("passes pushes through to the real array", () => {
     const page = loadPage();
     page.push({ event: "a" }, { event: "b" });
