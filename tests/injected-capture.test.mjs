@@ -124,6 +124,66 @@ describe("dataLayer interception", () => {
     assert.deepEqual(page.debugState().currentConsent, { ad_storage: "granted" });
   });
 
+  test("survives a replacement push that chains to the previous one (gtag.js pattern)", () => {
+    // gtag.js keeps the push it found and calls it from its own push. Before the fix, the
+    // setter re-pointed the original wrapper at the new push, so the two called each other
+    // forever: RangeError: Maximum call stack size exceeded on any page with gtag.js.
+    const page = loadPage();
+    const dl = page.window.dataLayer;
+    const previous = dl.push;
+    let gtagCalls = 0;
+    dl.push = function () {
+      gtagCalls++;
+      return previous.apply(dl, arguments);
+    };
+    page.push(["consent", "update", { ad_storage: "granted" }]);
+    assert.equal(gtagCalls, 1);
+    assert.equal(dl.length, 1, "entry reaches the array exactly once");
+    assert.deepEqual(page.debugState().currentConsent, { ad_storage: "granted" });
+    assert.equal(types(page).filter((t) => t === "consent_update").length, 1, "captured once");
+  });
+
+  test("survives two chained replacements (GTM then gtag.js)", () => {
+    const page = loadPage();
+    const dl = page.window.dataLayer;
+    const calls = [];
+    for (const name of ["gtm", "gtag"]) {
+      const previous = dl.push;
+      dl.push = function () {
+        calls.push(name);
+        return previous.apply(dl, arguments);
+      };
+    }
+    page.push({ event: "purchase" });
+    assert.deepEqual(calls, ["gtag", "gtm"]);
+    assert.equal(dl.length, 1);
+    assert.equal(types(page).filter((t) => t === "datalayer_event").length, 1);
+  });
+
+  test("records a different entry pushed while a replacement push is forwarding", () => {
+    // A replacement push that emits its own event while handling another must not lose it.
+    const page = loadPage();
+    const dl = page.window.dataLayer;
+    const previous = dl.push;
+    dl.push = function (entry) {
+      if (entry && entry.event === "outer") previous.call(dl, { event: "nested" });
+      return previous.apply(dl, arguments);
+    };
+    page.push({ event: "outer" });
+    const names = page.debugState().timeline
+      .filter((e) => e.type === "datalayer_event")
+      .map((e) => e.detail.event);
+    assert.deepEqual(names.sort(), ["nested", "outer"]);
+  });
+
+  test("records the same object twice when one push passes it twice", () => {
+    const page = loadPage();
+    const entry = { event: "twice" };
+    page.window.dataLayer.push(entry, entry);
+    assert.equal(page.window.dataLayer.length, 2);
+    assert.equal(types(page).filter((t) => t === "datalayer_event").length, 2);
+  });
+
   test("passes pushes through to the real array", () => {
     const page = loadPage();
     page.push({ event: "a" }, { event: "b" });
@@ -208,6 +268,30 @@ describe("config call capture", () => {
     page.gtag("config", "G-LATE");
     assert.deepEqual(calls, [["config", "G-LATE"]]);
     assert.ok(page.debugState().configCalls.some((c) => c.id === "G-LATE"));
+  });
+
+  test("records config once when the page defines the standard gtag snippet", () => {
+    // The real snippet: function gtag(){dataLayer.push(arguments);} — the call reaches
+    // dataLayer, so the gtag wrapper must not record it a second time.
+    const page = loadPage();
+    page.window.gtag = function () {
+      page.window.dataLayer.push(arguments);
+    };
+    page.gtag("config", "G-SNIPPET");
+    assert.deepEqual(
+      page.debugState().configCalls.map((c) => c.id),
+      ["G-SNIPPET"],
+    );
+  });
+
+  test("still records a custom gtag that never pushes to dataLayer", () => {
+    const page = loadPage();
+    page.window.gtag = function () {};
+    page.gtag("config", "G-CUSTOM");
+    assert.deepEqual(
+      page.debugState().configCalls.map((c) => c.id),
+      ["G-CUSTOM"],
+    );
   });
 
   test("records a single config call made through the gtag trap once", () => {

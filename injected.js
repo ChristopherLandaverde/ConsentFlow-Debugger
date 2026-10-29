@@ -62,30 +62,46 @@
       processDataLayerEntry(dl[i], 'dataLayer.existing');
     }
 
-    // Wrap push and make it resilient to GTM overwriting it
-    let realPush = dl.push.bind(dl);
-    const wrappedPush = function () {
-      for (let i = 0; i < arguments.length; i++) {
-        processDataLayerEntry(arguments[i], 'dataLayer.push');
-      }
-      return realPush.apply(dl, arguments);
-    };
+    // Each interceptor forwards to the push it wrapped, permanently. GTM and gtag.js replace
+    // push with a function that calls the push they found (our interceptor), so re-pointing an
+    // existing interceptor at the new push would make the two call each other forever.
+    // An entry is recorded by the outermost interceptor that sees it; entries already in flight
+    // are skipped further down the chain, while new entries pushed meanwhile are still recorded.
+    const inFlight = new Set();
+    function intercept(target) {
+      return function () {
+        // Decide what outer interceptors already carry before claiming anything, so an
+        // object passed twice in this one call is recorded twice, like the array stores it.
+        const carriedByOuter = [];
+        for (let i = 0; i < arguments.length; i++) carriedByOuter.push(inFlight.has(arguments[i]));
+        const claimed = [];
+        for (let i = 0; i < arguments.length; i++) {
+          const entry = arguments[i];
+          if (carriedByOuter[i]) continue;
+          if (entry && typeof entry === 'object' && !inFlight.has(entry)) {
+            inFlight.add(entry);
+            claimed.push(entry);
+          }
+          if (gtagDepth > 0) pushedDuringGtag = true;
+          processDataLayerEntry(entry, 'dataLayer.push');
+        }
+        try {
+          return target.apply(dl, arguments);
+        } finally {
+          for (let i = 0; i < claimed.length; i++) inFlight.delete(claimed[i]);
+        }
+      };
+    }
+    const wrappedPush = intercept(dl.push.bind(dl));
     dl.push = wrappedPush;
 
-    // When GTM replaces .push with its own CommandProcessor, intercept that too
+    // When GTM or gtag.js replaces .push, intercept the new function too
     try {
       let currentPushFn = wrappedPush;
       Object.defineProperty(dl, 'push', {
         get: function () { return currentPushFn; },
         set: function (newPush) {
-          // GTM is replacing push — wrap GTM's new push with our interceptor
-          realPush = newPush;
-          currentPushFn = function () {
-            for (let i = 0; i < arguments.length; i++) {
-              processDataLayerEntry(arguments[i], 'dataLayer.push');
-            }
-            return realPush.apply(dl, arguments);
-          };
+          currentPushFn = intercept(newPush);
         },
         configurable: true,
         enumerable: true
@@ -178,14 +194,30 @@
   // ─── gtag Function Trap ───────────────────────────────────────
   // Define gtag early so consent defaults are captured even if written as
   // gtag('consent', 'default', ...) before GTM's own gtag initialization.
+  // A gtag call normally reaches dataLayer (the standard snippet pushes its arguments), where
+  // the push interceptor records it. Record it from gtag directly only when it didn't, so a
+  // custom gtag is still captured but a standard one isn't recorded twice.
+  let gtagDepth = 0;
+  let pushedDuringGtag = false;
+  function wrapGtag(fn) {
+    return function () {
+      const outer = pushedDuringGtag;
+      pushedDuringGtag = false;
+      gtagDepth++;
+      try {
+        return fn.apply(this, arguments);
+      } finally {
+        gtagDepth--;
+        if (!pushedDuringGtag) captureGtagCall(arguments);
+        pushedDuringGtag = outer || pushedDuringGtag;
+      }
+    };
+  }
+
   function interceptGtag() {
     if (typeof window.gtag === 'function') {
       // gtag already exists — wrap it
-      const original = window.gtag;
-      window.gtag = function () {
-        captureGtagCall(arguments);
-        return original.apply(this, arguments);
-      };
+      window.gtag = wrapGtag(window.gtag);
     } else {
       // gtag doesn't exist yet — create a trap that records calls
       // When GTM creates the real gtag, it replays through dataLayer,
@@ -202,11 +234,7 @@
         get: function () { return currentGtag; },
         set: function (fn) {
           if (typeof fn === 'function') {
-            const captured = fn;
-            currentGtag = function () {
-              captureGtagCall(arguments);
-              return captured.apply(this, arguments);
-            };
+            currentGtag = wrapGtag(fn);
           }
         },
         configurable: true
