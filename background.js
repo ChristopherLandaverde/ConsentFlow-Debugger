@@ -1,5 +1,12 @@
 // ConsentFlow Debugger — Background Service Worker
-// Handles content script injection for tabs that load before the extension.
+// Handles content script injection for tabs that load before the extension, and forgets a
+// tab's UI state when it closes.
+importScripts('popup/ui-state.js');
+
+chrome.tabs.onRemoved.addListener(function (tabId) {
+  CFUiState.forgetTab(tabId);
+});
+
 chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
   if (request.action === 'ensureContentScript' && request.tabId) {
     ensureContentScript(request.tabId).then(sendResponse);

@@ -16,6 +16,13 @@
   let cachedState = null;
   let pendingRequests = {};
 
+  // The page's own name for the side panel, which has no tab URL without extra permissions.
+  function withPage(state) {
+    const out = Object.assign({}, state);
+    out.page = { host: location.hostname };
+    return out;
+  }
+
   // Listen for messages from the injected page-context script
   window.addEventListener('message', function (event) {
     if (!event.data || event.data.source !== 'cf-debug-injected') return;
@@ -80,10 +87,10 @@
       if (cachedState && cachedState.ready) {
         // Still request a fresh one in the background for next time
         requestFreshState();
-        sendResponse(cachedState);
+        sendResponse(withPage(cachedState));
       } else {
         requestFreshState().then(function (state) {
-          sendResponse(state || { ready: false });
+          sendResponse(state ? withPage(state) : { ready: false });
         });
         return true; // keep channel open for async
       }

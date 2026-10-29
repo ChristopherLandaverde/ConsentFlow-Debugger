@@ -1,14 +1,18 @@
-// Loads the real popup/findings.js and popup/popup.js against a minimal DOM built from
-// popup/popup.html and a stubbed chrome API. Each element with an id in popup.html becomes a
+// Loads the real popup (popup/popup.html + its scripts) or side panel (sidepanel/panel.html +
+// its scripts) against a minimal DOM built from the HTML and a stubbed chrome API, including
+// an in-memory chrome.storage.session that can be shared between loads to model reopening. Each element with an id in popup.html becomes a
 // stub element with textContent, className, innerHTML, hidden and attributes; asking for an
 // id that popup.html does not have throws, so a renamed element fails the tests instead of
 // passing silently. Elements that popup.js creates through innerHTML are checked as HTML.
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
-const findingsJs = readFileSync(new URL("../../popup/findings.js", import.meta.url), "utf8");
-const popupJs = readFileSync(new URL("../../popup/popup.js", import.meta.url), "utf8");
-const popupHtml = readFileSync(new URL("../../popup/popup.html", import.meta.url), "utf8");
+const read = (path) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
+const SHARED = ["popup/findings.js", "popup/render.js", "popup/ui-state.js"];
+const SURFACES = {
+  popup: { html: read("popup/popup.html"), scripts: [...SHARED, "popup/popup.js"] },
+  panel: { html: read("sidepanel/panel.html"), scripts: [...SHARED, "sidepanel/panel.js"] },
+};
 
 const escapeText = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -52,6 +56,10 @@ function makeElement(attrs = {}) {
     click() {
       el.dispatch("click", { target: el });
     },
+    closest(selector) {
+      const attr = /^\[([\w-]+)\]$/.exec(selector);
+      return attr && attr[1] in attributes ? el : null;
+    },
     focus() {
       el.focused++;
     },
@@ -62,9 +70,9 @@ function makeElement(attrs = {}) {
 // Objects created inside the vm have another realm's prototypes; copy them for deepEqual.
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
-function buildDom() {
+function buildDom(html, name) {
   const byId = {};
-  for (const [, attrText] of popupHtml.matchAll(/<\w+((?:\s+[\w-]+(?:="[^"]*")?)*)\s*\/?>/g)) {
+  for (const [, attrText] of html.matchAll(/<\w+((?:\s+[\w-]+(?:="[^"]*")?)*)\s*\/?>/g)) {
     const attrs = Object.fromEntries(
       [...attrText.matchAll(/([\w-]+)(?:="([^"]*)")?/g)].map((m) => [m[1], m[2] === undefined ? "" : m[2]]),
     );
@@ -76,7 +84,7 @@ function buildDom() {
     activeElement: null,
     scrollingElement: { scrollTop: 0 },
     getElementById(id) {
-      if (!byId[id]) throw new Error(`popup.html has no #${id}`);
+      if (!byId[id]) throw new Error(`${name} has no #${id}`);
       return byId[id];
     },
     // Elements created through innerHTML are not modelled; record the query and hand back a
@@ -97,10 +105,27 @@ function buildDom() {
  * @param {Array}  [options.tabs]     result of chrome.tabs.query
  * @param {object} [options.injectResult] reply from background.js to ensureContentScript
  * @param {number} [options.now]      Date.now() inside the popup
+ * @param {Map}    [options.session]  backing store for chrome.storage.session (share it to reopen)
+ * @param {object|null} [options.sidePanel] chrome.sidePanel stub; null = API missing
  */
-export function loadPopup({ responses = [], tabs = [{ id: 7, url: "https://shop.example/cart" }], injectResult = { ok: true }, now = 1_000_000 } = {}) {
-  const dom = buildDom();
-  const calls = { sendMessage: [], runtime: [], created: [], reloaded: [] };
+export function loadPopup(options = {}) {
+  return loadSurface("popup", options);
+}
+
+/** The side panel, with the same options as loadPopup. */
+export function loadPanel(options = {}) {
+  return loadSurface("panel", options);
+}
+
+/** A fresh chrome.storage.session backing store. */
+export const newSession = () => new Map();
+
+function loadSurface(surface, { responses = [], tabs = [{ id: 7, url: "https://shop.example/cart" }], injectResult = { ok: true }, now = 1_000_000, session = new Map(), sidePanel } = {}) {
+  const { html: pageHtml, scripts } = SURFACES[surface];
+  const dom = buildDom(pageHtml, surface === "popup" ? "popup.html" : "panel.html");
+  const calls = { sendMessage: [], runtime: [], created: [], reloaded: [], sidePanel: [], closed: 0, stored: [] };
+  const tabListeners = { activated: [], updated: [] };
+  const tabList = { current: tabs };
   const timeouts = [];
   const intervals = [];
   const replies = [...responses];
@@ -114,9 +139,36 @@ export function loadPopup({ responses = [], tabs = [{ id: 7, url: "https://shop.
         cb && cb(injectResult);
       },
     },
+    storage: {
+      session: {
+        get(key, cb) {
+          cb(session.has(key) ? { [key]: JSON.parse(session.get(key)) } : {});
+        },
+        set(items) {
+          for (const [k, v] of Object.entries(items)) {
+            session.set(k, JSON.stringify(v));
+            calls.stored.push({ key: k, value: plain(v) });
+          }
+        },
+        remove(keys) {
+          for (const k of [].concat(keys)) session.delete(k);
+        },
+      },
+    },
+    sidePanel:
+      sidePanel === null
+        ? undefined
+        : sidePanel || {
+            open(opts) {
+              calls.sidePanel.push(plain(opts));
+              return { then: (ok) => ok() };
+            },
+          },
     tabs: {
+      onActivated: { addListener: (fn) => tabListeners.activated.push(fn) },
+      onUpdated: { addListener: (fn) => tabListeners.updated.push(fn) },
       query(query, cb) {
-        cb(tabs);
+        cb(tabList.current);
       },
       sendMessage(tabId, message, cb) {
         calls.sendMessage.push({ tabId, message: plain(message) });
@@ -149,13 +201,23 @@ export function loadPopup({ responses = [], tabs = [{ id: 7, url: "https://shop.
     setInterval(fn, ms) {
       intervals.push({ fn, ms });
     },
+    close() {
+      calls.closed++;
+    },
   });
-  vm.runInContext(findingsJs, context, { filename: "findings.js" });
-  vm.runInContext(popupJs, context, { filename: "popup.js" });
+  for (const file of scripts) vm.runInContext(read(file), context, { filename: file });
 
   return {
     ...dom,
     calls,
+    session,
+    tabListeners,
+    /** Make another tab active and fire chrome.tabs.onActivated. */
+    activate(tab, response) {
+      tabList.current = [tab];
+      replies.push(response);
+      for (const fn of tabListeners.activated) fn({ tabId: tab.id });
+    },
     timeouts,
     intervals,
     clock,
@@ -165,7 +227,7 @@ export function loadPopup({ responses = [], tabs = [{ id: 7, url: "https://shop.
     runTimeouts() {
       for (const t of timeouts.splice(0)) t.fn();
     },
-    /** Queue the next reply and run the 4-second refresh. */
+    /** Queue the next reply and run the periodic refresh. */
     refresh(response) {
       replies.push(response);
       for (const i of intervals) i.fn();

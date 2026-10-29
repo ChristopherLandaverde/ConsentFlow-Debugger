@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none';">
+  <title>ConsentFlow trace</title>
+  <link rel="stylesheet" href="../popup/popup.css">
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body class="panel">
+  <header class="bar">
+    <img class="mark" src="../icons/icon-32.png" width="16" height="16" alt="">
+    <span class="product">ConsentFlow trace</span>
+    <span id="pageMeta" class="bar-meta"></span>
+  </header>
+
+  <main>
+    <!-- Same verdict as the popup and the toolbar badge: one computed verdict. -->
+    <section id="verdict" class="verdict" data-state="loading" aria-live="polite" aria-atomic="true">
+      <p id="verdictLabel" class="status-tag loading">– READING PAGE</p>
+      <h1 id="verdictTitle" class="verdict-title">Reading this page…</h1>
+      <p id="verdictDetail" class="verdict-detail">Capture starts when the page loads. Results appear in a few seconds.</p>
+      <div id="progress" class="progress" role="progressbar" aria-label="Reading the page"><span></span></div>
+      <button id="errorAction" class="btn primary" type="button" hidden>Reload page</button>
+    </section>
+
+    <div id="content" hidden>
+      <div class="panel-actions">
+        <button id="recheckBtn" class="btn primary" type="button">Reload and recheck</button>
+        <p id="checkedAt" class="meta"></p>
+      </div>
+
+      <div id="tablist" class="tabs" role="tablist" aria-label="Trace views">
+        <button id="tab-findings" class="tab" type="button" role="tab" data-view="findings" aria-controls="view-findings" aria-selected="true" tabindex="0">Findings <span id="count-findings" class="tab-count"></span></button>
+        <button id="tab-timeline" class="tab" type="button" role="tab" data-view="timeline" aria-controls="view-timeline" aria-selected="false" tabindex="-1">Timeline <span id="count-timeline" class="tab-count"></span></button>
+        <button id="tab-requests" class="tab" type="button" role="tab" data-view="requests" aria-controls="view-requests" aria-selected="false" tabindex="-1">Requests <span id="count-requests" class="tab-count"></span></button>
+        <button id="tab-consent" class="tab" type="button" role="tab" data-view="consent" aria-controls="view-consent" aria-selected="false" tabindex="-1">Consent</button>
+      </div>
+
+      <section id="view-findings" class="view findings" role="tabpanel" aria-labelledby="tab-findings" tabindex="0"></section>
+      <section id="view-timeline" class="view" role="tabpanel" aria-labelledby="tab-timeline" tabindex="0" hidden></section>
+      <section id="view-requests" class="view" role="tabpanel" aria-labelledby="tab-requests" tabindex="0" hidden></section>
+      <section id="view-consent" class="view" role="tabpanel" aria-labelledby="tab-consent" tabindex="0" hidden></section>
+    </div>
+  </main>
+
+  <script src="../popup/findings.js"></script>
+  <script src="../popup/render.js"></script>
+  <script src="../popup/ui-state.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>

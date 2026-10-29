@@ -11,7 +11,9 @@
   },
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "sidePanel",
+    "storage"
   ],
   "action": {
     "default_title": "ConsentFlow Debugger",
@@ -20,6 +22,9 @@
       "32": "icons/icon-32.png"
     },
     "default_popup": "popup/popup.html"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/panel.html"
   },
   "background": {
     "service_worker": "background.js"
