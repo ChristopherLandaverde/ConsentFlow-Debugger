@@ -357,7 +357,9 @@
     // Sort: violations first, then blocked, no_consent_mode, idle, firing
     var verdictOrder = { violation: 0, blocked: 1, no_consent_mode: 2, idle: 3, firing: 4 };
     impacts.sort(function (a, b) {
-      return (verdictOrder[a.verdict] || 5) - (verdictOrder[b.verdict] || 5);
+      var aOrder = verdictOrder[a.verdict] !== undefined ? verdictOrder[a.verdict] : 5;
+      var bOrder = verdictOrder[b.verdict] !== undefined ? verdictOrder[b.verdict] : 5;
+      return aOrder - bOrder;
     });
 
     var html = '';

@@ -337,14 +337,10 @@ describe("State tab", () => {
     ]);
   });
 
-  test(
-    "lists violations first",
-    { todo: "known bug: verdictOrder[verdict] || 5 turns violation (0) into 5, so violations sort last" },
-    () => {
-      const popup = show(baseState({ tagImpact: [impact("A", "firing"), impact("B", "violation")] }));
-      assert.deepEqual(texts(popup.html("tagImpact"), "ti-name"), ["B", "A"]);
-    },
-  );
+  test("lists violations first", () => {
+    const popup = show(baseState({ tagImpact: [impact("A", "firing"), impact("B", "violation")] }));
+    assert.deepEqual(texts(popup.html("tagImpact"), "ti-name"), ["B", "A"]);
+  });
 
   const grades = [
     [["violation", "firing"], "CRITICAL", "critical"],
