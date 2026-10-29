@@ -74,7 +74,7 @@ the extension's own scripts, so injected markup cannot run script.
   popup, and is gone when the page is reloaded or closed.
 - Its code makes no network requests: no analytics, no remote configuration, no server. The
   `fetch`, `XMLHttpRequest` and `sendBeacon` wrappers only observe requests the page makes.
-  The only way it opens anything remote is the popup's "Book a free 30-min review" button,
+  The only way it opens anything remote is the popup's "Discuss a system review" link,
   which opens `https://focosys.io/review` in a new tab when you click it and sends no page
   data.
 
