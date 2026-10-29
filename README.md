@@ -87,13 +87,28 @@ release yet, install from source.
      behind it.
    - **Checks that need more data**, with what each needs and what to do next.
    - **Passed checks**, collapsed into one row.
-   - **Reload and recheck**, which reloads the tab and captures from the start.
-   - **Show captured data**: the current consent state and CMP, the timeline of consent
-     commands, `config` calls, GTM load and vendor requests (in ms after page start), and each
-     request's decoded consent next to the consent on the page when it was sent.
-3. Interact with the consent banner (accept, reject, customise). The click closes the popup;
-   reopen it to see the result. While open, it refreshes every 4 seconds without collapsing
-   what you expanded.
+   - **Open full trace**, which opens the side panel for this tab (below), and **Reload and
+     recheck**, which reloads the tab and captures from the start.
+3. Click **Open full trace**, then interact with the consent banner (accept, reject,
+   customise). The side panel stays open beside the page and updates every 2 seconds without
+   resetting your scroll position, focus or what you expanded. Its tabs:
+   - **Findings**: the same verdict and findings as the popup.
+   - **Timeline**: consent commands, `config` calls, GTM load and vendor requests in ms after
+     page start, with what each consent command changed. Other dataLayer events are one click
+     away.
+   - **Requests**: for each vendor request, the consent it carried (for Google, its `gcs`
+     consent state and `gcd` consent detail) next to the consent on the page when it was sent,
+     flagged `× mismatch` when they differ. Raw `gcs`/`gcd` values are behind a toggle.
+   - **Consent**: the current consent state, denied first, and the recognized CMP.
+
+   The panel follows the active tab in its window. The popup also refreshes every 4 seconds
+   while open, and both remember what you expanded (and the panel's selected tab) for each tab
+   until the browser closes.
+
+The toolbar icon shows the number of broken findings on the current tab in red (at most 4
+characters, `999+` above 999). It is cleared when nothing is broken; hover the icon for the
+verdict sentence. **Open full trace** needs Chrome 116 or later; on Chrome 114 and 115, open
+ConsentFlow from Chrome's side panel menu instead.
 
 When something is broken or needs review, a "Discuss a system review ↗" link appears below
 everything else. Clicking it opens `https://focosys.io/review` in a new tab; no page data is
@@ -180,9 +195,11 @@ iubenda by script URL.
 ## Privacy and permissions
 
 Nothing leaves your browser. The extension's own code makes no network requests: it has no
-analytics, no remote configuration and no server. It does not use `chrome.storage` or any other
-persistent storage; captured data lives only in the inspected page's memory and the open popup,
-and is gone when the page is closed or reloaded.
+analytics, no remote configuration and no server. It stores no captured data: that lives only in
+the inspected page's memory and the open popup or side panel, and is gone when the page is
+closed or reloaded. The only thing it stores is UI state (which items you expanded and which
+side-panel tab you picked, per tab) in `chrome.storage.session`, which Chrome keeps in memory,
+never syncs, and clears when the browser closes; a tab's entries are removed when the tab closes.
 
 Two things to know:
 
@@ -203,6 +220,8 @@ What each manifest entry is for:
 | `web_accessible_resources`: `injected.js` | Lets the content script load `injected.js` into the page's context via a `<script>` tag. |
 | `activeTab` | Access to the current tab when you click the toolbar icon. |
 | `scripting` | Lets the background worker inject `content.js` into a tab that was already open before the extension was installed or reloaded. |
+| `sidePanel` | The side panel (**Open full trace**) that shows the timeline, requests and consent state beside the page. |
+| `storage` | `chrome.storage.session` only, for UI state: expanded items and the selected side-panel tab. No captured data, nothing persistent, nothing synced. |
 
 See [SECURITY.md](SECURITY.md) for the full security model and how to report a
 vulnerability privately.
@@ -212,10 +231,12 @@ vulnerability privately.
 | File | Runs in | Role |
 |---|---|---|
 | `injected.js` | Page context | Capture engine. Wraps `dataLayer.push`, `gtag`, `fetch`, `XMLHttpRequest`, `sendBeacon`; decodes GCS/GCD; detects CMPs and tags; runs the validation rules (500 ms after DOMContentLoaded, then every 3 s); computes tag verdicts. |
-| `content.js` | Content script (isolated world), `document_start` | Injects `injected.js`, caches the latest state it posts, and answers the popup's `getState` and `ping` messages. |
-| `background.js` | Service worker | On request from the popup, injects `content.js` into a tab that doesn't have it yet. |
-| `popup/findings.js` | Extension popup | Turns the state into findings (observed, consequence, fix, verify, evidence) and one verdict. |
-| `popup/popup.js` | Extension popup | Requests state from the active tab every 4 s and renders the verdict, findings and captured data. Fonts are bundled in `popup/fonts/` (SIL Open Font License 1.1). |
+| `content.js` | Content script (isolated world), `document_start` | Injects `injected.js`, caches the latest state it posts, answers `getState` and `ping` from the popup and side panel, and reports rule and tag results to `background.js` for the badge when they change. |
+| `background.js` | Service worker | Injects `content.js` into a tab that doesn't have it yet, sets the toolbar badge from the rule and tag results `content.js` reports, and forgets a closed tab's UI state. |
+| `popup/findings.js` | Popup, side panel, service worker | Turns the state into findings (observed, consequence, fix, verify, evidence), one verdict, and the badge. |
+| `popup/render.js`, `popup/ui-state.js` | Popup, side panel | Shared escaping and findings rendering; UI state in `chrome.storage.session`. |
+| `popup/popup.js` | Extension popup | Requests state from the active tab every 4 s and renders the verdict and findings. Fonts are bundled in `popup/fonts/` (SIL Open Font License 1.1). |
+| `sidepanel/panel.js` | Side panel | Requests state from the active tab every 2 s and renders findings, timeline, requests and consent, re-rendering only the views that changed. |
 
 ```mermaid
 sequenceDiagram
