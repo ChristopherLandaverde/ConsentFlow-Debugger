@@ -3,14 +3,11 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "validate": "node scripts/validate.mjs",
-    "lint": "node scripts/validate.mjs",
-    "lint:security": "node --test tests/static-validation.test.mjs",
-    "test": "node --test tests/static-validation.test.mjs",
-    "test:architecture": "node --test tests/static-validation.test.mjs",
-    "test:integration": "node --test tests/static-validation.test.mjs",
-    "test:e2e": "node --test tests/static-validation.test.mjs",
-    "test:performance": "node --test tests/static-validation.test.mjs"
+    "test": "node --test \"tests/*.test.mjs\"",
+    "validate": "node scripts/validate.mjs"
   }
 }

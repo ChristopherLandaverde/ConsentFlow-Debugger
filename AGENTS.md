@@ -13,8 +13,7 @@ not on the Chrome Web Store; publishing there is parked until Christopher decide
 The repo also holds the landing page (`index.html`, `measurement-playground.js`, `assets/`),
 documented in `docs/website.md`. The Cookiebot helper scripts (`bookmarklet.js`,
 `universal-bookmarklet.js`, `universal-cookiebot-integration.js`, `website-integration.js`)
-and their guides are legacy and not part of the extension. `backup_20250726_170514/` holds an
-abandoned test suite that milestone C1 will salvage.
+and their guides are legacy and not part of the extension.
 
 ## Commands
 
@@ -22,12 +21,12 @@ Node.js 22. No dependencies.
 
 ```bash
 npm ci --ignore-scripts
-npm test           # node --test tests/static-validation.test.mjs
+npm test           # node --test "tests/*.test.mjs"
 npm run validate   # node scripts/validate.mjs: required files, manifest content script, node --check
 ```
 
-Run all three before every commit. CI (`.github/workflows/ci.yml`) runs the same scripts plus
-`npm audit --audit-level=moderate`.
+Run all three before every commit. CI (`.github/workflows/ci.yml`) is one job that runs them
+plus `npm audit --audit-level=moderate`.
 
 ## Loading the extension
 
@@ -46,7 +45,8 @@ Run all three before every commit. CI (`.github/workflows/ci.yml`) runs the same
   `window.postMessage` with `source: 'cf-debug-injected'` / `'cf-debug-content'`; a test
   enforces this boundary. Don't expose extension APIs to the page.
 - `background.js` only injects `content.js` on demand. `popup/` renders state and escapes
-  every page-derived string with `esc()` before inserting HTML.
+  page-derived text with `esc()` before inserting HTML. Escape anything new you render; one
+  known gap (consent values in the `cs-row` class attribute) is a `todo` test.
 - The extension makes no network requests and stores nothing. Keep it that way; any change
   to permissions or data handling needs a `needs-decision` issue.
 - Plain ES5/ES2017-style scripts, no modules, no bundler, no dependencies in the extension.
@@ -57,11 +57,21 @@ Run all three before every commit. CI (`.github/workflows/ci.yml`) runs the same
 - README claims must be true of the code. Never describe the extension as available on the
   Chrome Web Store.
 
-## Testing, honestly
+## Testing
 
-`npm test` is a static test of source text: one assertion group covers the extension's
-`postMessage` boundary, the rest cover the landing page and a secret scan. `test:architecture`,
-`test:integration`, `test:e2e`, `test:performance` and `lint:security` all run that same file,
-and `lint` runs the validator. There are no behavioral tests for `injected.js` or the popup
-yet; adding them is milestone C1. Until then, verify behavior by loading the extension and
-checking real pages with and without Consent Mode, and say in the PR what you checked.
+`npm test` loads the real `injected.js` and `popup/popup.js` into `node:vm` contexts.
+`tests/helpers/page.mjs` stands in for the page (window as global, `document` script tags and
+DOMContentLoaded, `fetch`, `sendBeacon`, `XMLHttpRequest`, `postMessage`) and lets the test set
+`performance.now()` and fire timers; `tests/helpers/popup-dom.mjs` builds a stub DOM from
+`popup/popup.html` and a stub `chrome` API. No source changes or dependencies were needed, so
+keep the extension files loadable that way: plain scripts, browser globals only.
+
+- Change behavior in `injected.js` or the popup: add or update a test in the matching
+  `tests/*.test.mjs` file. Assert on observable output (`window.__cfDebug`, the `get-state`
+  reply, rendered HTML), not on internals.
+- `todo` tests record known bugs whose fix changes what users see (sort order, a duplicate
+  config event, an unescaped attribute). Fixing one means removing its `todo` flag; that is a
+  user-visible change, so it goes to Christopher's review.
+- Not covered: `content.js` / `background.js` relaying and real Chrome. For changes there,
+  load the extension unpacked, check real pages with and without Consent Mode, and say in the
+  PR what you checked.
