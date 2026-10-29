@@ -3,12 +3,22 @@
   "name": "ConsentFlow Debugger",
   "version": "2.0.0",
   "description": "Detects and diagnoses Google Consent Mode v2 implementation issues: race conditions, missing defaults, GCS/GCD signal mismatches, and tag firing violations.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "permissions": [
     "activeTab",
-    "scripting",
-    "storage"
+    "scripting"
   ],
   "action": {
+    "default_title": "ConsentFlow Debugger",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    },
     "default_popup": "popup/popup.html"
   },
   "background": {

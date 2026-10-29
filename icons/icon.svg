@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>ConsentFlow Debugger</title>
+  <!-- Tile: landing-page primary teal (#036461) -->
+  <rect width="128" height="128" rx="28" fill="#036461"/>
+  <!-- Shield -->
+  <path d="M64 18 L100 31 V60 C100 84 85 101 64 110 C43 101 28 84 28 60 V31 Z" fill="#ffffff"/>
+  <!-- Consent check, cut out in the tile teal -->
+  <path d="M47 63 L59 75 L82 50" fill="none" stroke="#036461" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
