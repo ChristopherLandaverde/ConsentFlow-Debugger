@@ -167,6 +167,9 @@ What each manifest entry is for:
 | `activeTab` | Access to the current tab when you click the toolbar icon. |
 | `scripting` | Lets the background worker inject `content.js` into a tab that was already open before the extension was installed or reloaded. |
 
+See [SECURITY.md](SECURITY.md) for the full security model and how to report a
+vulnerability privately.
+
 ## Architecture
 
 | File | Runs in | Role |
