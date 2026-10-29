@@ -1,53 +1,11 @@
-// popup/popup.js: how state is fetched, which view state shows, and how the verdict,
-// findings and captured data are rendered and kept stable across live refreshes.
+// popup/popup.js: how state is fetched, which view state shows, how the verdict and findings
+// are rendered and kept stable across live refreshes, what is remembered between opens, and
+// the hand-off to the side panel.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { loadPage } from "./helpers/page.mjs";
-import { disclosures, findingTitles, loadPopup, statusTags } from "./helpers/popup-dom.mjs";
-
-const GA4 = "https://region1.google-analytics.com/g/collect";
-const GTAG = "https://www.googletagmanager.com/gtag/js?id=G-1";
-const FULL_V2 = {
-  ad_storage: "denied",
-  analytics_storage: "denied",
-  ad_user_data: "denied",
-  ad_personalization: "denied",
-};
-
-// Real injected.js output for the states the popup has to handle.
-const states = {
-  bare: () => loadPage().finishLoading().requestState(),
-  zeroRequests() {
-    const page = loadPage({ scripts: [GTAG] });
-    page.at(5).gtag("consent", "default", FULL_V2);
-    page.at(20).push(["config", "G-1"]);
-    return page.finishLoading().requestState();
-  },
-  broken() {
-    const page = loadPage({ scripts: [GTAG], globals: { fbq() {} } });
-    page.at(12).push(["config", "G-1"]);
-    page.at(340).gtag("consent", "default", FULL_V2);
-    page.at(410).window.fetch("https://www.facebook.com/tr?ev=PageView");
-    page.at(1200).window.fetch("https://www.facebook.com/tr?ev=ViewContent");
-    return page.finishLoading().requestState();
-  },
-  verified() {
-    const page = loadPage({ scripts: [GTAG], globals: { OneTrust: {} } });
-    page.at(1).gtag("consent", "default", { ...FULL_V2, wait_for_update: 500 });
-    page.at(10).push(["config", "G-1"]);
-    page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
-    page.at(950).window.fetch(`${GA4}?gcs=G110&en=page_view`);
-    return page.finishLoading().requestState();
-  },
-  review() {
-    const page = loadPage({ globals: { Cookiebot: {} } });
-    page.at(1).gtag("consent", "default", FULL_V2);
-    page.at(10).push(["config", "G-1"]);
-    page.at(50).window.fetch(`${GA4}?gcs=G100`);
-    page.at(800).gtag("consent", "update", { analytics_storage: "granted", ad_storage: "granted" });
-    return page.finishLoading().requestState();
-  },
-};
+import { disclosures, findingTitles, loadPopup, newSession, statusTags } from "./helpers/popup-dom.mjs";
+import { FULL_V2, states } from "./helpers/states.mjs";
 
 const show = (state) => loadPopup({ responses: [state] });
 
@@ -231,11 +189,9 @@ describe("findings", () => {
   test("escapes page-controlled strings", () => {
     const state = states.broken();
     state.tagImpact[0].name = '<img src=x onerror="alert(1)">';
-    state.networkHits[0].host = "<b>evil</b>";
     const popup = show(state);
-    popup.toggle("trace", "trace");
-    const html = popup.html("findings") + popup.html("trace");
-    assert.doesNotMatch(html, /<img|<b>/);
+    const html = popup.html("findings");
+    assert.doesNotMatch(html, /<img/);
     assert.match(html, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
   });
 });
@@ -269,34 +225,77 @@ describe("live refresh keeps the user's place", () => {
     popup.document.scrollingElement.scrollTop = 240;
     popup.document.activeElement = { getAttribute: (n) => (n === "data-toggle" ? "passed" : null) };
     const changed = states.broken();
-    changed.networkHits.push({ ...changed.networkHits[0], ms: 3000 });
+    changed.tagImpact.find((t) => t.verdict === "violation").preConsentCount += 1;
     popup.refresh(changed);
     assert.equal(popup.document.scrollingElement.scrollTop, 240);
     assert.equal(popup.queried.at(-1).selector, '[data-toggle="passed"]');
   });
 });
 
-describe("captured data", () => {
-  test("is collapsed behind a disclosure that says what it holds", () => {
-    const popup = show(states.broken());
-    const trace = disclosures(popup.html("trace"))[0];
-    assert.equal(trace.key, "trace");
-    assert.match(trace.label, /^Show captured data: \d+ events, 2 requests$/);
-    assert.equal(trace.expanded, false);
+describe("side panel hand-off", () => {
+  test("the popup holds no timeline, requests or consent table; Open full trace is the one primary action", () => {
+    const popup = show(states.verified());
+    assert.doesNotMatch(popup.html("findings"), /Timeline|Show captured data|class="raw"/);
+    assert.match(popup.el("openTraceBtn").className, /\bprimary\b/);
+    assert.match(popup.el("recheckBtn").className, /\bsecondary\b/);
+    assert.equal(popup.el("actions").hidden, false);
   });
 
-  test("shows consent state denied first, the timeline with times after page start, and requests", () => {
-    const popup = show(states.verified());
-    popup.toggle("trace", "trace");
-    const html = popup.html("trace");
-    assert.match(html, /<h2 class="trace-heading">Consent now<\/h2><dl class="kv"><div class="ev-row"><dt>ad_storage<\/dt><dd><span class="cv denied"><span aria-hidden="true">×<\/span> denied<\/span>/);
-    assert.match(html, /<span class="t-time">\+1 ms<\/span><span class="t-label">Consent default<\/span>/);
-    assert.match(html, /OneTrust/);
-    assert.match(html, /region1\.google-analytics\.com · page_view/);
-    assert.match(html, /<span role="cell" class="mono">analytics_storage<\/span><span role="cell"><span class="cv granted">/);
-    assert.match(html, /<span role="cell" class="mono">ad_storage<\/span><span role="cell"><span class="cv denied">/);
-    assert.match(html, /<p class="raw">gcs G110<\/p>/);
-    assert.doesNotMatch(html, /DevTools/);
+  test("Open full trace opens the side panel for the current tab, then closes the popup", () => {
+    const popup = show(states.broken());
+    popup.el("openTraceBtn").click();
+    assert.deepEqual(popup.calls.sidePanel, [{ tabId: 7 }]);
+    assert.equal(popup.calls.closed, 1);
+    assert.equal(popup.el("traceHint").hidden, true);
+  });
+
+  test("without sidePanel.open (Chrome 114 and 115) it says where to find the panel instead", () => {
+    const popup = loadPopup({ responses: [states.broken()], sidePanel: null });
+    popup.el("openTraceBtn").click();
+    assert.equal(popup.calls.closed, 0);
+    assert.equal(popup.el("traceHint").hidden, false);
+    assert.equal(popup.text("traceHint"), "Open ConsentFlow from Chrome's side panel menu to see the full trace.");
+  });
+
+  test("when Chrome refuses to open the panel, the hint shows and the popup stays open", () => {
+    const sidePanel = { open: () => ({ then: (ok, fail) => fail(new Error("no user gesture")) }) };
+    const popup = loadPopup({ responses: [states.broken()], sidePanel });
+    popup.el("openTraceBtn").click();
+    assert.equal(popup.calls.closed, 0);
+    assert.equal(popup.el("traceHint").hidden, false);
+  });
+});
+
+describe("remembered between opens (chrome.storage.session)", () => {
+  test("expanding a disclosure stores only UI keys for this tab", () => {
+    const popup = show(states.broken());
+    const key = disclosures(popup.html("findings")).find((d) => d.key.startsWith("ev-")).key;
+    popup.toggle("findings", key);
+    assert.deepEqual(popup.calls.stored.at(-1), { key: "cf.ui.popup.7", value: { open: { [key]: true } } });
+  });
+
+  test("reopening the popup on the same tab restores expanded items; collapsing forgets them", () => {
+    const session = newSession();
+    const first = loadPopup({ responses: [states.broken()], session });
+    const key = disclosures(first.html("findings")).find((d) => d.key.startsWith("ev-")).key;
+    first.toggle("findings", key);
+    first.toggle("findings", "passed");
+
+    const again = loadPopup({ responses: [states.broken()], session });
+    const open = disclosures(again.html("findings")).filter((d) => d.expanded).map((d) => d.key);
+    assert.deepEqual(open.sort(), [key, "passed"].sort());
+
+    again.toggle("findings", key);
+    const third = loadPopup({ responses: [states.broken()], session });
+    assert.deepEqual(disclosures(third.html("findings")).filter((d) => d.expanded).map((d) => d.key), ["passed"]);
+  });
+
+  test("another tab starts collapsed", () => {
+    const session = newSession();
+    const first = loadPopup({ responses: [states.broken()], session });
+    first.toggle("findings", "passed");
+    const other = loadPopup({ responses: [states.broken()], session, tabs: [{ id: 8, url: "https://other.example/" }] });
+    assert.equal(disclosures(other.html("findings")).some((d) => d.expanded), false);
   });
 });
 

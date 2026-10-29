@@ -44,11 +44,14 @@ plus `npm audit --audit-level=moderate`.
 - `content.js` runs in the isolated world. It talks to `injected.js` only via
   `window.postMessage` with `source: 'cf-debug-injected'` / `'cf-debug-content'`; a test
   enforces this boundary. Don't expose extension APIs to the page.
-- `background.js` only injects `content.js` on demand. `popup/` renders state and escapes
-  page-derived text with `esc()` before inserting HTML, including inside attributes. Escape
+- `background.js` injects `content.js` on demand, sets the toolbar badge and forgets closed
+  tabs' UI state. `popup/` and `sidepanel/` render state and escape page-derived text with
+  `esc()` (`popup/render.js`) before inserting HTML, including inside attributes. Escape
   anything new you render.
-- The extension makes no network requests and stores nothing. Keep it that way; any change
-  to permissions or data handling needs a `needs-decision` issue.
+- The extension makes no network requests and stores no captured data. The only storage is
+  UI state in `chrome.storage.session` (`popup/ui-state.js`, approved in #15). Keep it that
+  way; any change to permissions or data handling needs a `needs-decision` issue, and
+  `scripts/validate.mjs` lists the permitted permissions.
 - Plain ES5/ES2017-style scripts, no modules, no bundler, no dependencies in the extension.
 - Icons: `icons/icon.svg` is the source; regenerate PNGs with
   `for s in 16 32 48 128; do rsvg-convert -w $s -h $s icons/icon.svg -o icons/icon-$s.png; done`.
@@ -63,7 +66,8 @@ plus `npm audit --audit-level=moderate`.
 `tests/helpers/page.mjs` stands in for the page (window as global, `document` script tags and
 DOMContentLoaded, `fetch`, `sendBeacon`, `XMLHttpRequest`, `postMessage`) and lets the test set
 `performance.now()` and fire timers; `tests/helpers/popup-dom.mjs` builds a stub DOM from
-`popup/popup.html` and a stub `chrome` API. No source changes or dependencies were needed, so
+`popup/popup.html` or `sidepanel/panel.html` and a stub `chrome` API (including
+`chrome.storage.session`). No source changes or dependencies were needed, so
 keep the extension files loadable that way: plain scripts, browser globals only.
 
 - Change behavior in `injected.js` or the popup: add or update a test in the matching
@@ -71,6 +75,7 @@ keep the extension files loadable that way: plain scripts, browser globals only.
   reply, rendered HTML), not on internals.
 - A known bug can be recorded as a `node:test` `todo` test until it is fixed; fixing it means
   removing the flag. There are none today.
-- Not covered: `content.js` / `background.js` relaying and real Chrome. For changes there,
+- `tests/badge.test.mjs` loads `background.js` and `content.js` with stubbed `chrome` for the
+  badge pipeline. Not covered: real Chrome (side panel opening, badge drawing). For changes there,
   load the extension unpacked, check real pages with and without Consent Mode, and say in the
   PR what you checked.

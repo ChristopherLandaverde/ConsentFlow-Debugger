@@ -293,43 +293,21 @@ main { padding: var(--space-3) var(--space-4) var(--space-4); }
   transition: border-color var(--duration) var(--ease), transform var(--duration) var(--ease);
 }
 .btn.primary { background: var(--ink-primary); color: var(--surface-paper); }
-.btn.primary:hover { transform: translateY(-1px); }
+.btn.secondary { background: var(--surface-paper); color: var(--ink-primary); }
+.btn:hover { transform: translateY(-1px); }
 .meta { font-family: var(--font-mono); font-size: var(--text-label); color: var(--ink-secondary); }
+.actions .meta, .hint { flex-basis: 100%; }
+.hint { font-size: var(--text-small); color: var(--ink-primary); }
 
-/* ─── Captured data ─── */
-.trace { border-top: var(--rule) solid var(--line-subtle); padding-top: var(--space-2); }
-.trace-body { margin-top: var(--space-2); }
-.trace-heading { margin-top: var(--space-3); font-size: var(--text-small); font-weight: 600; }
-.trace-empty, .trace-line { margin-top: var(--space-1); font-size: var(--text-small); color: var(--ink-secondary); }
-.trace-line { display: grid; grid-template-columns: var(--label-col) 1fr; column-gap: var(--space-2); color: var(--ink-primary); }
-.kv { margin-top: var(--space-1); }
-.kv .ev-row { grid-template-columns: auto 1fr; column-gap: var(--space-3); }
-.req-grid { margin-top: var(--space-1); }
-.req-row {
-  display: grid;
-  grid-template-columns: 1.7fr 1fr 1fr;
-  column-gap: var(--space-2);
-  padding: 2px 0;
-  font-size: var(--text-data);
-}
-.req-row:first-child { font-family: var(--font-mono); font-size: var(--text-label); color: var(--ink-secondary); }
-.req-row .mono { font-size: var(--text-label); padding-top: 1px; white-space: nowrap; }
-.cv { font-family: var(--font-mono); font-size: var(--text-data); white-space: nowrap; }
-.kv dt { text-transform: none; letter-spacing: 0; color: var(--ink-secondary); }
-.timeline, .requests { list-style: none; margin-top: var(--space-1); }
-.timeline li, .requests li {
-  display: grid;
-  grid-template-columns: var(--label-col) 1fr;
-  column-gap: var(--space-2);
-  padding: var(--space-1) 0;
-  border-top: var(--rule) solid var(--line-subtle);
-}
-.t-time { font-family: var(--font-mono); font-size: var(--text-label); color: var(--ink-secondary); padding-top: 2px; font-variant-numeric: tabular-nums; }
+/* ─── Trace pieces shared with the side panel (sidepanel/panel.css) ─── */
+.trace-heading { margin-top: var(--space-5); font-size: var(--text-small); font-weight: 600; }
+.trace-empty { margin-top: var(--space-1); font-size: var(--text-small); color: var(--ink-secondary); }
+.t-time { font-family: var(--font-mono); font-size: var(--text-data); color: var(--ink-secondary); padding-top: 2px; font-variant-numeric: tabular-nums; }
 .t-label { font-size: var(--text-small); font-weight: 500; word-break: break-word; }
-.t-detail { grid-column: 2; }
+.cv { font-family: var(--font-mono); font-size: var(--text-data); white-space: nowrap; }
 .cv.denied { color: var(--state-exception); }
 .cv.granted { color: var(--state-pass-text); }
-.raw { color: var(--ink-secondary); font-family: var(--font-mono); font-size: var(--text-label); }
+.raw { margin-top: var(--space-1); color: var(--ink-secondary); font-family: var(--font-mono); font-size: var(--text-data); word-break: break-all; }
 
 /* ─── Review offer: below everything, secondary ─── */
 .review-cta {
@@ -342,5 +320,5 @@ main { padding: var(--space-3) var(--space-4) var(--space-4); }
 
 @media (prefers-reduced-motion: reduce) {
   .progress span { animation: none; width: 100%; opacity: .4; transform: none; }
-  .btn, .btn.primary:hover { transition: none; transform: none; }
+  .btn, .btn:hover { transition: none; transform: none; }
 }

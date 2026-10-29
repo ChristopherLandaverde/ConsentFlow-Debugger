@@ -1,0 +1,116 @@
+/* ConsentFlow Debugger side panel — layered on ../popup/popup.css, which holds the
+   Focosys tokens, fonts, focus style and shared components. Only tokens from that file
+   are used here; no hex values. One scroll container: the document. */
+
+body.panel { width: auto; min-width: 0; }
+
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) 0 var(--space-4);
+}
+
+/* ─── Tabs (WAI-ARIA APG pattern) ─── */
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-4);
+  border-bottom: var(--rule) solid var(--ink-primary);
+}
+.tab {
+  min-height: 32px;
+  padding: var(--space-1) 0;
+  font: inherit;
+  font-size: var(--text-small);
+  font-weight: 500;
+  color: var(--ink-secondary);
+  background: none;
+  border: 0;
+  border-bottom: var(--rule-strong) solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tab[aria-selected="true"] { color: var(--ink-primary); font-weight: 600; border-bottom-color: var(--ink-primary); }
+.tab:hover { color: var(--ink-primary); }
+.tab-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.view { padding-top: var(--space-3); }
+.view.findings { border-top: 0; }
+.view-intro { font-size: var(--text-small); color: var(--ink-secondary); }
+
+/* ─── Empty states ─── */
+.empty { padding: var(--space-4) 0; }
+.empty-title { font-size: var(--text-body); font-weight: 600; }
+.empty-detail { margin-top: var(--space-1); font-size: var(--text-small); color: var(--ink-secondary); }
+
+/* ─── Tables ─── */
+.table-wrap { margin-top: var(--space-2); overflow-x: auto; }
+.trace-table, .req-table { width: 100%; border-collapse: collapse; }
+.trace-table th, .req-table th {
+  text-align: left;
+  vertical-align: top;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 500;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-secondary);
+  padding: var(--space-1) var(--space-2) var(--space-1) 0;
+}
+.trace-table tbody th, .req-table tbody th {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--text-data);
+  font-weight: 400;
+  color: var(--ink-primary);
+}
+.trace-table td, .req-table td {
+  vertical-align: top;
+  padding: var(--space-1) var(--space-2) var(--space-1) 0;
+  font-size: var(--text-small);
+  word-break: break-word;
+}
+.trace-table tbody tr, .req-table tbody tr { border-top: var(--rule) solid var(--line-subtle); }
+.trace-table td.t-time { width: 1%; white-space: nowrap; font-size: var(--text-data); padding-top: 6px; }
+.t-sub { display: block; color: var(--ink-secondary); font-size: var(--text-data); overflow-wrap: anywhere; }
+.changes { list-style: none; margin-top: var(--space-1); font-size: var(--text-small); }
+.changes li { display: flex; flex-wrap: wrap; column-gap: var(--space-1); }
+.changes .key { font-size: var(--text-data); margin-right: var(--space-1); }
+.muted { color: var(--ink-secondary); }
+.consent-table { margin-top: var(--space-1); }
+
+/* ─── Requests ─── */
+.terms { margin-top: var(--space-1); font-size: var(--text-small); }
+.terms div { display: grid; grid-template-columns: var(--label-col) 1fr; column-gap: var(--space-2); margin-top: var(--space-1); }
+.terms dt {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 500;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-secondary);
+  padding-top: 3px;
+}
+.request-list { list-style: none; margin-top: var(--space-2); }
+.req { padding: var(--space-2) 0; border-top: var(--rule) solid var(--line-subtle); }
+.req-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.req-head .t-time { padding-top: 0; }
+.req-table { margin-top: var(--space-1); }
+.req-table tr.mismatch td { font-weight: 600; }
+.flag {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--state-exception);
+}
+
+.trace-line-plain { margin-top: var(--space-1); font-size: var(--text-small); }

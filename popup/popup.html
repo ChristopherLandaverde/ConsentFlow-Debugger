@@ -26,11 +26,11 @@
     <section id="findings" class="findings" aria-label="Findings" hidden></section>
 
     <div id="actions" class="actions" hidden>
-      <button id="recheckBtn" class="btn primary" type="button">Reload and recheck</button>
-      <span id="checkedAt" class="meta"></span>
+      <button id="openTraceBtn" class="btn primary" type="button">Open full trace</button>
+      <button id="recheckBtn" class="btn secondary" type="button">Reload and recheck</button>
+      <p id="checkedAt" class="meta"></p>
+      <p id="traceHint" class="hint" role="status" hidden></p>
     </div>
-
-    <section id="trace" class="trace" aria-label="Captured on this page" hidden></section>
 
     <p id="reviewCta" class="review-cta" hidden>
       Stuck on this? <button id="reviewCtaButton" class="link" type="button">Discuss a system review ↗</button>
@@ -38,6 +38,8 @@
   </main>
 
   <script src="findings.js"></script>
+  <script src="render.js"></script>
+  <script src="ui-state.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

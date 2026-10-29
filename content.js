@@ -15,6 +15,42 @@
   // ─── State cache (populated by messages from injected.js) ─────
   let cachedState = null;
   let pendingRequests = {};
+  let lastBadgeKey = null;
+
+  // ─── Toolbar badge ────────────────────────────────────────────
+  // A new page starts with no badge; background.js clears the previous page's count.
+  sendToBackground({ action: 'pageStart' });
+
+  // Send the rule and tag results (not the captured timeline or requests) to background.js
+  // when they change, so it can set the badge from the same verdict the popup shows.
+  function reportToBackground(state) {
+    if (!state || !state.ready) return;
+    const summary = {
+      ready: true,
+      validation: state.validation || [],
+      tagImpact: state.tagImpact || []
+    };
+    const key = JSON.stringify([
+      summary.validation.map(function (r) { return [r.id, r.status]; }),
+      summary.tagImpact.map(function (t) { return [t.name, t.verdict]; })
+    ]);
+    if (key === lastBadgeKey) return;
+    lastBadgeKey = key;
+    sendToBackground({ action: 'pageState', state: summary });
+  }
+
+  function sendToBackground(message) {
+    try {
+      chrome.runtime.sendMessage(message, function () { void chrome.runtime.lastError; });
+    } catch { /* extension reloaded: nothing to update */ }
+  }
+
+  // The page's own name for the side panel, which has no tab URL without extra permissions.
+  function withPage(state) {
+    const out = Object.assign({}, state);
+    out.page = { host: location.hostname };
+    return out;
+  }
 
   // Listen for messages from the injected page-context script
   window.addEventListener('message', function (event) {
@@ -22,6 +58,7 @@
 
     if (event.data.type === 'full-state') {
       cachedState = event.data.payload;
+      reportToBackground(cachedState);
       // Resolve any pending request
       const reqId = event.data.requestId;
       if (reqId && pendingRequests[reqId]) {
@@ -80,16 +117,20 @@
       if (cachedState && cachedState.ready) {
         // Still request a fresh one in the background for next time
         requestFreshState();
-        sendResponse(cachedState);
+        sendResponse(withPage(cachedState));
       } else {
         requestFreshState().then(function (state) {
-          sendResponse(state || { ready: false });
+          sendResponse(state ? withPage(state) : { ready: false });
         });
         return true; // keep channel open for async
       }
     }
   });
 
-  // Request initial state after a delay to let injected.js initialize
+  // Request initial state after a delay to let injected.js initialize, then keep the badge
+  // current while the tab is visible (injected.js re-runs its rules every 3 s).
   setTimeout(requestFreshState, 2000);
+  setInterval(function () {
+    if (document.visibilityState === 'visible') requestFreshState();
+  }, 3000);
 })();
