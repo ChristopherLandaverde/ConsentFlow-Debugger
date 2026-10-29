@@ -306,8 +306,18 @@
 
       // Requests sent while a required consent type was denied at that moment
       var preConsentCount = 0;
+      var firstPreConsentMs = null;
+      var deniedTypes = [];
+      var hosts = [];
       for (var h = 0; h < vendorHits.length; h++) {
-        if (deniedAtRequest(vendorHits[h], consentTypes).length > 0) preConsentCount++;
+        var denied = deniedAtRequest(vendorHits[h], consentTypes);
+        if (hosts.indexOf(vendorHits[h].host) === -1) hosts.push(vendorHits[h].host);
+        if (denied.length === 0) continue;
+        preConsentCount++;
+        if (firstPreConsentMs === null) firstPreConsentMs = Math.round(vendorHits[h].ms);
+        for (var d = 0; d < denied.length; d++) {
+          if (deniedTypes.indexOf(denied[d]) === -1) deniedTypes.push(denied[d]);
+        }
       }
 
       if (!hasConsentMode) {
@@ -340,6 +350,9 @@
         consentTypes: tag.consentTypes,
         requestCount: vendorHits.length,
         preConsentCount: preConsentCount,
+        firstPreConsentMs: firstPreConsentMs,
+        deniedTypes: deniedTypes,
+        hosts: hosts,
         verdict: verdict
       });
     }
@@ -575,113 +588,149 @@
   }
 
   // ─── Validation Engine ────────────────────────────────────────
+  // Each rule returns status pass | fail | warn | not_checked. A rule that lacked the data
+  // it needs is not_checked and names what it needs (needs), so the popup never reports a
+  // check that did not run as clean. data carries the facts the finding copy is built from.
   function runValidation() {
     const rules = [];
+    var hasDefault = !!state.consentDefaults;
+    var defaultMs = hasDefault ? state.consentDefaults.ms : Infinity;
+    var defaultSettings = hasDefault ? state.consentDefaults.settings : {};
+
+    function rule(r) {
+      if (r.status !== 'not_checked') delete r.needs;
+      rules.push(r);
+    }
 
     // Rule 1: consent default must exist
-    rules.push({
+    rule({
       id: 'consent-default-exists',
       name: 'Consent Default Exists',
       description: 'A gtag("consent", "default", {...}) command must be present. Without it, all consent types default to "granted" and tags fire without restriction.',
-      status: state.consentDefaults ? 'pass' : 'fail',
-      detail: state.consentDefaults
-        ? 'Found at ' + Math.round(state.consentDefaults.ms) + 'ms with: ' + Object.keys(state.consentDefaults.settings).join(', ')
-        : 'No consent default found. All tags will fire as if consent is granted.'
+      status: hasDefault ? 'pass' : 'fail',
+      detail: hasDefault
+        ? 'Found at ' + Math.round(defaultMs) + 'ms with: ' + Object.keys(defaultSettings).join(', ')
+        : 'No consent default found. All tags will fire as if consent is granted.',
+      data: {
+        defaultMs: hasDefault ? Math.round(defaultMs) : null,
+        types: Object.keys(defaultSettings).filter(function (k) { return k !== 'wait_for_update' && k !== 'region'; })
+      }
     });
 
     // Rule 2: consent default must come before any config call
-    var defaultMs = state.consentDefaults ? state.consentDefaults.ms : Infinity;
-    var firstConfigMs = state.configCalls.length > 0 ? state.configCalls[0].ms : Infinity;
-    var configBeforeDefault = firstConfigMs < defaultMs && state.configCalls.length > 0;
-    rules.push({
+    var firstConfig = state.configCalls.length > 0 ? state.configCalls[0] : null;
+    var firstConfigMs = firstConfig ? firstConfig.ms : Infinity;
+    var configBeforeDefault = !!firstConfig && firstConfigMs < defaultMs;
+    rule({
       id: 'consent-default-before-config',
       name: 'Default Before Config',
       description: 'consent("default") must appear before any gtag("config"). Otherwise tags fire in the gap with implicit "granted" consent.',
-      status: state.configCalls.length === 0 ? 'info' : (configBeforeDefault ? 'fail' : 'pass'),
+      status: !firstConfig ? 'not_checked' : (configBeforeDefault ? 'fail' : 'pass'),
+      needs: 'config_call',
       detail: configBeforeDefault
-        ? 'RACE CONDITION: gtag("config", "' + state.configCalls[0].id + '") fired at ' + Math.round(firstConfigMs) + 'ms but consent default was at ' + Math.round(defaultMs) + 'ms (' + Math.round(defaultMs - firstConfigMs) + 'ms late).'
-        : state.configCalls.length === 0
+        ? 'RACE CONDITION: gtag("config", "' + firstConfig.id + '") fired at ' + Math.round(firstConfigMs) + 'ms but consent default was at ' + Math.round(defaultMs) + 'ms (' + Math.round(defaultMs - firstConfigMs) + 'ms late).'
+        : !firstConfig
           ? 'No config calls detected yet.'
-          : 'Consent default (' + Math.round(defaultMs) + 'ms) correctly precedes first config (' + Math.round(firstConfigMs) + 'ms).'
+          : 'Consent default (' + Math.round(defaultMs) + 'ms) correctly precedes first config (' + Math.round(firstConfigMs) + 'ms).',
+      data: {
+        configId: firstConfig ? firstConfig.id : null,
+        configMs: firstConfig ? Math.round(firstConfigMs) : null,
+        defaultMs: hasDefault ? Math.round(defaultMs) : null,
+        lateMs: configBeforeDefault && hasDefault ? Math.round(defaultMs - firstConfigMs) : null,
+        hasDefault: hasDefault
+      }
     });
 
     // Rule 3: Consent Mode v2 types must be present
     var v2Types = ['ad_user_data', 'ad_personalization'];
-    var defaultSettings = state.consentDefaults ? state.consentDefaults.settings : {};
     var missingV2 = v2Types.filter(function (t) { return !(t in defaultSettings); });
-    rules.push({
+    rule({
       id: 'v2-types-present',
       name: 'Consent Mode v2 Types',
       description: 'ad_user_data and ad_personalization are required for Consent Mode v2. Google Ads conversions will not attribute without them.',
-      status: !state.consentDefaults ? 'info' : (missingV2.length === 0 ? 'pass' : 'warn'),
-      detail: !state.consentDefaults
+      status: !hasDefault ? 'not_checked' : (missingV2.length === 0 ? 'pass' : 'warn'),
+      needs: 'consent_default',
+      detail: !hasDefault
         ? 'No consent default to check.'
         : missingV2.length === 0
           ? 'Both ad_user_data and ad_personalization are declared.'
-          : 'Missing from consent default: ' + missingV2.join(', ') + '. Add these for v2 compliance.'
+          : 'Missing from consent default: ' + missingV2.join(', ') + '. Add these for v2 compliance.',
+      data: { missing: hasDefault ? missingV2 : [] }
     });
 
     // Rule 4: wait_for_update should be set when a CMP is present
-    var hasWaitForUpdate = state.consentDefaults && state.consentDefaults.settings.wait_for_update;
-    var cmpDetected = state.cmp && state.cmp.detected;
-    rules.push({
+    var waitForUpdate = hasDefault && defaultSettings.wait_for_update ? defaultSettings.wait_for_update : null;
+    var cmpDetected = !!(state.cmp && state.cmp.detected);
+    rule({
       id: 'wait-for-update',
       name: 'wait_for_update Configured',
       description: 'When a CMP is present, wait_for_update (in ms) should be set in consent defaults so GTM waits for the CMP to load before using default consent values.',
-      status: !state.consentDefaults ? 'info'
-        : !cmpDetected ? 'info'
-          : hasWaitForUpdate ? 'pass' : 'warn',
-      detail: !state.consentDefaults ? 'No consent default to check.'
+      status: !hasDefault || !cmpDetected ? 'not_checked' : (waitForUpdate ? 'pass' : 'warn'),
+      needs: !hasDefault ? 'consent_default' : 'cmp',
+      detail: !hasDefault ? 'No consent default to check.'
         : !cmpDetected ? 'No CMP detected; wait_for_update not applicable.'
-          : hasWaitForUpdate ? 'wait_for_update is set to ' + state.consentDefaults.settings.wait_for_update + 'ms.'
-            : 'CMP (' + state.cmp.name + ') detected but wait_for_update is missing. Tags may fire with default consent before the CMP loads.'
+          : waitForUpdate ? 'wait_for_update is set to ' + waitForUpdate + 'ms.'
+            : 'CMP (' + state.cmp.name + ') detected but wait_for_update is missing. Tags may fire with default consent before the CMP loads.',
+      data: { cmp: cmpDetected ? state.cmp.name : null, waitForUpdate: waitForUpdate }
     });
 
     // Rule 5: consent update received
-    rules.push({
+    var lastUpdate = state.consentUpdates.length > 0 ? state.consentUpdates[state.consentUpdates.length - 1] : null;
+    rule({
       id: 'consent-update-received',
       name: 'Consent Update Received',
       description: 'After the user interacts with the consent banner, a consent("update") should fire to change from default to user-chosen values.',
-      status: state.consentUpdates.length > 0 ? 'pass' : 'info',
-      detail: state.consentUpdates.length > 0
-        ? state.consentUpdates.length + ' update(s) received. Last at ' + Math.round(state.consentUpdates[state.consentUpdates.length - 1].ms) + 'ms.'
-        : 'No consent update yet. User may not have interacted with the consent banner.'
+      status: lastUpdate ? 'pass' : 'not_checked',
+      needs: 'consent_update',
+      detail: lastUpdate
+        ? state.consentUpdates.length + ' update(s) received. Last at ' + Math.round(lastUpdate.ms) + 'ms.'
+        : 'No consent update yet. User may not have interacted with the consent banner.',
+      data: { count: state.consentUpdates.length, lastMs: lastUpdate ? Math.round(lastUpdate.ms) : null }
     });
 
-    // Rule 6: GCS consistency — each request should match consent as it was when sent
+    // Rule 6: GCS consistency — each request should match consent as it was when sent.
+    // Only requests that carry a decodable gcs value can be checked.
     var gcsIssues = [];
+    var gcsIssueData = [];
+    var gcsChecked = 0;
     state.networkHits.forEach(function (hit) {
-      if (!hit.decoded.gcs || hit.decoded.gcs.error) return;
+      if (!hit.decoded || !hit.decoded.gcs || hit.decoded.gcs.error) return;
+      gcsChecked++;
       var gcs = hit.decoded.gcs;
       var expected = hit.consentAtRequest || {};
       ['analytics_storage', 'ad_storage'].forEach(function (t) {
         if (expected[t] && gcs[t] && expected[t] !== gcs[t]) {
           gcsIssues.push(t + ': consent was "' + expected[t] + '" when sent but GCS shows "' + gcs[t] + '" in request to ' + hit.host + ' at ' + Math.round(hit.ms) + 'ms');
+          gcsIssueData.push({ type: t, expected: expected[t], actual: gcs[t], host: hit.host, ms: Math.round(hit.ms) });
         }
       });
     });
-    rules.push({
+    rule({
       id: 'gcs-consistency',
       name: 'GCS Signal Consistency',
       description: 'The GCS parameter in each network request should match the consent state at the moment the request was sent. Mismatches indicate race conditions or implementation bugs.',
-      status: state.networkHits.length === 0 ? 'info' : (gcsIssues.length === 0 ? 'pass' : 'fail'),
-      detail: state.networkHits.length === 0
+      status: gcsChecked === 0 ? 'not_checked' : (gcsIssues.length === 0 ? 'pass' : 'fail'),
+      needs: 'google_request',
+      detail: gcsChecked === 0
         ? 'No Google network requests captured yet.'
         : gcsIssues.length === 0
-          ? state.networkHits.length + ' request(s) checked. All GCS values match the consent state when they were sent.'
-          : gcsIssues.join(' | ')
+          ? gcsChecked + ' request(s) checked. All GCS values match the consent state when they were sent.'
+          : gcsIssues.join(' | '),
+      data: { checked: gcsChecked, issues: gcsIssueData }
     });
 
     // Rule 7: No duplicate consent defaults
     var defaultCount = state.timeline.filter(function (e) { return e.type === 'consent_default'; }).length;
-    rules.push({
+    rule({
       id: 'no-duplicate-defaults',
       name: 'No Duplicate Defaults',
       description: 'Only one consent("default") should exist. Multiple defaults can cause unpredictable behavior.',
-      status: defaultCount <= 1 ? 'pass' : 'warn',
+      status: defaultCount === 0 ? 'not_checked' : (defaultCount === 1 ? 'pass' : 'warn'),
+      needs: 'consent_default',
       detail: defaultCount <= 1
         ? (defaultCount === 0 ? 'No defaults found.' : 'Single consent default — correct.')
-        : defaultCount + ' consent defaults found. Only the first one takes effect; the rest are ignored by Google but may indicate a misconfiguration.'
+        : defaultCount + ' consent defaults found. Only the first one takes effect; the rest are ignored by Google but may indicate a misconfiguration.',
+      data: { count: defaultCount, firstMs: hasDefault ? Math.round(defaultMs) : null }
     });
 
     // Rule 8: consent default must come before any consent update.
@@ -696,19 +745,27 @@
         if (!firstUpdateEvt) firstUpdateEvt = e;
       }
     });
-    var updateFirst = firstUpdateEvt && (!firstDefaultEvt || firstUpdateEvt.id < firstDefaultEvt.id);
-    rules.push({
+    var updateFirst = !!firstUpdateEvt && (!firstDefaultEvt || firstUpdateEvt.id < firstDefaultEvt.id);
+    rule({
       id: 'default-before-update',
       name: 'Default Before Update',
       description: 'consent("default") must appear before any consent("update"). A default processed after an update can override the choice the user already made, and tags that fire before the default run with implicit "granted" consent.',
-      status: !firstUpdateEvt ? 'info' : (updateFirst ? 'fail' : 'pass'),
+      status: !firstUpdateEvt ? 'not_checked' : (updateFirst ? 'fail' : 'pass'),
+      needs: 'consent_update',
       detail: !firstUpdateEvt
         ? 'No consent update to check.'
         : !firstDefaultEvt
           ? updateCount + ' consent update(s) captured, the first at ' + Math.round(firstUpdateEvt.ms) + 'ms, but no consent default was ever set. Until the update, every consent type was implicitly granted.'
           : updateFirst
             ? 'RACE CONDITION: consent update at ' + Math.round(firstUpdateEvt.ms) + 'ms arrived before the consent default at ' + Math.round(firstDefaultEvt.ms) + 'ms (' + Math.round(firstDefaultEvt.ms - firstUpdateEvt.ms) + 'ms early). The default can override the choice the update recorded.'
-            : 'Consent default (' + Math.round(firstDefaultEvt.ms) + 'ms) correctly precedes first update (' + Math.round(firstUpdateEvt.ms) + 'ms).'
+            : 'Consent default (' + Math.round(firstDefaultEvt.ms) + 'ms) correctly precedes first update (' + Math.round(firstUpdateEvt.ms) + 'ms).',
+      data: {
+        updateCount: updateCount,
+        updateMs: firstUpdateEvt ? Math.round(firstUpdateEvt.ms) : null,
+        defaultMs: firstDefaultEvt ? Math.round(firstDefaultEvt.ms) : null,
+        earlyMs: updateFirst && firstDefaultEvt ? Math.round(firstDefaultEvt.ms - firstUpdateEvt.ms) : null,
+        hasDefault: !!firstDefaultEvt
+      }
     });
 
     return rules;

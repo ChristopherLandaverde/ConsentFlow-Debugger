@@ -44,7 +44,7 @@ describe("validation lifecycle", () => {
       page.intervals.map((i) => i.ms),
       [3000],
     );
-    assert.equal(page.rule("consent-update-received").status, "info");
+    assert.equal(page.rule("consent-update-received").status, "not_checked");
     page.gtag("consent", "update", { ad_storage: "granted" });
     page.tick();
     assert.equal(page.rule("consent-update-received").status, "pass");
@@ -68,6 +68,28 @@ describe("validation lifecycle", () => {
   });
 });
 
+describe("rule statuses", () => {
+  const statuses = ["pass", "fail", "warn", "not_checked"];
+
+  test("a rule that lacked the data it needs is not_checked with a needs reason, never info", () => {
+    const page = loadPage().finishLoading();
+    for (const rule of page.requestState().validation) {
+      assert.ok(statuses.includes(rule.status), `${rule.id} has status ${rule.status}`);
+      if (rule.status === "not_checked") assert.match(rule.needs, /^[a-z_]+$/, `${rule.id} says what it needs`);
+      else assert.equal(rule.needs, undefined);
+      assert.equal(typeof rule.data, "object", `${rule.id} carries data for the finding copy`);
+    }
+  });
+
+  test("a bare page reports one failure and seven checks that could not run", () => {
+    const rules = loadPage().finishLoading().requestState().validation;
+    assert.deepEqual(
+      rules.map((r) => r.status),
+      ["fail", "not_checked", "not_checked", "not_checked", "not_checked", "not_checked", "not_checked", "not_checked"],
+    );
+  });
+});
+
 describe("rule 1: Consent Default Exists", () => {
   test("fails when the page never sets a consent default", () => {
     const page = loadPage().finishLoading();
@@ -87,11 +109,13 @@ describe("rule 1: Consent Default Exists", () => {
 });
 
 describe("rule 2: Default Before Config (race condition)", () => {
-  test("is informational while there are no config calls", () => {
+  test("is not checked, and says it needs a config call, while there are no config calls", () => {
     const page = loadPage();
     page.gtag("consent", "default", FULL_V2);
     page.finishLoading();
-    assert.equal(page.rule("consent-default-before-config").status, "info");
+    const rule = page.rule("consent-default-before-config");
+    assert.equal(rule.status, "not_checked");
+    assert.equal(rule.needs, "config_call");
   });
 
   test("passes when the default precedes the first config", () => {
@@ -115,6 +139,7 @@ describe("rule 2: Default Before Config (race condition)", () => {
       rule.detail,
       'RACE CONDITION: gtag("config", "G-RACE") fired at 20ms but consent default was at 145ms (125ms late).',
     );
+    assert.deepEqual(rule.data, { configId: "G-RACE", configMs: 20, defaultMs: 145, lateMs: 125, hasDefault: true });
   });
 
   test("fails when config fires and no default ever arrives", () => {
@@ -135,8 +160,10 @@ describe("rule 2: Default Before Config (race condition)", () => {
 });
 
 describe("rule 3: Consent Mode v2 Types", () => {
-  test("is informational without a default", () => {
-    assert.equal(loadPage().finishLoading().rule("v2-types-present").status, "info");
+  test("is not checked without a default", () => {
+    const rule = loadPage().finishLoading().rule("v2-types-present");
+    assert.equal(rule.status, "not_checked");
+    assert.equal(rule.needs, "consent_default");
   });
 
   test("warns and names the missing v2 types", () => {
@@ -165,11 +192,16 @@ describe("rule 3: Consent Mode v2 Types", () => {
 });
 
 describe("rule 4: wait_for_update Configured", () => {
-  test("is informational when no CMP is detected", () => {
+  test("is not checked when no CMP is detected, or without a default", () => {
     const page = loadPage();
     page.gtag("consent", "default", FULL_V2);
     page.finishLoading();
-    assert.equal(page.rule("wait-for-update").status, "info");
+    const rule = page.rule("wait-for-update");
+    assert.equal(rule.status, "not_checked");
+    assert.equal(rule.needs, "cmp");
+    const bare = loadPage({ globals: { Cookiebot: {} } }).finishLoading().rule("wait-for-update");
+    assert.equal(bare.status, "not_checked");
+    assert.equal(bare.needs, "consent_default");
   });
 
   test("warns when a CMP is present and the default has no wait_for_update", () => {
@@ -179,6 +211,7 @@ describe("rule 4: wait_for_update Configured", () => {
     const rule = page.rule("wait-for-update");
     assert.equal(rule.status, "warn");
     assert.match(rule.detail, /CMP \(Cookiebot\) detected but wait_for_update is missing/);
+    assert.deepEqual(rule.data, { cmp: "Cookiebot", waitForUpdate: null });
   });
 
   test("passes when a CMP is present and wait_for_update is set", () => {
@@ -192,23 +225,36 @@ describe("rule 4: wait_for_update Configured", () => {
 });
 
 describe("rule 5: Consent Update Received", () => {
-  test("is informational until an update arrives, then passes", () => {
+  test("is not checked until an update arrives, then passes", () => {
     const page = loadPage();
     page.gtag("consent", "default", FULL_V2);
     page.finishLoading();
-    assert.equal(page.rule("consent-update-received").status, "info");
+    assert.equal(page.rule("consent-update-received").status, "not_checked");
+    assert.equal(page.rule("consent-update-received").needs, "consent_update");
     page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
     page.at(1200).gtag("consent", "update", { ad_storage: "granted" });
     page.tick();
     const rule = page.rule("consent-update-received");
     assert.equal(rule.status, "pass");
     assert.equal(rule.detail, "2 update(s) received. Last at 1200ms.");
+    assert.deepEqual(rule.data, { count: 2, lastMs: 1200 });
   });
 });
 
 describe("rule 6: GCS Signal Consistency", () => {
-  test("is informational with no captured requests", () => {
-    assert.equal(loadPage().finishLoading().rule("gcs-consistency").status, "info");
+  test("is not checked with no captured requests", () => {
+    const rule = loadPage().finishLoading().rule("gcs-consistency");
+    assert.equal(rule.status, "not_checked");
+    assert.equal(rule.needs, "google_request");
+  });
+
+  test("is not checked when no captured request carries a gcs value", () => {
+    const page = loadPage({ globals: { fbq() {} } });
+    page.gtag("consent", "default", FULL_V2);
+    page.window.fetch("https://www.facebook.com/tr?ev=PageView");
+    page.window.fetch(GA4);
+    page.finishLoading();
+    assert.equal(page.rule("gcs-consistency").status, "not_checked");
   });
 
   test("passes when every gcs value matches the consent state when it was sent", () => {
@@ -257,6 +303,12 @@ describe("rule 6: GCS Signal Consistency", () => {
       rule.detail,
       'analytics_storage: consent was "denied" when sent but GCS shows "granted" in request to region1.google-analytics.com at 20ms',
     );
+    assert.deepEqual(rule.data, {
+      checked: 1,
+      issues: [
+        { type: "analytics_storage", expected: "denied", actual: "granted", host: "region1.google-analytics.com", ms: 20 },
+      ],
+    });
   });
 
   test("skips gcs values it could not decode and consent types the page never set", () => {
@@ -270,8 +322,10 @@ describe("rule 6: GCS Signal Consistency", () => {
 });
 
 describe("rule 7: No Duplicate Defaults", () => {
-  test("passes with none or one default", () => {
-    assert.equal(loadPage().finishLoading().rule("no-duplicate-defaults").detail, "No defaults found.");
+  test("is not checked without a default and passes with one", () => {
+    const none = loadPage().finishLoading().rule("no-duplicate-defaults");
+    assert.equal(none.status, "not_checked");
+    assert.equal(none.needs, "consent_default");
     const page = loadPage();
     page.gtag("consent", "default", FULL_V2);
     page.finishLoading();
@@ -291,12 +345,13 @@ describe("rule 7: No Duplicate Defaults", () => {
 });
 
 describe("rule 8: Default Before Update (race condition)", () => {
-  test("is informational while there are no updates", () => {
+  test("is not checked while there are no updates", () => {
     const page = loadPage();
     page.gtag("consent", "default", FULL_V2);
     page.finishLoading();
     const rule = page.rule("default-before-update");
-    assert.equal(rule.status, "info");
+    assert.equal(rule.status, "not_checked");
+    assert.equal(rule.needs, "consent_update");
     assert.equal(rule.detail, "No consent update to check.");
   });
 
@@ -360,7 +415,7 @@ describe("rule 8: Default Before Update (race condition)", () => {
 
   test("is re-evaluated when an update arrives after the first pass", () => {
     const page = loadPage().finishLoading();
-    assert.equal(page.rule("default-before-update").status, "info");
+    assert.equal(page.rule("default-before-update").status, "not_checked");
     page.gtag("consent", "update", { ad_storage: "granted" });
     page.tick();
     assert.equal(page.rule("default-before-update").status, "fail");
@@ -475,6 +530,9 @@ describe("tag verdicts (tags firing against consent)", () => {
       consentTypes: ["analytics_storage"],
       requestCount: 2,
       preConsentCount: 2,
+      firstPreConsentMs: 0,
+      deniedTypes: ["analytics_storage"],
+      hosts: ["region1.google-analytics.com"],
       verdict: "violation",
     });
   });
