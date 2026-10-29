@@ -251,6 +251,28 @@ describe("Network tab", () => {
     assert.match(html, /<span class="net-val">granted \(updated\)<\/span>/);
   });
 
+  test("shows the consent state at the moment each request was sent", () => {
+    const popup = show(
+      baseState({
+        networkHits: [
+          {
+            method: "fetch",
+            vendor: "facebook",
+            host: "www.facebook.com",
+            ms: 10,
+            decoded: {},
+            consentAtRequest: { ad_storage: "denied", analytics_storage: "<b>granted</b>" },
+          },
+          { method: "fetch", vendor: "facebook", host: "www.facebook.com", ms: 1, decoded: {}, consentAtRequest: {} },
+        ],
+      }),
+    );
+    const html = popup.html("networkList");
+    assert.deepEqual(texts(html, "net-key"), ["Consent when sent", "Consent when sent"]);
+    assert.match(html, /<span class="net-val">ad_storage: denied, analytics_storage: &lt;b&gt;granted&lt;\/b&gt;<\/span>/);
+    assert.match(html, /<span class="net-val">none set yet<\/span>/);
+  });
+
   test("hides GCS and GCD sections that failed to decode", () => {
     const popup = show(
       baseState({
@@ -323,6 +345,19 @@ describe("State tab", () => {
     assert.match(html, /Needs: ad_storage, ad_user_data/);
     assert.match(html, /1 request captured/);
     assert.match(html, /0 requests captured/);
+  });
+
+  test("says how many requests were sent while consent was denied", () => {
+    const popup = show(
+      baseState({
+        tagImpact: [
+          impact("Facebook Pixel", "violation", { requestCount: 3, preConsentCount: 2 }),
+          impact("Hotjar", "firing", { requestCount: 1, preConsentCount: 0 }),
+        ],
+      }),
+    );
+    const html = popup.html("tagImpact");
+    assert.deepEqual(texts(html, "ti-preconsent"), ["2 sent while required consent was denied"]);
   });
 
   test("labels every verdict", () => {
@@ -440,5 +475,43 @@ describe("page to popup", () => {
     assert.deepEqual(texts(popup.html("implQuality"), "impl-grade"), ["CRITICAL"]);
     assert.equal(popup.el("reviewCta").className, "review-cta critical");
     assert.match(popup.html("networkList"), /G100/);
+  });
+
+  test("shows an update that arrived before the default as a failed rule", () => {
+    const page = loadPage();
+    page.at(5).gtag("consent", "update", { ad_storage: "granted" });
+    page.at(9).gtag("consent", "default", { ad_storage: "denied", analytics_storage: "denied" });
+    page.finishLoading();
+
+    const popup = show(page.requestState());
+    const html = popup.html("rulesList");
+    assert.match(
+      html,
+      /<span class="rule-name">Default Before Update<\/span><span class="rule-badge fail">FAIL<\/span>/,
+    );
+    assert.match(html, /RACE CONDITION: consent update at 5ms arrived before the consent default at 9ms/);
+    assert.match(popup.el("headerStatus").textContent, /issues? found/);
+  });
+
+  test("keeps a request sent before the grant as a violation after the grant", () => {
+    const page = loadPage({ globals: { fbq() {} } });
+    page.at(1).gtag("consent", "default", {
+      ad_storage: "denied",
+      analytics_storage: "denied",
+      ad_user_data: "denied",
+      ad_personalization: "denied",
+    });
+    page.at(10).window.fetch("https://www.facebook.com/tr?ev=PageView");
+    page.at(800).gtag("consent", "update", { ad_storage: "granted" });
+    page.at(850).window.fetch("https://www.facebook.com/tr?ev=Purchase");
+    page.finishLoading();
+
+    const popup = show(page.requestState());
+    const html = popup.html("tagImpact");
+    assert.match(html, /<span class="ti-verdict violation">VIOLATION<\/span>/);
+    assert.deepEqual(texts(html, "ti-preconsent"), ["1 sent while required consent was denied"]);
+    assert.match(html, /2 requests captured/);
+    assert.deepEqual(texts(popup.html("implQuality"), "impl-grade"), ["CRITICAL"]);
+    assert.match(popup.html("networkList"), /ad_storage: denied/);
   });
 });

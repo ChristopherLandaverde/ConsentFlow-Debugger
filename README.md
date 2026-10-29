@@ -36,9 +36,17 @@ requests while their consent is denied. All analysis happens in your browser.
 form, including entries already in `dataLayer` before the extension's script ran. Each one is
 timestamped and the merged current consent state is shown.
 
-**Race conditions.** The time of the first `gtag('config', ...)` call compared with the
-consent default. If config comes first, the rule fails and reports how many milliseconds late
-the default was.
+**Race conditions.** Three kinds:
+
+- The first `gtag('config', ...)` call compared with the consent default. If config comes
+  first, the rule fails and reports how many milliseconds late the default was.
+- A consent `update` captured before any `default` (or an update on a page with no default at
+  all). The rule fails: a default processed after an update can override the choice the user
+  already made, and tags that fire before the default run with implicit `granted` consent.
+- Requests sent before consent. Each captured request records the consent state at the moment
+  it was sent, from the captured consent timeline and, for Google requests, from the request's
+  own `gcs` / `gcd`. A request sent while a consent type its tag needs was `denied` counts as a
+  violation even if consent was granted later.
 
 **GCS / GCD signals.** For requests to Google endpoints (Google Analytics, Google Tag Manager,
 Google Ads, DoubleClick, Google Syndication), the `gcs` parameter is decoded into
@@ -47,7 +55,7 @@ Google Ads, DoubleClick, Google Syndication), the `gcs` parameter is decoded int
 `npa` into personalized / non-personalized. The tracking ID (`tid`) and GA4 event name (`en`)
 are shown too.
 
-**Validation rules.** Seven checks, each reported as pass, fail, warn or info with an explanation:
+**Validation rules.** Eight checks, each reported as pass, fail, warn or info with an explanation:
 
 | Rule | Checks |
 |---|---|
@@ -56,19 +64,21 @@ are shown too.
 | Consent Mode v2 Types | The default declares `ad_user_data` and `ad_personalization` |
 | `wait_for_update` Configured | When a CMP is detected, the default sets `wait_for_update` |
 | Consent Update Received | At least one `consent` `update` arrived |
-| GCS Signal Consistency | Each decoded `gcs` value matches the current consent state |
+| GCS Signal Consistency | Each decoded `gcs` value matches the consent state at the moment the request was sent |
 | No Duplicate Defaults | Only one `consent` `default` was issued |
+| Default Before Update | No `consent` `update` arrived before the default (race condition) |
 
 **Tags and tag firing violations.** Detects ten tags from page globals and script URLs (Google
 Analytics 4, Google Tag Manager, Google Ads, Meta/Facebook Pixel, LinkedIn Insight, TikTok
 Pixel, Hotjar, Microsoft Clarity, Pinterest Tag, Snapchat Pixel). Each tag is mapped to the
-consent types it needs and to the requests captured for its vendor, then given a verdict:
+consent types it needs and to the requests captured for its vendor, then given a verdict. A
+tag card shows how many of its requests were sent while required consent was denied:
 
 | Verdict | Meaning |
 |---|---|
-| `VIOLATION` | A required consent type is `denied`, yet requests to the vendor were captured |
-| `BLOCKED` | A required consent type is `denied` and no requests were captured |
-| `FIRING` | None of its required consent types is `denied`, and requests were captured |
+| `VIOLATION` | At least one request to the vendor was sent while a required consent type was `denied` at that moment, even if consent was granted later |
+| `BLOCKED` | A required consent type is `denied` now and no request was sent while it was denied |
+| `FIRING` | None of its required consent types is `denied`, and requests were captured, all sent after consent |
 | `IDLE` | None of its required consent types is `denied`, and no requests were captured yet |
 | `NO CONSENT MODE` | The page has no consent default at all |
 
@@ -83,6 +93,10 @@ iubenda by script URL.
 - Requests are captured only when made through `fetch`, `XMLHttpRequest` or
   `navigator.sendBeacon`. Image pixels and script loads are not seen, so a vendor that only
   uses `<img>` beacons can show as `IDLE` or `BLOCKED` while it is in fact sending data.
+- Any request to a vendor sent while a required consent type was denied counts toward
+  `VIOLATION`, including Google's cookieless pings under advanced Consent Mode (a request whose
+  own `gcs` reports the type as denied). Check the request's GCS/GCD in the Network tab before
+  treating such a violation as data collected without consent.
 - Only the top-level frame is inspected; iframes are not.
 - State is kept per page load. Reload the page to start a fresh capture.
 - If a tab was already open when the extension was installed or reloaded, the content script
@@ -131,8 +145,9 @@ release yet, install from source.
 3. Use the four tabs:
    - **Flow**: the timeline of consent defaults, consent updates, `config` calls, GTM load and
      vendor requests, with millisecond timestamps.
-   - **Rules**: the seven validation rules with their status and an explanation.
-   - **Network**: captured vendor requests with decoded GCS, GCD and NPA.
+   - **Rules**: the eight validation rules with their status and an explanation.
+   - **Network**: captured vendor requests with decoded GCS, GCD and NPA, and the consent state
+     when each request was sent.
    - **State**: current consent values, detected CMP, implementation grade and tag verdicts.
 4. Interact with the consent banner (accept, reject, customise) and watch the popup. It
    refreshes every 4 seconds; **Refresh** fetches immediately.
@@ -224,14 +239,11 @@ so race-condition timings are exact. What is covered:
 |---|---|
 | `tests/injected-capture.test.mjs` | Consent `default` / `update` capture via `gtag()`, array and arguments-object pushes, entries already in `dataLayer`, first-default-wins, update-before-default, GTM replacing `dataLayer.push`, a page replacing `gtag`, config calls, `gtm.js` and other events |
 | `tests/injected-signals.test.mjs` | GCS, GCD and NPA decoding, `tid` / `en`, capture through `fetch`, `sendBeacon` and `XMLHttpRequest` (calls passed through unchanged), vendor attribution, non-vendor requests ignored |
-| `tests/injected-rules.test.mjs` | All seven validation rules (pass, fail, warn, info cases), the default-before-config race, CMP and tag detection, the five tag verdicts, the `get-state` message and the 300/200 export limits |
+| `tests/injected-rules.test.mjs` | All eight validation rules (pass, fail, warn, info cases), the default-before-config and update-before-default races, CMP and tag detection, the five tag verdicts judged by consent at the time of each request, the `get-state` message and the 300/200 export limits |
 | `tests/popup.test.mjs` | Fetching state (including the inject-and-retry path), header and scorecard counts, the Flow, Rules, Network and State tabs, verdict labels and the implementation grade, the review button, HTML escaping, and one page-to-popup run that feeds `injected.js` output into the popup |
 | `tests/static-validation.test.mjs` | The `postMessage` boundary in `content.js`, landing-page checks and a committed-secret scan |
 
-A few tests are marked `todo`: they describe intended behavior the code doesn't have yet
-(failed rules and violations should sort first in the popup; a `gtag('config')` call is
-recorded twice when the page had no `gtag`; consent values reach a class attribute
-unescaped). They are reported in the test output but don't fail the run.
+Every test runs as a real assertion; there are no `todo` or skipped tests.
 
 `npm run validate` confirms the extension and website files exist, that `manifest.json`
 declares a content script, and that every JavaScript file passes `node --check`.

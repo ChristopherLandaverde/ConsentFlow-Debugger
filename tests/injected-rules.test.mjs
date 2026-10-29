@@ -1,5 +1,5 @@
-// Detection and judgement in injected.js: the seven validation rules (including the
-// default-before-config race condition), CMP and tag detection, tag verdicts, and the
+// Detection and judgement in injected.js: the eight validation rules (including the
+// default-before-config and default-before-update race conditions), CMP and tag detection, tag verdicts, and the
 // get-state message the content script uses.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
@@ -26,7 +26,7 @@ describe("validation lifecycle", () => {
     page.finishLoading();
     const state = page.debugState();
     assert.equal(state.ready, true);
-    assert.equal(state.validation.length, 7);
+    assert.equal(state.validation.length, 8);
     assert.ok(page.posted.some((m) => m.type === "ready"));
   });
 
@@ -62,6 +62,7 @@ describe("validation lifecycle", () => {
         "consent-update-received",
         "gcs-consistency",
         "no-duplicate-defaults",
+        "default-before-update",
       ],
     );
   });
@@ -210,14 +211,14 @@ describe("rule 6: GCS Signal Consistency", () => {
     assert.equal(loadPage().finishLoading().rule("gcs-consistency").status, "info");
   });
 
-  test("passes when every gcs value matches the current consent state", () => {
+  test("passes when every gcs value matches the consent state when it was sent", () => {
     const page = loadPage();
     page.gtag("consent", "default", FULL_V2);
     page.window.fetch(`${GA4}?gcs=G100`);
     page.finishLoading();
     const rule = page.rule("gcs-consistency");
     assert.equal(rule.status, "pass");
-    assert.equal(rule.detail, "1 request(s) checked. All GCS values match consent state.");
+    assert.equal(rule.detail, "1 request(s) checked. All GCS values match the consent state when they were sent.");
   });
 
   test("fails and describes each mismatch", () => {
@@ -229,19 +230,33 @@ describe("rule 6: GCS Signal Consistency", () => {
     assert.equal(rule.status, "fail");
     assert.equal(
       rule.detail,
-      'analytics_storage: consent says "denied" but GCS shows "granted" in request to region1.google-analytics.com | ' +
-        'ad_storage: consent says "denied" but GCS shows "granted" in request to region1.google-analytics.com',
+      'analytics_storage: consent was "denied" when sent but GCS shows "granted" in request to region1.google-analytics.com at 0ms | ' +
+        'ad_storage: consent was "denied" when sent but GCS shows "granted" in request to region1.google-analytics.com at 0ms',
     );
   });
 
-  test("compares against the current state, so a request sent before a grant later fails", () => {
-    // A hit sent while denied (G100) is judged against consent as it is now (granted).
+  test("compares each request with consent when it was sent, so a denied hit before a grant passes", () => {
     const page = loadPage();
-    page.gtag("consent", "default", FULL_V2);
-    page.window.fetch(`${GA4}?gcs=G100`);
-    page.gtag("consent", "update", { analytics_storage: "granted", ad_storage: "granted" });
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(20).window.fetch(`${GA4}?gcs=G100`);
+    page.at(900).gtag("consent", "update", { analytics_storage: "granted", ad_storage: "granted" });
+    page.at(950).window.fetch(`${GA4}?gcs=G111`);
     page.finishLoading();
-    assert.equal(page.rule("gcs-consistency").status, "fail");
+    assert.equal(page.rule("gcs-consistency").status, "pass");
+  });
+
+  test("still fails a request that claimed granted while consent was denied, after consent is granted", () => {
+    const page = loadPage();
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(20).window.fetch(`${GA4}?gcs=G110`);
+    page.at(900).gtag("consent", "update", { analytics_storage: "granted", ad_storage: "granted" });
+    page.finishLoading();
+    const rule = page.rule("gcs-consistency");
+    assert.equal(rule.status, "fail");
+    assert.equal(
+      rule.detail,
+      'analytics_storage: consent was "denied" when sent but GCS shows "granted" in request to region1.google-analytics.com at 20ms',
+    );
   });
 
   test("skips gcs values it could not decode and consent types the page never set", () => {
@@ -272,6 +287,83 @@ describe("rule 7: No Duplicate Defaults", () => {
     const rule = page.rule("no-duplicate-defaults");
     assert.equal(rule.status, "warn");
     assert.match(rule.detail, /^3 consent defaults found/);
+  });
+});
+
+describe("rule 8: Default Before Update (race condition)", () => {
+  test("is informational while there are no updates", () => {
+    const page = loadPage();
+    page.gtag("consent", "default", FULL_V2);
+    page.finishLoading();
+    const rule = page.rule("default-before-update");
+    assert.equal(rule.status, "info");
+    assert.equal(rule.detail, "No consent update to check.");
+  });
+
+  test("passes when the default precedes the first update", () => {
+    const page = loadPage();
+    page.at(10).gtag("consent", "default", FULL_V2);
+    page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
+    page.finishLoading();
+    const rule = page.rule("default-before-update");
+    assert.equal(rule.status, "pass");
+    assert.equal(rule.detail, "Consent default (10ms) correctly precedes first update (900ms).");
+  });
+
+  test("fails on an update-only page and explains why it matters", () => {
+    const page = loadPage();
+    page.at(30).gtag("consent", "update", { ad_storage: "granted", analytics_storage: "granted" });
+    page.finishLoading();
+    const rule = page.rule("default-before-update");
+    assert.equal(rule.status, "fail");
+    assert.equal(
+      rule.detail,
+      "1 consent update(s) captured, the first at 30ms, but no consent default was ever set. " +
+        "Until the update, every consent type was implicitly granted.",
+    );
+    assert.match(rule.description, /override the choice the user already made/);
+  });
+
+  test("fails when an update arrives before the default and reports how early it was", () => {
+    const page = loadPage();
+    page.at(5).gtag("consent", "update", { ad_storage: "granted" });
+    page.at(9).gtag("consent", "default", FULL_V2);
+    page.at(40).gtag("consent", "update", { analytics_storage: "granted" });
+    page.finishLoading();
+    const rule = page.rule("default-before-update");
+    assert.equal(rule.status, "fail");
+    assert.equal(
+      rule.detail,
+      "RACE CONDITION: consent update at 5ms arrived before the consent default at 9ms (4ms early). " +
+        "The default can override the choice the update recorded.",
+    );
+  });
+
+  test("judges order, not timestamps, when both commands share a millisecond", () => {
+    const page = loadPage();
+    page.at(5).push(["consent", "update", { ad_storage: "granted" }]);
+    page.at(5).push(["consent", "default", FULL_V2]);
+    page.finishLoading();
+    assert.equal(page.rule("default-before-update").status, "fail");
+  });
+
+  test("counts updates that were already in dataLayer before the extension ran", () => {
+    const page = loadPage({
+      dataLayer: [
+        ["consent", "update", { ad_storage: "granted" }],
+        ["consent", "default", FULL_V2],
+      ],
+    });
+    page.finishLoading();
+    assert.equal(page.rule("default-before-update").status, "fail");
+  });
+
+  test("is re-evaluated when an update arrives after the first pass", () => {
+    const page = loadPage().finishLoading();
+    assert.equal(page.rule("default-before-update").status, "info");
+    page.gtag("consent", "update", { ad_storage: "granted" });
+    page.tick();
+    assert.equal(page.rule("default-before-update").status, "fail");
   });
 });
 
@@ -382,6 +474,7 @@ describe("tag verdicts (tags firing against consent)", () => {
       vendor: "google",
       consentTypes: ["analytics_storage"],
       requestCount: 2,
+      preConsentCount: 2,
       verdict: "violation",
     });
   });
@@ -417,13 +510,96 @@ describe("tag verdicts (tags firing against consent)", () => {
     assert.equal(page.verdict("Google Analytics 4").verdict, "firing");
   });
 
-  test("uses the current state: requests sent while denied are FIRING once consent is granted", () => {
+  test("a request sent while denied stays a VIOLATION after consent is granted", () => {
     const page = withGA4();
-    page.gtag("consent", "default", FULL_V2);
-    page.window.fetch(GA4);
-    page.gtag("consent", "update", { analytics_storage: "granted" });
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(20).window.fetch(GA4);
+    page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
+    page.at(950).window.fetch(GA4);
+    page.finishLoading();
+    const v = page.verdict("Google Analytics 4");
+    assert.equal(v.verdict, "violation");
+    assert.equal(v.requestCount, 2);
+    assert.equal(v.preConsentCount, 1);
+  });
+
+  test("requests sent only after the grant are FIRING", () => {
+    const page = withGA4();
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
+    page.at(950).window.fetch(`${GA4}?gcs=G110`);
+    page.finishLoading();
+    const v = page.verdict("Google Analytics 4");
+    assert.equal(v.verdict, "firing");
+    assert.equal(v.preConsentCount, 0);
+  });
+
+  test("requests sent while granted are not violations after consent is withdrawn", () => {
+    const page = withGA4();
+    page.at(1).gtag("consent", "default", { analytics_storage: "granted" });
+    page.at(20).window.fetch(GA4);
+    page.at(900).gtag("consent", "update", { analytics_storage: "denied" });
+    page.finishLoading();
+    const v = page.verdict("Google Analytics 4");
+    assert.equal(v.verdict, "blocked");
+    assert.equal(v.requestCount, 1);
+    assert.equal(v.preConsentCount, 0);
+  });
+
+  test("judges each vendor against the consent types it needs at the time of each request", () => {
+    const page = loadPage({
+      scripts: ["https://www.googletagmanager.com/gtag/js?id=G-1"],
+      globals: { fbq() {}, hj() {} },
+    });
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(10).window.fetch("https://www.facebook.com/tr?ev=PageView"); // ad_storage denied
+    page.at(500).gtag("consent", "update", { analytics_storage: "granted" });
+    page.at(600).window.fetch(`${GA4}?gcs=G110`); // analytics granted by now
+    page.at(700).window.navigator.sendBeacon("https://www.facebook.com/tr?ev=ViewContent"); // still denied
+    page.at(800).gtag("consent", "update", { ad_storage: "granted" });
+    page.at(850).window.fetch("https://www.facebook.com/tr?ev=Purchase"); // granted
+    page.finishLoading();
+    const fb = page.verdict("Facebook Pixel");
+    assert.deepEqual([fb.verdict, fb.requestCount, fb.preConsentCount], ["violation", 3, 2]);
+    const ga = page.verdict("Google Analytics 4");
+    assert.deepEqual([ga.verdict, ga.requestCount, ga.preConsentCount], ["firing", 1, 0]);
+    const hj = page.verdict("Hotjar");
+    assert.deepEqual([hj.verdict, hj.requestCount, hj.preConsentCount], ["idle", 0, 0]);
+  });
+
+  test("uses the request's own GCS when the consent type was not set yet in the timeline", () => {
+    const page = withGA4();
+    page.at(5).window.fetch(`${GA4}?gcs=G100`); // before any default reached dataLayer
+    page.at(9).gtag("consent", "default", FULL_V2);
+    page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
+    page.finishLoading();
+    const v = page.verdict("Google Analytics 4");
+    assert.equal(v.verdict, "violation");
+    assert.equal(v.preConsentCount, 1);
+  });
+
+  test("the timeline wins over a request's own GCS when both are known", () => {
+    // gcs lags the update by one request; the page had already granted.
+    const page = withGA4();
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(500).gtag("consent", "update", { analytics_storage: "granted" });
+    page.at(501).window.fetch(`${GA4}?gcs=G100`);
     page.finishLoading();
     assert.equal(page.verdict("Google Analytics 4").verdict, "firing");
+  });
+
+  test("records consent at the moment of each captured request", () => {
+    const page = withGA4();
+    page.at(1).gtag("consent", "default", { analytics_storage: "denied", wait_for_update: 500 });
+    page.at(20).window.fetch(`${GA4}?gcs=G100`);
+    page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
+    page.at(950).window.fetch(`${GA4}?gcs=G110&gcd=13p3t`);
+    page.finishLoading();
+    const hits = page.requestState().networkHits;
+    assert.deepEqual(hits[0].consentAtRequest, { analytics_storage: "denied" });
+    assert.deepEqual(hits[0].requestConsent, { analytics_storage: "denied", ad_storage: "denied" });
+    assert.deepEqual(hits[1].consentAtRequest, { analytics_storage: "granted" });
+    assert.deepEqual(hits[1].requestConsent, { ad_storage: "denied", analytics_storage: "granted" });
   });
 
   test("counts only requests to the tag's own vendor", () => {

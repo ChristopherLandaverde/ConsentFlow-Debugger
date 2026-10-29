@@ -302,6 +302,15 @@
         html += '<div class="net-row"><span class="net-key">NPA</span><span class="net-val">' + esc(hit.decoded.npa) + '</span></div>';
       }
 
+      // Consent captured from the timeline at the moment this request was sent
+      if (hit.consentAtRequest) {
+        var atKeys = Object.keys(hit.consentAtRequest).filter(function (k) { return k !== 'wait_for_update' && k !== 'region'; });
+        var atText = atKeys.length === 0 ? 'none set yet' : atKeys.map(function (k) {
+          return k + ': ' + hit.consentAtRequest[k];
+        }).join(', ');
+        html += '<div class="net-row"><span class="net-key">Consent when sent</span><span class="net-val">' + esc(atText) + '</span></div>';
+      }
+
       html += '</div>';
     });
 
@@ -375,6 +384,9 @@
         + '<div class="ti-row"><span class="ti-type">' + esc(item.type) + '</span></div>'
         + '<div class="ti-row"><span class="ti-consent">Needs: ' + esc(consentNeeded || 'none') + '</span></div>'
         + '<div class="ti-row"><span class="ti-requests">' + item.requestCount + ' request' + (item.requestCount !== 1 ? 's' : '') + ' captured</span></div>'
+        + (item.preConsentCount > 0
+          ? '<div class="ti-row"><span class="ti-preconsent">' + Number(item.preConsentCount) + ' sent while required consent was denied</span></div>'
+          : '')
         + '</div>'
         + '</div>';
     });
