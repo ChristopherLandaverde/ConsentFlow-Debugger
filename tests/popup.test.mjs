@@ -441,4 +441,20 @@ describe("page to popup", () => {
     assert.equal(popup.el("reviewCta").className, "review-cta critical");
     assert.match(popup.html("networkList"), /G100/);
   });
+
+  test("shows an update that arrived before the default as a failed rule", () => {
+    const page = loadPage();
+    page.at(5).gtag("consent", "update", { ad_storage: "granted" });
+    page.at(9).gtag("consent", "default", { ad_storage: "denied", analytics_storage: "denied" });
+    page.finishLoading();
+
+    const popup = show(page.requestState());
+    const html = popup.html("rulesList");
+    assert.match(
+      html,
+      /<span class="rule-name">Default Before Update<\/span><span class="rule-badge fail">FAIL<\/span>/,
+    );
+    assert.match(html, /RACE CONDITION: consent update at 5ms arrived before the consent default at 9ms/);
+    assert.match(popup.el("headerStatus").textContent, /issues? found/);
+  });
 });

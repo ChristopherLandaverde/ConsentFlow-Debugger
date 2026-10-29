@@ -1,5 +1,5 @@
-// Detection and judgement in injected.js: the seven validation rules (including the
-// default-before-config race condition), CMP and tag detection, tag verdicts, and the
+// Detection and judgement in injected.js: the eight validation rules (including the
+// default-before-config and default-before-update race conditions), CMP and tag detection, tag verdicts, and the
 // get-state message the content script uses.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
@@ -26,7 +26,7 @@ describe("validation lifecycle", () => {
     page.finishLoading();
     const state = page.debugState();
     assert.equal(state.ready, true);
-    assert.equal(state.validation.length, 7);
+    assert.equal(state.validation.length, 8);
     assert.ok(page.posted.some((m) => m.type === "ready"));
   });
 
@@ -62,6 +62,7 @@ describe("validation lifecycle", () => {
         "consent-update-received",
         "gcs-consistency",
         "no-duplicate-defaults",
+        "default-before-update",
       ],
     );
   });
@@ -272,6 +273,83 @@ describe("rule 7: No Duplicate Defaults", () => {
     const rule = page.rule("no-duplicate-defaults");
     assert.equal(rule.status, "warn");
     assert.match(rule.detail, /^3 consent defaults found/);
+  });
+});
+
+describe("rule 8: Default Before Update (race condition)", () => {
+  test("is informational while there are no updates", () => {
+    const page = loadPage();
+    page.gtag("consent", "default", FULL_V2);
+    page.finishLoading();
+    const rule = page.rule("default-before-update");
+    assert.equal(rule.status, "info");
+    assert.equal(rule.detail, "No consent update to check.");
+  });
+
+  test("passes when the default precedes the first update", () => {
+    const page = loadPage();
+    page.at(10).gtag("consent", "default", FULL_V2);
+    page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
+    page.finishLoading();
+    const rule = page.rule("default-before-update");
+    assert.equal(rule.status, "pass");
+    assert.equal(rule.detail, "Consent default (10ms) correctly precedes first update (900ms).");
+  });
+
+  test("fails on an update-only page and explains why it matters", () => {
+    const page = loadPage();
+    page.at(30).gtag("consent", "update", { ad_storage: "granted", analytics_storage: "granted" });
+    page.finishLoading();
+    const rule = page.rule("default-before-update");
+    assert.equal(rule.status, "fail");
+    assert.equal(
+      rule.detail,
+      "1 consent update(s) captured, the first at 30ms, but no consent default was ever set. " +
+        "Until the update, every consent type was implicitly granted.",
+    );
+    assert.match(rule.description, /override the choice the user already made/);
+  });
+
+  test("fails when an update arrives before the default and reports how early it was", () => {
+    const page = loadPage();
+    page.at(5).gtag("consent", "update", { ad_storage: "granted" });
+    page.at(9).gtag("consent", "default", FULL_V2);
+    page.at(40).gtag("consent", "update", { analytics_storage: "granted" });
+    page.finishLoading();
+    const rule = page.rule("default-before-update");
+    assert.equal(rule.status, "fail");
+    assert.equal(
+      rule.detail,
+      "RACE CONDITION: consent update at 5ms arrived before the consent default at 9ms (4ms early). " +
+        "The default can override the choice the update recorded.",
+    );
+  });
+
+  test("judges order, not timestamps, when both commands share a millisecond", () => {
+    const page = loadPage();
+    page.at(5).push(["consent", "update", { ad_storage: "granted" }]);
+    page.at(5).push(["consent", "default", FULL_V2]);
+    page.finishLoading();
+    assert.equal(page.rule("default-before-update").status, "fail");
+  });
+
+  test("counts updates that were already in dataLayer before the extension ran", () => {
+    const page = loadPage({
+      dataLayer: [
+        ["consent", "update", { ad_storage: "granted" }],
+        ["consent", "default", FULL_V2],
+      ],
+    });
+    page.finishLoading();
+    assert.equal(page.rule("default-before-update").status, "fail");
+  });
+
+  test("is re-evaluated when an update arrives after the first pass", () => {
+    const page = loadPage().finishLoading();
+    assert.equal(page.rule("default-before-update").status, "info");
+    page.gtag("consent", "update", { ad_storage: "granted" });
+    page.tick();
+    assert.equal(page.rule("default-before-update").status, "fail");
   });
 });
 

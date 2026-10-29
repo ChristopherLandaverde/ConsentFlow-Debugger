@@ -87,7 +87,7 @@ describe("consent update capture", () => {
     assert.deepEqual(types(page), ["consent_default", "consent_update", "consent_update"]);
   });
 
-  test("an update issued before any default wins over the default that follows it", () => {
+  test("an update issued before any default wins in the merged state and is reported as a race", () => {
     const page = loadPage();
     page.at(5).gtag("consent", "update", { ad_storage: "granted" });
     page.at(9).gtag("consent", "default", { ad_storage: "denied", analytics_storage: "denied" });
@@ -95,6 +95,8 @@ describe("consent update capture", () => {
     assert.deepEqual(state.currentConsent, { ad_storage: "granted", analytics_storage: "denied" });
     assert.equal(state.consentDefaults.ms, 9);
     assert.equal(state.consentUpdates[0].ms, 5);
+    page.finishLoading();
+    assert.equal(page.rule("default-before-update").status, "fail");
   });
 
   test("ignores consent commands other than default and update in arguments-object form", () => {

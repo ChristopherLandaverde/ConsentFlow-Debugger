@@ -650,6 +650,33 @@
         : defaultCount + ' consent defaults found. Only the first one takes effect; the rest are ignored by Google but may indicate a misconfiguration.'
     });
 
+    // Rule 8: consent default must come before any consent update.
+    // Judged by capture order (not timestamps), so same-millisecond commands are ordered correctly.
+    var firstDefaultEvt = null;
+    var firstUpdateEvt = null;
+    var updateCount = 0;
+    state.timeline.forEach(function (e) {
+      if (e.type === 'consent_default' && !firstDefaultEvt) firstDefaultEvt = e;
+      if (e.type === 'consent_update') {
+        updateCount++;
+        if (!firstUpdateEvt) firstUpdateEvt = e;
+      }
+    });
+    var updateFirst = firstUpdateEvt && (!firstDefaultEvt || firstUpdateEvt.id < firstDefaultEvt.id);
+    rules.push({
+      id: 'default-before-update',
+      name: 'Default Before Update',
+      description: 'consent("default") must appear before any consent("update"). A default processed after an update can override the choice the user already made, and tags that fire before the default run with implicit "granted" consent.',
+      status: !firstUpdateEvt ? 'info' : (updateFirst ? 'fail' : 'pass'),
+      detail: !firstUpdateEvt
+        ? 'No consent update to check.'
+        : !firstDefaultEvt
+          ? updateCount + ' consent update(s) captured, the first at ' + Math.round(firstUpdateEvt.ms) + 'ms, but no consent default was ever set. Until the update, every consent type was implicitly granted.'
+          : updateFirst
+            ? 'RACE CONDITION: consent update at ' + Math.round(firstUpdateEvt.ms) + 'ms arrived before the consent default at ' + Math.round(firstDefaultEvt.ms) + 'ms (' + Math.round(firstDefaultEvt.ms - firstUpdateEvt.ms) + 'ms early). The default can override the choice the update recorded.'
+            : 'Consent default (' + Math.round(firstDefaultEvt.ms) + 'ms) correctly precedes first update (' + Math.round(firstUpdateEvt.ms) + 'ms).'
+    });
+
     return rules;
   }
 
