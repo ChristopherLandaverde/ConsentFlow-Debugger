@@ -1,517 +1,320 @@
-// popup/popup.js: how the state from the page is fetched, classified and rendered.
+// popup/popup.js: how state is fetched, which view state shows, and how the verdict,
+// findings and captured data are rendered and kept stable across live refreshes.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { loadPage } from "./helpers/page.mjs";
-import { loadPopup, modifiers, texts } from "./helpers/popup-dom.mjs";
+import { disclosures, findingTitles, loadPopup, statusTags } from "./helpers/popup-dom.mjs";
 
-const rule = (id, status, extra = {}) => ({
-  id,
-  name: `Rule ${id}`,
-  description: `About ${id}`,
-  detail: `Detail ${id}`,
-  status,
-  ...extra,
-});
+const GA4 = "https://region1.google-analytics.com/g/collect";
+const GTAG = "https://www.googletagmanager.com/gtag/js?id=G-1";
+const FULL_V2 = {
+  ad_storage: "denied",
+  analytics_storage: "denied",
+  ad_user_data: "denied",
+  ad_personalization: "denied",
+};
 
-const impact = (name, verdict, extra = {}) => ({
-  name,
-  type: "analytics",
-  vendor: "google",
-  consentTypes: ["analytics_storage"],
-  requestCount: 0,
-  verdict,
-  ...extra,
-});
-
-const baseState = (overrides = {}) => ({
-  ready: true,
-  timeline: [],
-  validation: [],
-  networkHits: [],
-  currentConsent: {},
-  tags: [],
-  tagImpact: [],
-  cmp: { name: "None", detected: false },
-  ...overrides,
-});
+// Real injected.js output for the states the popup has to handle.
+const states = {
+  bare: () => loadPage().finishLoading().requestState(),
+  zeroRequests() {
+    const page = loadPage({ scripts: [GTAG] });
+    page.at(5).gtag("consent", "default", FULL_V2);
+    page.at(20).push(["config", "G-1"]);
+    return page.finishLoading().requestState();
+  },
+  broken() {
+    const page = loadPage({ scripts: [GTAG], globals: { fbq() {} } });
+    page.at(12).push(["config", "G-1"]);
+    page.at(340).gtag("consent", "default", FULL_V2);
+    page.at(410).window.fetch("https://www.facebook.com/tr?ev=PageView");
+    page.at(1200).window.fetch("https://www.facebook.com/tr?ev=ViewContent");
+    return page.finishLoading().requestState();
+  },
+  verified() {
+    const page = loadPage({ scripts: [GTAG], globals: { OneTrust: {} } });
+    page.at(1).gtag("consent", "default", { ...FULL_V2, wait_for_update: 500 });
+    page.at(10).push(["config", "G-1"]);
+    page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
+    page.at(950).window.fetch(`${GA4}?gcs=G110&en=page_view`);
+    return page.finishLoading().requestState();
+  },
+  review() {
+    const page = loadPage({ globals: { Cookiebot: {} } });
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(10).push(["config", "G-1"]);
+    page.at(50).window.fetch(`${GA4}?gcs=G100`);
+    page.at(800).gtag("consent", "update", { analytics_storage: "granted", ad_storage: "granted" });
+    return page.finishLoading().requestState();
+  },
+};
 
 const show = (state) => loadPopup({ responses: [state] });
 
-describe("fetching state", () => {
-  test("asks the active tab's content script for state and renders the reply", () => {
-    const popup = show(baseState());
+describe("fetching state and view states", () => {
+  test("asks the active tab's content script for state and shows the tab's host", () => {
+    const popup = show(states.verified());
     assert.deepEqual(popup.calls.sendMessage, [{ tabId: 7, message: { action: "getState" } }]);
-    assert.equal(popup.el("headerStatus").textContent, "No issues detected");
+    assert.equal(popup.text("pageMeta"), "shop.example");
   });
 
-  test("shows 'Analyzing page...' while the page has not finished its first pass", () => {
+  test("shows a loading state with a progress indicator until the page's first pass is done", () => {
     const popup = show({ ready: false });
-    assert.equal(popup.el("headerStatus").textContent, "Analyzing page...");
-    assert.equal(popup.el("headerStatus").className, "header-status loading");
+    assert.equal(popup.el("verdict").getAttribute("data-state"), "loading");
+    assert.equal(popup.text("verdictTitle"), "Reading this page…");
+    assert.equal(popup.el("progress").hidden, false);
+    assert.equal(popup.el("findings").hidden, true);
+    assert.equal(popup.el("reviewCta").hidden, true);
+    assert.doesNotMatch(popup.text("verdictTitle") + popup.text("verdictDetail"), /no issues|nothing found/i);
   });
 
   test("when the content script does not answer, asks the background to inject it and retries after 2.5 s", () => {
-    const popup = loadPopup({ responses: [undefined, baseState()] });
+    const popup = loadPopup({ responses: [undefined, states.verified()] });
     assert.deepEqual(popup.calls.runtime, [{ action: "ensureContentScript", tabId: 7 }]);
+    assert.equal(popup.text("verdictDetail"), "Connecting to the page…");
     assert.deepEqual(
       popup.timeouts.map((t) => t.ms),
       [2500],
     );
     popup.runTimeouts();
     assert.equal(popup.calls.sendMessage.length, 2);
-    assert.equal(popup.el("headerStatus").textContent, "No issues detected");
+    assert.equal(popup.el("verdict").getAttribute("data-state"), "verified");
   });
 
-  test("reports an error when the content script still does not answer", () => {
+  test("shows an error where the content would be, with a reload action, when the page never answers", () => {
     const popup = loadPopup({ responses: [undefined, undefined] });
     popup.runTimeouts();
-    assert.equal(popup.el("headerStatus").textContent, "Content script not responding. Try refreshing the page.");
-    assert.equal(popup.el("headerStatus").className, "header-status error");
+    assert.equal(popup.el("verdict").getAttribute("data-state"), "error");
+    assert.equal(popup.text("verdictTitle"), "Can't read this page yet.");
+    assert.equal(popup.el("errorAction").hidden, false);
+    assert.equal(popup.el("progress").hidden, true);
+    assert.equal(popup.el("findings").hidden, true);
+    popup.el("errorAction").click();
+    assert.deepEqual(popup.calls.reloaded, [7]);
+    assert.equal(popup.el("verdict").getAttribute("data-state"), "loading");
+  });
+
+  test("says Chrome pages can't be inspected, without a reload button", () => {
+    const popup = loadPopup({ responses: [undefined], injectResult: { ok: false, reason: "system-page" } });
+    assert.equal(popup.text("verdictTitle"), "Chrome pages can't be inspected.");
+    assert.equal(popup.el("errorAction").hidden, true);
   });
 
   test("reports when there is no active tab", () => {
     const popup = loadPopup({ tabs: [] });
-    assert.equal(popup.el("headerStatus").textContent, "No active tab");
+    assert.equal(popup.text("verdictTitle"), "No page to inspect.");
+    assert.equal(popup.el("errorAction").hidden, true);
   });
 
-  test("refreshes every 4 seconds and on the Refresh button", () => {
-    const popup = show(baseState());
+  test("refreshes every 4 seconds", () => {
+    const popup = show(states.zeroRequests());
     assert.deepEqual(
       popup.intervals.map((i) => i.ms),
       [4000],
     );
-    popup.refresh(baseState({ validation: [rule("a", "fail")] }));
-    assert.equal(popup.el("headerStatus").textContent, "1 issue found");
-    popup.el("refreshBtn").click();
-    assert.equal(popup.calls.sendMessage.length, 3);
+    popup.refresh(states.broken());
+    assert.equal(popup.el("verdict").getAttribute("data-state"), "broken");
+  });
+
+  test("Reload and recheck reloads the tab and ignores the old page's replies for a moment", () => {
+    const popup = show(states.broken());
+    popup.el("recheckBtn").click();
+    assert.deepEqual(popup.calls.reloaded, [7]);
+    assert.equal(popup.el("verdict").getAttribute("data-state"), "loading");
+    popup.refresh(states.broken()); // the old page answering before navigation
+    assert.equal(popup.el("verdict").getAttribute("data-state"), "loading");
+    popup.clock.now += 2000;
+    popup.refresh(states.verified());
+    assert.equal(popup.el("verdict").getAttribute("data-state"), "verified");
   });
 });
 
-describe("header and scorecard", () => {
-  test("counts failed rules as issues", () => {
-    const popup = show(baseState({ validation: [rule("a", "fail"), rule("b", "fail"), rule("c", "warn")] }));
-    assert.equal(popup.el("headerStatus").textContent, "2 issues found");
-    assert.equal(popup.el("headerStatus").className, "header-status error");
+describe("verdict", () => {
+  test("zero Google requests reads 'Not enough data yet', never 'No issues'", () => {
+    const popup = show(states.zeroRequests());
+    assert.equal(popup.el("verdict").getAttribute("data-state"), "incomplete");
+    assert.equal(popup.text("verdictLabel"), "– INCOMPLETE");
+    assert.equal(popup.text("verdictTitle"), "Not enough data yet.");
+    assert.match(popup.text("verdictDetail"), /checks ran and passed\. Accept or reject the cookie banner/);
+    assert.doesNotMatch(popup.html("findings"), /no issues/i);
+    assert.equal(popup.el("reviewCta").hidden, true);
   });
 
-  test("shows warnings when nothing failed", () => {
-    const popup = show(baseState({ validation: [rule("a", "warn"), rule("b", "pass")] }));
-    assert.equal(popup.el("headerStatus").textContent, "1 warning");
-    assert.equal(popup.el("headerStatus").className, "header-status warn");
+  test("a page without Consent Mode is broken", () => {
+    const popup = show(states.bare());
+    assert.equal(popup.text("verdictLabel"), "× BROKEN");
+    assert.equal(popup.text("verdictTitle"), "This page has no Consent Mode.");
   });
 
-  test("info results are neither issues nor warnings", () => {
-    const popup = show(baseState({ validation: [rule("a", "info"), rule("b", "pass")] }));
-    assert.equal(popup.el("headerStatus").className, "header-status ok");
+  test("all checks passing is verified, with no review offer", () => {
+    const popup = show(states.verified());
+    assert.equal(popup.text("verdictLabel"), "✓ VERIFIED");
+    assert.equal(popup.text("verdictTitle"), "Consent is wired correctly on this page.");
+    assert.equal(popup.el("reviewCta").hidden, true);
   });
 
-  test("scores rules passed, tags, hits and CMP", () => {
-    const popup = show(
-      baseState({
-        validation: [rule("a", "pass"), rule("b", "pass"), rule("c", "info")],
-        tags: [{}, {}],
-        networkHits: [{}, {}, {}],
-        cmp: { name: "OneTrust", detected: true },
-      }),
-    );
-    const score = (id) => [popup.el(id).querySelector(".score-num").textContent, popup.el(id).className];
-    assert.deepEqual(score("scoreRules"), ["2/3", "score-item good"]);
-    assert.deepEqual(score("scoreTags"), ["2", "score-item"]);
-    assert.deepEqual(score("scoreHits"), ["3", "score-item"]);
-    assert.deepEqual(score("scoreCMP"), ["OneTrust", "score-item good"]);
+  test("the verdict is a polite live region whose text only changes when the verdict does", () => {
+    const popup = show(states.broken());
+    assert.equal(popup.el("verdict").getAttribute("aria-live"), "polite");
+    const before = popup.text("verdictTitle");
+    popup.refresh(states.broken());
+    assert.equal(popup.text("verdictTitle"), before);
   });
 
-  test("marks rules bad on any failure and tags bad on any violation", () => {
-    const popup = show(
-      baseState({
-        validation: [rule("a", "fail"), rule("b", "pass")],
-        tags: [{}],
-        tagImpact: [impact("GA4", "violation")],
-      }),
-    );
-    assert.equal(popup.el("scoreRules").className, "score-item bad");
-    assert.equal(popup.el("scoreTags").className, "score-item bad");
-    assert.equal(popup.el("scoreCMP").querySelector(".score-num").textContent, "None");
+  test("shows when the data was checked", () => {
+    assert.match(show(states.broken()).text("checkedAt"), /^Checked \d\d:\d\d:\d\d · this page load$/);
   });
 });
 
-describe("Flow tab", () => {
-  test("shows consent, config, GTM and network events and summarises the rest", () => {
-    const popup = show(
-      baseState({
-        timeline: [
-          { type: "consent_default", ms: 1.5, detail: { ad_storage: "denied", analytics_storage: "denied" } },
-          { type: "datalayer_event", ms: 2, detail: { event: "scroll" } },
-          { type: "config", ms: 3, detail: { measurementId: "G-1" } },
-          { type: "gtm_load", ms: 4, detail: { event: "gtm.js" } },
-          { type: "network_hit", ms: 5, detail: { host: "www.google-analytics.com", gcs: "G100", en: "page_view" } },
-          { type: "consent_update", ms: 6, detail: { analytics_storage: "granted" } },
-        ],
-      }),
-    );
-    const html = popup.html("timeline");
-    assert.deepEqual(texts(html, "tl-label"), [
-      "CONSENT DEFAULT",
-      "CONFIG",
-      "GTM LOADED",
-      "NETWORK HIT",
-      "CONSENT UPDATE",
-    ]);
-    assert.deepEqual(modifiers(html, "tl-event"), ["consent", "config", "gtm", "network", "consent"]);
-    assert.deepEqual(texts(html, "tl-time"), ["1.5ms", "3ms", "4ms", "5ms", "6ms"]);
-    assert.match(html, /<div class="tl-detail">ad_storage: denied, analytics_storage: denied<\/div>/);
-    assert.match(html, /<div class="tl-detail">www\.google-analytics\.com \| GCS=G100 \| event=page_view<\/div>/);
-    assert.match(html, /1 other dataLayer events/);
+describe("findings", () => {
+  test("the most severe finding comes first with its fix and verify step visible", () => {
+    const html = show(states.broken()).html("findings");
+    const titles = findingTitles(html);
+    assert.equal(titles[0], "Google tag configured before the consent default");
+    assert.equal(titles[1], "Facebook Pixel sent 2 requests while ad_storage was denied");
+    const first = html.slice(0, html.indexOf("</article>"));
+    for (const label of ["Observed", "Why", "Fix", "Verify"]) assert.match(first, new RegExp(`<dt>${label}</dt>`));
+    assert.match(first, /Move the consent default above the Google tag snippet/);
+    assert.match(first, /The consent default should come before <code>config<\/code>/);
   });
 
-  test("falls back to plain dataLayer events when there are no consent-related ones", () => {
-    const popup = show(baseState({ timeline: [{ type: "datalayer_event", ms: 1, detail: { event: "scroll" } }] }));
-    assert.deepEqual(texts(popup.html("timeline"), "tl-label"), ["EVENT"]);
-    assert.doesNotMatch(popup.html("timeline"), /other dataLayer events/);
+  test("every status shows a word and a symbol", () => {
+    const html = show(states.broken()).html("findings");
+    assert.deepEqual([...new Set(statusTags(html))], ["× BROKEN", "– NOT CHECKED"]);
+    assert.deepEqual([...new Set(statusTags(show(states.review()).html("findings")))], ["! REVIEW"]);
   });
 
-  test("shows an empty message when nothing was captured", () => {
-    assert.match(show(baseState()).html("timeline"), /No consent flow events captured yet/);
-  });
-
-  test("escapes page-controlled strings", () => {
-    const popup = show(
-      baseState({ timeline: [{ type: "config", ms: 1, detail: { measurementId: "<img src=x onerror=alert(1)>" } }] }),
-    );
-    assert.match(popup.html("timeline"), /&lt;img src=x onerror=alert\(1\)&gt;/);
-    assert.doesNotMatch(popup.html("timeline"), /<img/);
-  });
-});
-
-describe("Rules tab", () => {
-  test("renders every rule with its status badge, description and detail", () => {
-    const popup = show(baseState({ validation: [rule("a", "pass"), rule("b", "warn"), rule("c", "info")] }));
-    const html = popup.html("rulesList");
-    assert.equal(modifiers(html, "rule-card").length, 3);
-    assert.deepEqual(texts(html, "rule-badge").sort(), ["INFO", "PASS", "WARN"]);
-    assert.deepEqual(texts(html, "rule-icon").sort(), ["INFO", "PASS", "WARN"]);
-    assert.match(html, /<div class="rule-desc">About a<\/div>/);
-    assert.match(html, /<div class="rule-detail">Detail b<\/div>/);
-  });
-
-  test("orders warnings, then info, then passes", () => {
-    const popup = show(baseState({ validation: [rule("p", "pass"), rule("i", "info"), rule("w", "warn")] }));
-    assert.deepEqual(modifiers(popup.html("rulesList"), "rule-card"), ["warn", "info", "pass"]);
-  });
-
-  test("lists failed rules first", () => {
-    const popup = show(baseState({ validation: [rule("p", "pass"), rule("w", "warn"), rule("f", "fail")] }));
-    assert.deepEqual(modifiers(popup.html("rulesList"), "rule-card"), ["fail", "warn", "pass"]);
-  });
-
-  test("escapes rule text", () => {
-    const popup = show(baseState({ validation: [rule("a", "fail", { detail: 'CMP (<b>"x"</b>)' })] }));
-    assert.match(popup.html("rulesList"), /CMP \(&lt;b&gt;"x"&lt;\/b&gt;\)/);
-  });
-});
-
-describe("Network tab", () => {
-  test("shows decoded GCS, GCD and NPA for a Google request", () => {
-    const popup = show(
-      baseState({
-        networkHits: [
-          {
-            method: "beacon",
-            vendor: "google",
-            host: "region1.google-analytics.com",
-            ms: 12.7,
-            en: "page_view",
-            tid: "G-1",
-            decoded: {
-              gcs: { raw: "G110", analytics_storage: "granted", ad_storage: "denied" },
-              gcd: { raw: "13e1p", ad_storage: "granted (updated)", analytics_storage: "denied (default)" },
-              npa: "personalized",
-            },
-          },
-        ],
-      }),
-    );
-    const html = popup.html("networkList");
-    assert.deepEqual(texts(html, "net-method"), ["beacon"]);
-    assert.deepEqual(texts(html, "net-vendor"), ["Google"]);
-    assert.deepEqual(texts(html, "net-time"), ["13ms"]);
-    assert.deepEqual(texts(html, "net-key"), [
-      "Event",
-      "Tracking ID",
-      "analytics_storage",
-      "ad_storage",
-      "raw",
-      "ad_storage",
-      "analytics_storage",
-      "raw",
-      "NPA",
-    ]);
-    assert.match(html, /<span class="net-val granted">granted<\/span>/);
-    assert.match(html, /<span class="net-val denied">denied<\/span>/);
-    assert.match(html, /<span class="net-val">granted \(updated\)<\/span>/);
-  });
-
-  test("shows the consent state at the moment each request was sent", () => {
-    const popup = show(
-      baseState({
-        networkHits: [
-          {
-            method: "fetch",
-            vendor: "facebook",
-            host: "www.facebook.com",
-            ms: 10,
-            decoded: {},
-            consentAtRequest: { ad_storage: "denied", analytics_storage: "<b>granted</b>" },
-          },
-          { method: "fetch", vendor: "facebook", host: "www.facebook.com", ms: 1, decoded: {}, consentAtRequest: {} },
-        ],
-      }),
-    );
-    const html = popup.html("networkList");
-    assert.deepEqual(texts(html, "net-key"), ["Consent when sent", "Consent when sent"]);
-    assert.match(html, /<span class="net-val">ad_storage: denied, analytics_storage: &lt;b&gt;granted&lt;\/b&gt;<\/span>/);
-    assert.match(html, /<span class="net-val">none set yet<\/span>/);
-  });
-
-  test("hides GCS and GCD sections that failed to decode", () => {
-    const popup = show(
-      baseState({
-        networkHits: [
-          {
-            method: "fetch",
-            vendor: "google",
-            host: "h",
-            ms: 1,
-            decoded: { gcs: { raw: "X", error: "unexpected format" }, gcd: { raw: "1", error: "too short" } },
-          },
-        ],
-      }),
-    );
-    assert.doesNotMatch(popup.html("networkList"), /net-section/);
-  });
-
-  test("shows an empty message listing the tracked vendors", () => {
-    assert.match(show(baseState()).html("networkList"), /No vendor requests captured yet/);
-  });
-});
-
-describe("State tab", () => {
-  test("lists consent types with their values, leaving out wait_for_update and region", () => {
-    const popup = show(
-      baseState({
-        currentConsent: { ad_storage: "denied", analytics_storage: "granted", wait_for_update: 500, region: ["DE"] },
-      }),
-    );
-    const html = popup.html("consentGrid");
-    assert.deepEqual(texts(html, "cs-key"), ["ad_storage", "analytics_storage"]);
-    assert.deepEqual(modifiers(html, "cs-row"), ["denied", "granted"]);
-  });
-
-  test("escapes page-controlled consent type names and values as text", () => {
-    const popup = show(baseState({ currentConsent: { "<i>key</i>": "<b>val</b>" } }));
-    const html = popup.html("consentGrid");
-    assert.match(html, /<span class="cs-key">&lt;i&gt;key&lt;\/i&gt;<\/span>/);
-    assert.match(html, /<span class="cs-val">&lt;b&gt;val&lt;\/b&gt;<\/span>/);
-  });
-
-  test("says when no consent state was detected", () => {
-    assert.match(show(baseState()).html("consentGrid"), /Consent Mode may not be implemented/);
-  });
-
-  test("shows the detected CMP", () => {
-    const popup = show(baseState({ cmp: { name: "Cookiebot", detected: true } }));
-    assert.equal(popup.el("cmpInfo").textContent, "Cookiebot");
-    assert.equal(popup.el("cmpInfo").className, "cmp-info detected");
-    assert.equal(show(baseState()).el("cmpInfo").textContent, "No CMP detected on this page.");
-  });
-
-  test("renders a card per tag with its verdict label, consent needs and request count", () => {
-    const popup = show(
-      baseState({
-        tagImpact: [
-          impact("Hotjar", "firing", { requestCount: 1 }),
-          impact("Google Ads", "blocked", {
-            type: "advertising",
-            consentTypes: ["ad_storage", "ad_user_data"],
-            requestCount: 0,
-          }),
-        ],
-      }),
-    );
-    const html = popup.html("tagImpact");
-    assert.deepEqual(texts(html, "ti-name").sort(), ["Google Ads", "Hotjar"]);
-    assert.match(html, /<span class="ti-verdict blocked">BLOCKED<\/span>/);
-    assert.match(html, /<span class="ti-verdict firing">FIRING<\/span>/);
-    assert.match(html, /Needs: ad_storage, ad_user_data/);
-    assert.match(html, /1 request captured/);
-    assert.match(html, /0 requests captured/);
-  });
-
-  test("says how many requests were sent while consent was denied", () => {
-    const popup = show(
-      baseState({
-        tagImpact: [
-          impact("Facebook Pixel", "violation", { requestCount: 3, preConsentCount: 2 }),
-          impact("Hotjar", "firing", { requestCount: 1, preConsentCount: 0 }),
-        ],
-      }),
-    );
-    const html = popup.html("tagImpact");
-    assert.deepEqual(texts(html, "ti-preconsent"), ["2 sent while required consent was denied"]);
-  });
-
-  test("labels every verdict", () => {
-    const verdicts = ["violation", "blocked", "firing", "idle", "no_consent_mode"];
-    const popup = show(baseState({ tagImpact: verdicts.map((v) => impact(v, v)) }));
-    assert.deepEqual(texts(popup.html("tagImpact"), "ti-verdict").sort(), [
-      "BLOCKED",
-      "FIRING",
-      "IDLE",
-      "NO CONSENT MODE",
-      "VIOLATION",
-    ]);
-  });
-
-  test("lists violations first", () => {
-    const popup = show(baseState({ tagImpact: [impact("A", "firing"), impact("B", "violation")] }));
-    assert.deepEqual(texts(popup.html("tagImpact"), "ti-name"), ["B", "A"]);
-  });
-
-  const grades = [
-    [["violation", "firing"], "CRITICAL", "critical"],
-    [["no_consent_mode", "no_consent_mode"], "NOT IMPLEMENTED", "not-implemented"],
-    [["no_consent_mode", "blocked"], "PARTIAL", "partial"],
-    [["blocked", "firing", "idle"], "GOOD", "good"],
-  ];
-  for (const [verdicts, grade, cls] of grades) {
-    test(`grades ${verdicts.join(" + ")} as ${grade}`, () => {
-      const popup = show(baseState({ tagImpact: verdicts.map((v, i) => impact(`t${i}`, v)) }));
-      const html = popup.html("implQuality");
-      assert.match(html, new RegExp(`<div class="impl-banner ${cls}">`));
-      assert.deepEqual(texts(html, "impl-grade"), [grade]);
-    });
-  }
-
-  test("shows no grade and an empty message without tags", () => {
-    const popup = show(baseState());
-    assert.equal(popup.html("implQuality"), "");
-    assert.match(popup.html("tagImpact"), /No tracking tags detected/);
-  });
-
-  test("keeps page-controlled consent values out of HTML attributes", () => {
-    const popup = show(baseState({ currentConsent: { ad_storage: '" onmouseover="x' } }));
-    assert.doesNotMatch(popup.html("consentGrid"), /class="[^"]*"\s+onmouseover=/);
-  });
-});
-
-describe("review call to action", () => {
-  test("is hidden when nothing failed or warned", () => {
-    const popup = show(baseState({ validation: [rule("a", "pass")], tagImpact: [impact("t", "firing")] }));
-    assert.equal(popup.el("reviewCta").className, "review-cta hidden");
-  });
-
-  test("uses the critical variant for a consent violation", () => {
-    const popup = show(baseState({ tagImpact: [impact("t", "violation")] }));
-    assert.equal(popup.el("reviewCta").className, "review-cta critical");
-    assert.equal(popup.el("reviewCtaLabel").textContent, "Need help fixing this consent violation?");
-  });
-
-  test("offers help for failed rules or tags without Consent Mode", () => {
-    for (const state of [
-      baseState({ validation: [rule("a", "fail")] }),
-      baseState({ tagImpact: [impact("t", "no_consent_mode")] }),
-    ]) {
-      const popup = show(state);
-      assert.equal(popup.el("reviewCta").className, "review-cta");
-      assert.equal(popup.el("reviewCtaLabel").textContent, "Need help fixing this implementation?");
+  test("evidence is one labelled click away, collapsed by default", () => {
+    const popup = show(states.broken());
+    const evidence = disclosures(popup.html("findings")).filter((d) => d.key.startsWith("ev-"));
+    assert.ok(evidence.length >= 2);
+    for (const d of evidence) {
+      assert.equal(d.label, "Show evidence");
+      assert.equal(d.expanded, false);
+      assert.match(popup.html("findings"), new RegExp(`<dl id="${d.controls}" class="evidence" hidden>`));
     }
   });
 
-  test("offers a second look for warnings", () => {
-    const popup = show(baseState({ validation: [rule("a", "warn")] }));
-    assert.equal(popup.el("reviewCtaLabel").textContent, "Want a second set of eyes on these warnings?");
+  test("checks that could not run are listed with what they need and the next step", () => {
+    const html = show(states.zeroRequests()).html("findings");
+    assert.match(html, /checks need more data<\/h2>/);
+    assert.match(html, /<span class="nc-label">Needs<\/span><span>No Google request with a consent signal yet\.<\/span>/);
+    assert.match(html, /<span class="nc-label">Next<\/span><span>Accept or reject the cookie banner, then reopen ConsentFlow\.<\/span>/);
   });
 
-  test("the button opens the review page in a new tab and sends nothing else", () => {
-    const popup = show(baseState());
+  test("among checks that could not run, the ones the user can unlock come first", () => {
+    const html = show(states.zeroRequests()).html("findings");
+    assert.ok(html.indexOf("Banner choice reaching Consent Mode") < html.indexOf("wait_for_update with a CMP"));
+  });
+
+  test("passed checks are collapsed into one row that names what it reveals", () => {
+    const popup = show(states.verified());
+    const passed = disclosures(popup.html("findings")).find((d) => d.key === "passed");
+    assert.match(passed.label, /^Show \d+ passed checks$/);
+    assert.equal(passed.expanded, false);
+    assert.match(popup.html("findings"), /<ul id="passed-list" class="passed-list" hidden>/);
+    assert.doesNotMatch(popup.html("findings"), /class="finding /, "no full finding cards on the all-clear");
+  });
+
+  test("the review offer sits below the findings and only shows when something is broken or needs review", () => {
+    assert.equal(show(states.broken()).el("reviewCta").hidden, false);
+    assert.equal(show(states.review()).el("reviewCta").hidden, false);
+    assert.equal(show(states.zeroRequests()).el("reviewCta").hidden, true);
+  });
+
+  test("the review button opens the review page in a new tab and sends nothing else", () => {
+    const popup = show(states.broken());
     popup.el("reviewCtaButton").click();
     assert.deepEqual(popup.calls.created, [{ url: "https://focosys.io/review" }]);
   });
+
+  test("escapes page-controlled strings", () => {
+    const state = states.broken();
+    state.tagImpact[0].name = '<img src=x onerror="alert(1)">';
+    state.networkHits[0].host = "<b>evil</b>";
+    const popup = show(state);
+    popup.toggle("trace", "trace");
+    const html = popup.html("findings") + popup.html("trace");
+    assert.doesNotMatch(html, /<img|<b>/);
+    assert.match(html, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
+  });
 });
 
-describe("tabs", () => {
-  test("clicking a tab shows its panel and hides the others", () => {
-    const popup = show(baseState());
-    const rulesTab = popup.tabs.find((t) => t.dataset.tab === "rules");
-    rulesTab.click();
-    assert.deepEqual(
-      popup.tabs.filter((t) => t.classList.contains("active")).map((t) => t.dataset.tab),
-      ["rules"],
-    );
-    assert.deepEqual(
-      popup.panels.filter((p) => p.classList.contains("active")).map((p) => p.id),
-      ["rules-tab"],
-    );
+describe("live refresh keeps the user's place", () => {
+  test("an unchanged state is not re-rendered", () => {
+    const popup = show(states.broken());
+    const writes = popup.el("findings").writes;
+    popup.refresh(states.broken());
+    popup.refresh(states.broken());
+    assert.equal(popup.el("findings").writes, writes);
+  });
+
+  test("expanded evidence stays expanded across refreshes, and focus returns to the toggle", () => {
+    const popup = show(states.broken());
+    const key = disclosures(popup.html("findings")).find((d) => d.key.startsWith("ev-")).key;
+    popup.toggle("findings", key);
+    assert.equal(disclosures(popup.html("findings")).find((d) => d.key === key).expanded, true);
+    assert.equal(popup.queried.at(-1).selector, `[data-toggle="${key}"]`);
+    assert.equal(popup.queried.at(-1).element.focused, 1);
+
+    // A refresh with new data re-renders, but the evidence stays open.
+    const changed = states.broken();
+    changed.timeline.push({ id: 999, type: "datalayer_event", ms: 2000, detail: { event: "scroll" } });
+    popup.refresh(changed);
+    assert.equal(disclosures(popup.html("findings")).find((d) => d.key === key).expanded, true);
+  });
+
+  test("keeps the scroll position and the focused control when new data arrives", () => {
+    const popup = show(states.broken());
+    popup.document.scrollingElement.scrollTop = 240;
+    popup.document.activeElement = { getAttribute: (n) => (n === "data-toggle" ? "passed" : null) };
+    const changed = states.broken();
+    changed.networkHits.push({ ...changed.networkHits[0], ms: 3000 });
+    popup.refresh(changed);
+    assert.equal(popup.document.scrollingElement.scrollTop, 240);
+    assert.equal(popup.queried.at(-1).selector, '[data-toggle="passed"]');
+  });
+});
+
+describe("captured data", () => {
+  test("is collapsed behind a disclosure that says what it holds", () => {
+    const popup = show(states.broken());
+    const trace = disclosures(popup.html("trace"))[0];
+    assert.equal(trace.key, "trace");
+    assert.match(trace.label, /^Show captured data: \d+ events, 2 requests$/);
+    assert.equal(trace.expanded, false);
+  });
+
+  test("shows consent state denied first, the timeline with times after page start, and requests", () => {
+    const popup = show(states.verified());
+    popup.toggle("trace", "trace");
+    const html = popup.html("trace");
+    assert.match(html, /<h2 class="trace-heading">Consent now<\/h2><dl class="kv"><div class="ev-row"><dt>ad_storage<\/dt><dd><span class="cv denied"><span aria-hidden="true">×<\/span> denied<\/span>/);
+    assert.match(html, /<span class="t-time">\+1 ms<\/span><span class="t-label">Consent default<\/span>/);
+    assert.match(html, /OneTrust/);
+    assert.match(html, /region1\.google-analytics\.com · page_view/);
+    assert.match(html, /<span role="cell" class="mono">analytics_storage<\/span><span role="cell"><span class="cv granted">/);
+    assert.match(html, /<span role="cell" class="mono">ad_storage<\/span><span role="cell"><span class="cv denied">/);
+    assert.match(html, /<p class="raw">gcs G110<\/p>/);
+    assert.doesNotMatch(html, /DevTools/);
   });
 });
 
 describe("page to popup", () => {
-  test("renders the state injected.js reports for a page with a race condition and a violation", () => {
-    const page = loadPage({ scripts: ["https://www.googletagmanager.com/gtag/js?id=G-1"] });
-    page.at(10).push(["config", "G-1"]);
-    page.at(60).gtag("consent", "default", {
-      ad_storage: "denied",
-      analytics_storage: "denied",
-      ad_user_data: "denied",
-      ad_personalization: "denied",
-    });
-    page.at(80).window.fetch("https://region1.google-analytics.com/g/collect?tid=G-1&gcs=G100&en=page_view");
-    page.finishLoading();
-
-    const popup = show(page.requestState());
-    assert.equal(popup.el("headerStatus").textContent, "1 issue found");
-    assert.match(popup.html("rulesList"), /RACE CONDITION: gtag\("config", "G-1"\) fired at 10ms but consent default was at 60ms/);
-    assert.match(popup.html("tagImpact"), /<span class="ti-verdict violation">VIOLATION<\/span>/);
-    assert.deepEqual(texts(popup.html("implQuality"), "impl-grade"), ["CRITICAL"]);
-    assert.equal(popup.el("reviewCta").className, "review-cta critical");
-    assert.match(popup.html("networkList"), /G100/);
+  test("renders a page with a race condition and a tag sending before consent", () => {
+    const popup = show(states.broken());
+    assert.equal(popup.text("verdictTitle"), "2 consent problems on this page.");
+    assert.match(popup.html("findings"), /<code>config<\/code> for G-1 ran at \+12 ms; the consent default ran at \+340 ms\./);
+    assert.match(popup.html("findings"), /Requests in that 328 ms gap assume consent is granted\./);
+    assert.equal(popup.el("reviewCta").hidden, false);
   });
 
-  test("shows an update that arrived before the default as a failed rule", () => {
+  test("an update that arrived before the default is a broken finding", () => {
     const page = loadPage();
     page.at(5).gtag("consent", "update", { ad_storage: "granted" });
-    page.at(9).gtag("consent", "default", { ad_storage: "denied", analytics_storage: "denied" });
-    page.finishLoading();
-
-    const popup = show(page.requestState());
-    const html = popup.html("rulesList");
-    assert.match(
-      html,
-      /<span class="rule-name">Default Before Update<\/span><span class="rule-badge fail">FAIL<\/span>/,
-    );
-    assert.match(html, /RACE CONDITION: consent update at 5ms arrived before the consent default at 9ms/);
-    assert.match(popup.el("headerStatus").textContent, /issues? found/);
-  });
-
-  test("keeps a request sent before the grant as a violation after the grant", () => {
-    const page = loadPage({ globals: { fbq() {} } });
-    page.at(1).gtag("consent", "default", {
-      ad_storage: "denied",
-      analytics_storage: "denied",
-      ad_user_data: "denied",
-      ad_personalization: "denied",
-    });
-    page.at(10).window.fetch("https://www.facebook.com/tr?ev=PageView");
-    page.at(800).gtag("consent", "update", { ad_storage: "granted" });
-    page.at(850).window.fetch("https://www.facebook.com/tr?ev=Purchase");
-    page.finishLoading();
-
-    const popup = show(page.requestState());
-    const html = popup.html("tagImpact");
-    assert.match(html, /<span class="ti-verdict violation">VIOLATION<\/span>/);
-    assert.deepEqual(texts(html, "ti-preconsent"), ["1 sent while required consent was denied"]);
-    assert.match(html, /2 requests captured/);
-    assert.deepEqual(texts(popup.html("implQuality"), "impl-grade"), ["CRITICAL"]);
-    assert.match(popup.html("networkList"), /ad_storage: denied/);
+    page.at(9).gtag("consent", "default", FULL_V2);
+    const popup = show(page.finishLoading().requestState());
+    assert.ok(findingTitles(popup.html("findings")).includes("Consent update arrived before the default"));
+    assert.match(popup.html("findings"), /Update at \+5 ms; default at \+9 ms, 4 ms later\./);
   });
 });

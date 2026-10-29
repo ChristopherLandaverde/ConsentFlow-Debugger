@@ -104,14 +104,14 @@
       var names = unguarded.map(function (t) { return t.name; });
       return {
         title: 'No consent default on this page',
-        observed: 'No `consent` `default` command reached dataLayer on this page load.' +
-          (names.length ? ' Tags without consent controls: ' + joinList(names) + '.' : ''),
+        observed: 'No `consent` `default` command on this page load.' +
+          (names.length ? ' Tags running without it: ' + joinList(names) + '.' : ''),
         consequence: 'Google tags treat every consent type as granted, so they collect before the visitor chooses.',
         fix: [
           "Add `gtag('consent', 'default', {…})` above the Google tag, with every type set to `denied`.",
           "Or turn on your CMP's Google Consent Mode setting, which sets the default for you."
         ],
-        verify: 'Reload the page. This check should pass, with the default before any Google request.',
+        verify: 'Reload. This check should pass, with the default before any Google request.',
         evidence: [
           { label: 'Consent default', value: 'none captured' },
           { label: 'Tags detected', value: names.length ? names.join(', ') : 'none' }
@@ -500,7 +500,11 @@
       if (t.verdict === 'no_consent_mode') return;
       out.push(tagCopy(t, state));
     });
-    out.forEach(function (f, i) { f._i = i; });
+    out.forEach(function (f, i) {
+      f._i = i;
+      // Among checks that did not run, the ones the user can unlock come first.
+      if (f.status === 'not_checked') f.rank = ACTIONABLE_NEEDS.indexOf(f.needs) === -1 ? 1 : 0;
+    });
     out.sort(function (a, b) {
       var s = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
       if (s) return s;
