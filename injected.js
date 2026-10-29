@@ -301,13 +301,19 @@
       }
 
       var hasRequests = vendorHits.length > 0;
+      var consentTypes = tag.consentTypes || [];
       var verdict;
+
+      // Requests sent while a required consent type was denied at that moment
+      var preConsentCount = 0;
+      for (var h = 0; h < vendorHits.length; h++) {
+        if (deniedAtRequest(vendorHits[h], consentTypes).length > 0) preConsentCount++;
+      }
 
       if (!hasConsentMode) {
         verdict = 'no_consent_mode';
       } else {
-        // Check if any required consent type is denied
-        var consentTypes = tag.consentTypes || [];
+        // Is any required consent type denied now?
         var anyDenied = false;
         for (var k = 0; k < consentTypes.length; k++) {
           if (consent[consentTypes[k]] === 'denied') {
@@ -316,11 +322,11 @@
           }
         }
 
-        if (anyDenied && hasRequests) {
+        if (preConsentCount > 0) {
           verdict = 'violation';
-        } else if (anyDenied && !hasRequests) {
+        } else if (anyDenied) {
           verdict = 'blocked';
-        } else if (!anyDenied && hasRequests) {
+        } else if (hasRequests) {
           verdict = 'firing';
         } else {
           verdict = 'idle';
@@ -333,11 +339,41 @@
         vendor: vendor,
         consentTypes: tag.consentTypes,
         requestCount: vendorHits.length,
+        preConsentCount: preConsentCount,
         verdict: verdict
       });
     }
 
     return results;
+  }
+
+  // Consent types that were denied when this request was sent. The captured consent
+  // timeline (snapshot taken at capture) wins; the request's own GCS/GCD fills in types
+  // the timeline had not set yet.
+  function deniedAtRequest(hit, consentTypes) {
+    var timeline = hit.consentAtRequest || {};
+    var own = hit.requestConsent || {};
+    var denied = [];
+    for (var i = 0; i < consentTypes.length; i++) {
+      var t = consentTypes[i];
+      var value = (t in timeline) ? timeline[t] : own[t];
+      if (value === 'denied') denied.push(t);
+    }
+    return denied;
+  }
+
+  // Normalise the request's own consent signals (GCD, then GCS) to granted/denied.
+  function requestConsentFrom(decoded) {
+    var out = {};
+    var gcd = decoded.gcd && !decoded.gcd.error ? decoded.gcd : null;
+    var gcs = decoded.gcs && !decoded.gcs.error ? decoded.gcs : null;
+    ['ad_storage', 'analytics_storage', 'ad_user_data', 'ad_personalization'].forEach(function (t) {
+      var v = gcd && typeof gcd[t] === 'string' ? gcd[t] : (gcs ? gcs[t] : undefined);
+      if (typeof v !== 'string') return;
+      if (v.indexOf('granted') === 0) out[t] = 'granted';
+      else if (v.indexOf('denied') === 0) out[t] = 'denied';
+    });
+    return out;
   }
 
   function isGoogleAnalyticsUrl(urlStr) {
@@ -360,7 +396,9 @@
         vendor: vendor,
         ms: ts(),
         wall: Date.now(),
-        decoded: {}
+        decoded: {},
+        // Consent as captured from the timeline at the moment of this request
+        consentAtRequest: safeClone(state.currentConsent)
       };
 
       // Google-specific param decoding
@@ -373,6 +411,7 @@
         if (hit.gcs) hit.decoded.gcs = decodeGCS(hit.gcs);
         if (hit.gcd) hit.decoded.gcd = decodeGCD(hit.gcd);
         if (hit.npa) hit.decoded.npa = hit.npa === '1' ? 'non-personalized (ad_personalization denied)' : 'personalized';
+        hit.requestConsent = requestConsentFrom(hit.decoded);
       }
 
       // Facebook param extraction
@@ -609,32 +648,27 @@
         : 'No consent update yet. User may not have interacted with the consent banner.'
     });
 
-    // Rule 6: GCS consistency — network requests should match consent state
+    // Rule 6: GCS consistency — each request should match consent as it was when sent
     var gcsIssues = [];
     state.networkHits.forEach(function (hit) {
       if (!hit.decoded.gcs || hit.decoded.gcs.error) return;
       var gcs = hit.decoded.gcs;
-      var expected = state.currentConsent;
-      if (expected.analytics_storage && gcs.analytics_storage) {
-        if (expected.analytics_storage !== gcs.analytics_storage) {
-          gcsIssues.push('analytics_storage: consent says "' + expected.analytics_storage + '" but GCS shows "' + gcs.analytics_storage + '" in request to ' + hit.host);
+      var expected = hit.consentAtRequest || {};
+      ['analytics_storage', 'ad_storage'].forEach(function (t) {
+        if (expected[t] && gcs[t] && expected[t] !== gcs[t]) {
+          gcsIssues.push(t + ': consent was "' + expected[t] + '" when sent but GCS shows "' + gcs[t] + '" in request to ' + hit.host + ' at ' + Math.round(hit.ms) + 'ms');
         }
-      }
-      if (expected.ad_storage && gcs.ad_storage) {
-        if (expected.ad_storage !== gcs.ad_storage) {
-          gcsIssues.push('ad_storage: consent says "' + expected.ad_storage + '" but GCS shows "' + gcs.ad_storage + '" in request to ' + hit.host);
-        }
-      }
+      });
     });
     rules.push({
       id: 'gcs-consistency',
       name: 'GCS Signal Consistency',
-      description: 'The GCS parameter in network requests should match the declared consent state. Mismatches indicate race conditions or implementation bugs.',
+      description: 'The GCS parameter in each network request should match the consent state at the moment the request was sent. Mismatches indicate race conditions or implementation bugs.',
       status: state.networkHits.length === 0 ? 'info' : (gcsIssues.length === 0 ? 'pass' : 'fail'),
       detail: state.networkHits.length === 0
         ? 'No Google network requests captured yet.'
         : gcsIssues.length === 0
-          ? state.networkHits.length + ' request(s) checked. All GCS values match consent state.'
+          ? state.networkHits.length + ' request(s) checked. All GCS values match the consent state when they were sent.'
           : gcsIssues.join(' | ')
     });
 
