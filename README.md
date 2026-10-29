@@ -20,14 +20,14 @@ live page. It records the consent commands a page issues, decodes the consent si
 outgoing Google requests, and flags race conditions, missing defaults and tags that send
 requests while their consent is denied. All analysis happens in your browser.
 
-<!--
-  DEMO: add a screenshot of the popup on a real Consent Mode site and a short GIF here,
-  committed under docs/media/. Example:
+<p align="center">
+  <img src="docs/media/ga4-demo-flow.png" width="460" alt="ConsentFlow Debugger on the GA4 All-in-One training demo, showing denied consent defaults and a captured Google tag configuration">
+  <img src="docs/media/consent-studio-rules.png" width="460" alt="ConsentFlow Debugger on consent.studio, showing a denied default and passing Consent Mode v2 validation rules">
+</p>
 
-  <p align="center">
-    <img src="docs/media/popup-rules.png" width="460" alt="ConsentFlow Debugger popup showing validation rules">
-  </p>
--->
+<p align="center">
+  <img src="docs/media/demo.gif" width="960" alt="The GA4 training demo after Deny All is selected, followed by the ConsentFlow popup opening and switching from Flow to Rules">
+</p>
 
 ## What it detects
 
