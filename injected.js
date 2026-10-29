@@ -62,30 +62,35 @@
       processDataLayerEntry(dl[i], 'dataLayer.existing');
     }
 
-    // Wrap push and make it resilient to GTM overwriting it
-    let realPush = dl.push.bind(dl);
-    const wrappedPush = function () {
-      for (let i = 0; i < arguments.length; i++) {
-        processDataLayerEntry(arguments[i], 'dataLayer.push');
-      }
-      return realPush.apply(dl, arguments);
-    };
+    // Each interceptor forwards to the push it wrapped, permanently. GTM and gtag.js replace
+    // push with a function that calls the push they found (our interceptor), so re-pointing an
+    // existing interceptor at the new push would make the two call each other forever. The
+    // re-entry guard records an entry once, at the outermost interceptor.
+    let recording = false;
+    function intercept(target) {
+      return function () {
+        if (recording) return target.apply(dl, arguments);
+        recording = true;
+        try {
+          for (let i = 0; i < arguments.length; i++) {
+            processDataLayerEntry(arguments[i], 'dataLayer.push');
+          }
+          return target.apply(dl, arguments);
+        } finally {
+          recording = false;
+        }
+      };
+    }
+    const wrappedPush = intercept(dl.push.bind(dl));
     dl.push = wrappedPush;
 
-    // When GTM replaces .push with its own CommandProcessor, intercept that too
+    // When GTM or gtag.js replaces .push, intercept the new function too
     try {
       let currentPushFn = wrappedPush;
       Object.defineProperty(dl, 'push', {
         get: function () { return currentPushFn; },
         set: function (newPush) {
-          // GTM is replacing push — wrap GTM's new push with our interceptor
-          realPush = newPush;
-          currentPushFn = function () {
-            for (let i = 0; i < arguments.length; i++) {
-              processDataLayerEntry(arguments[i], 'dataLayer.push');
-            }
-            return realPush.apply(dl, arguments);
-          };
+          currentPushFn = intercept(newPush);
         },
         configurable: true,
         enumerable: true
