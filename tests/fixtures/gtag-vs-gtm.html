@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ConsentFlow gtag.js vs GTM fixture</title>
+  <!--
+    Local test page for issue #21 (plain gtag.js detected as Google Tag Manager). Serve this
+    folder over http, load the extension unpacked, open
+    http://localhost:<port>/gtag-vs-gtm.html?s=<scenario> and open the popup.
+
+    Scenarios:
+      gtag      plain gtag.js with a GA4 ID (G-), no GTM container
+      gtag-ads  plain gtag.js with a GA4 and a Google Ads ID (G- and AW-), no GTM
+      gtm       GTM web container (GTM-) with the official snippet, no gtag.js
+      gtm-gtag  GTM container plus gtag.js on the same page
+
+    Unlike popup-states.html this page loads Google's real scripts, so it needs a network
+    connection. The container and tag IDs are placeholders; googletagmanager.com still serves
+    a script for them. All scenarios use the same consent flow as the verified scenario
+    (analytics granted, ads denied), so a GA4 hit judged against ad_storage shows up as a
+    violation. In the page's DevTools, Object.keys(google_tag_manager) shows the IDs each
+    loader registered: gtag.js registers G-/AW- keys, a GTM container a GTM- key.
+  -->
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    var scenario = new URLSearchParams(location.search).get('s') || 'gtag';
+    window.OneTrust = {};
+    gtag('consent', 'default', {
+      ad_storage: 'denied', analytics_storage: 'denied',
+      ad_user_data: 'denied', ad_personalization: 'denied', wait_for_update: 500
+    });
+    // The update comes before any Google script loads, so every hit carries it: the page is
+    // correctly consented for analytics and has ads denied.
+    gtag('consent', 'update', { analytics_storage: 'granted' });
+
+    function load(src) {
+      var s = document.createElement('script');
+      s.async = true;
+      s.src = src;
+      document.head.appendChild(s);
+    }
+    // Google's GTM web container snippet, with the container ID as a parameter.
+    function gtm(id) {
+      dataLayer.push({ 'gtm.start': new Date().getTime(), event: 'gtm.js' });
+      load('https://www.googletagmanager.com/gtm.js?id=' + id);
+    }
+    // Google's gtag.js snippet.
+    function gtagJs(ids) {
+      load('https://www.googletagmanager.com/gtag/js?id=' + ids[0]);
+      gtag('js', new Date());
+      ids.forEach(function (id) { gtag('config', id); });
+    }
+
+    if (scenario === 'gtag') gtagJs(['G-FIXTURE123']);
+    if (scenario === 'gtag-ads') gtagJs(['G-FIXTURE123', 'AW-123456789']);
+    if (scenario === 'gtm') gtm('GTM-FIXTURE');
+    if (scenario === 'gtm-gtag') { gtm('GTM-FIXTURE'); gtagJs(['G-FIXTURE123']); }
+  </script>
+</head>
+<body>
+  <h1>ConsentFlow gtag.js vs GTM fixture</h1>
+  <p>Scenario: <code id="scenario"></code></p>
+  <p>google_tag_manager keys: <code id="keys">(loading)</code></p>
+  <script>
+    document.getElementById('scenario').textContent = scenario;
+    setTimeout(function () {
+      var keys = window.google_tag_manager ? Object.keys(window.google_tag_manager) : [];
+      document.getElementById('keys').textContent = keys.filter(function (k) {
+        return /^(GTM|G|AW|DC|GT)-/.test(k);
+      }).join(', ') || '(none)';
+    }, 3000);
+  </script>
+</body>
+</html>
