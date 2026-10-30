@@ -819,12 +819,15 @@
     setTimeout(runDetection, 500);
   }
 
-  // Re-run validation periodically
-  setInterval(function () {
+  // Re-run detection and the rules. Done periodically, and on every get-state so a reader
+  // never gets results from before the page's latest consent commands and requests (#22).
+  function refreshChecks() {
     state.cmp = detectCMP();
     state.tags = detectTags();
     state.validation = runValidation();
-  }, 3000);
+  }
+
+  setInterval(refreshChecks, 3000);
 
   // ─── Message Handler ──────────────────────────────────────────
   // Content script requests full state via postMessage
@@ -841,6 +844,7 @@
   });
 
   function exportState() {
+    if (state.ready) refreshChecks();
     return {
       timeline: state.timeline.slice(-300),
       consentDefaults: state.consentDefaults,

@@ -3,7 +3,10 @@
 // get-state message the content script uses.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
+import { loadFindings } from "./helpers/findings.mjs";
 import { loadPage } from "./helpers/page.mjs";
+
+const { computeVerdict } = loadFindings();
 
 const GA4 = "https://region1.google-analytics.com/g/collect";
 const FULL_V2 = {
@@ -691,6 +694,20 @@ describe("get-state message", () => {
       "timeline",
       "validation",
     ]);
+  });
+
+  test("answers with rules evaluated now, not at the last 3-second pass (#22)", () => {
+    // The verified popup fixture: the update and the GA4 hit land after the 500 ms
+    // detection pass, and the popup is opened before the next periodic pass.
+    const page = loadPage({ globals: { OneTrust: {} } });
+    page.at(60).gtag("consent", "default", { ...FULL_V2, wait_for_update: 500 });
+    page.at(120).push(["config", "G-1"]);
+    page.finishLoading();
+    page.at(700).gtag("consent", "update", { analytics_storage: "granted" });
+    page.at(800).window.fetch(`${GA4}?gcs=G110&en=page_view`);
+    const state = page.requestState();
+    assert.equal(state.validation.find((r) => r.id === "consent-update-received").status, "pass");
+    assert.equal(computeVerdict(state).status, "verified");
   });
 
   test("ignores messages from any other source", () => {
