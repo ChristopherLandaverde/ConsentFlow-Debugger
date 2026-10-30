@@ -615,11 +615,67 @@ describe("Google tag vs GTM container (#21)", () => {
   });
 
   test("a GTM- key registered after the first pass is picked up", () => {
-    const page = loadPage({ globals: { google_tag_manager: { "G-1": {} } } }).finishLoading();
-    assert.deepEqual(names(page), []);
+    const page = loadPage({ globals: { google_tag_manager: { "AW-1": {} } } }).finishLoading();
+    assert.deepEqual(names(page), ["Google Ads"]);
     page.window.google_tag_manager["GTM-ABC123"] = {};
     page.tick();
-    assert.deepEqual(names(page), ["Google Tag Manager"]);
+    assert.deepEqual(names(page), ["Google Tag Manager", "Google Ads"]);
+  });
+});
+
+// #30: a gtag.js loader is classified by the ID it loads (gtag/js?id=TAG_ID), not listed as GA4
+// whatever that ID is.
+describe("gtag.js loader classified by its tag ID (#30)", () => {
+  const names = (setup) => loadPage(setup).finishLoading().debugState().tags.map((t) => t.name);
+
+  test("an AW-only gtag.js install is Google Ads, not GA4", () => {
+    assert.deepEqual(names({ scripts: ["https://www.googletagmanager.com/gtag/js?id=AW-123456789"] }), ["Google Ads"]);
+    assert.deepEqual(
+      names({
+        scripts: ["https://www.googletagmanager.com/gtag/js?id=AW-123456789"],
+        globals: { google_tag_manager: { "AW-123456789": {} } },
+      }),
+      ["Google Ads"],
+    );
+  });
+
+  test("a DC-only gtag.js install is Floodlight, not GA4", () => {
+    assert.deepEqual(names({ scripts: ["https://www.googletagmanager.com/gtag/js?id=DC-1234567"] }), ["Floodlight"]);
+  });
+
+  test("a G- loader is GA4, on Google's host or a first-party path", () => {
+    for (const src of [
+      "https://www.googletagmanager.com/gtag/js?id=G-FIXTURE123",
+      "https://shop.example/metrics/g.js?id=G-FIXTURE123",
+    ]) {
+      assert.deepEqual(names({ scripts: [src] }), ["Google Analytics 4"], src);
+    }
+  });
+
+  test("a G- key is GA4 even when the loader named another ID", () => {
+    // gtag.js loaded for AW- registers G- once gtag('config', 'G-…') runs.
+    assert.deepEqual(
+      names({
+        scripts: ["https://www.googletagmanager.com/gtag/js?id=AW-123456789"],
+        globals: { google_tag_manager: { "AW-123456789": {}, "G-1": {} } },
+      }),
+      ["Google Analytics 4", "Google Ads"],
+    );
+  });
+
+  test("a GT- loader alone is not GA4; GA4 behind it is found from its G- key or its hits", () => {
+    const GT = "https://www.googletagmanager.com/gtag/js?id=GT-ABC123";
+    assert.deepEqual(names({ scripts: [GT] }), []);
+    assert.deepEqual(names({ scripts: [GT], globals: { google_tag_manager: { "GT-ABC123": {}, "G-1": {} } } }), [
+      "Google Analytics 4",
+    ]);
+    const page = loadPage({ scripts: [GT] });
+    page.window.fetch(`${GA4}?tid=G-1&en=page_view`);
+    assert.deepEqual(page.finishLoading().debugState().tags.map((t) => t.name), ["Google Analytics 4"]);
+  });
+
+  test("a GTM container loader is not GA4", () => {
+    assert.deepEqual(names({ scripts: ["https://www.googletagmanager.com/gtm.js?id=GTM-ABC123"] }), ["Google Tag Manager"]);
   });
 });
 
@@ -1058,6 +1114,16 @@ describe("tag verdicts (tags firing against consent)", () => {
     // Denied by its own gcs, which also makes it a cookieless ping (#34).
     const v = page.verdict("Google Analytics 4");
     assert.deepEqual([v.verdict, v.cookielessCount], ["cookieless", 1]);
+  });
+
+  test("uses gcs when the request's gcd letter for that type is undocumented (#32)", () => {
+    const page = withGA4();
+    page.at(5).window.fetch(`${GA4}?gcs=G100&gcd=13p3z3p3p5l1`); // before any default; gcd letter z unknown
+    page.at(9).gtag("consent", "default", FULL_V2);
+    page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
+    page.finishLoading();
+    const v = page.verdict("Google Analytics 4");
+    assert.deepEqual([v.verdict, v.preConsentCount], ["violation", 1]);
   });
 
   test("the timeline wins over a request's own GCS when both are known", () => {
