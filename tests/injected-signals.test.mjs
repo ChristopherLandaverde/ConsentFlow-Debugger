@@ -15,11 +15,14 @@ function hitFor(url, via = "fetch") {
 }
 
 describe("GCS decoding", () => {
+  // gcs is G1<ad_storage><analytics_storage>. Google's sGTM transformations guide treats both
+  // G100 and G110 as "analytics_storage denied"; real gtag.js sends G101 when analytics is
+  // granted and ads denied (#26).
   const cases = [
     ["G111", "granted", "granted"],
     ["G100", "denied", "denied"],
-    ["G110", "granted", "denied"],
-    ["G101", "denied", "granted"],
+    ["G101", "granted", "denied"],
+    ["G110", "denied", "granted"],
   ];
   for (const [gcs, analytics, ads] of cases) {
     test(`${gcs} decodes to analytics_storage=${analytics}, ad_storage=${ads}`, () => {

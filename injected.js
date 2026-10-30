@@ -501,14 +501,16 @@
 
   // ─── GCS / GCD Decoders ───────────────────────────────────────
   function decodeGCS(gcs) {
-    // Format: G1<analytics><ads> where 1=granted, 0=denied
-    // Example: G111 = both granted, G100 = both denied
+    // Format: G1<ad_storage><analytics_storage> where 1=granted, 0=denied.
+    // Example: G111 = both granted, G100 = both denied, G101 = analytics granted, ads denied.
+    // Google's sGTM transformations guide treats G100 and G110 as "analytics_storage denied"
+    // (https://developers.google.com/tag-platform/tag-manager/server-side/transformations).
     if (!gcs || !gcs.startsWith('G1')) return { raw: gcs, error: 'unexpected format' };
     const chars = gcs.substring(2);
     return {
       raw: gcs,
-      analytics_storage: chars[0] === '1' ? 'granted' : 'denied',
-      ad_storage: chars[1] === '1' ? 'granted' : 'denied'
+      analytics_storage: chars[1] === '1' ? 'granted' : 'denied',
+      ad_storage: chars[0] === '1' ? 'granted' : 'denied'
     };
   }
 
@@ -518,6 +520,8 @@
     // Source: 1=default, 3=update, 5=not set
     // State: l=unset, p=denied(default), t=granted(default),
     //        e=granted(updated), q=denied(updated)
+    // Google does not document these letters. Others (such as r, seen from real gtag.js)
+    // decode as unknown:<letter> rather than a guessed meaning (#26).
     if (!gcd || gcd.length < 2) return { raw: gcd, error: 'too short' };
 
     const stateMap = {
