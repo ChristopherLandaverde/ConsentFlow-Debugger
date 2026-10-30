@@ -36,9 +36,8 @@ ConsentFlow Debugger is a free, open-source Chrome extension that shows you this
 itself, in one click, with the fix for each problem.
 
 <p align="center">
-  <img src="docs/media/popup-broken.png" width="380" alt="Before: ConsentFlow popup on the bundled broken sample page. The verdict reads BROKEN, 2 consent problems on this page. The first finding says the Google tag was configured at +41 ms but the consent default only ran at +372 ms, then gives the fix and how to verify it.">
-  <img src="docs/media/popup-verified.png" width="380" alt="After: ConsentFlow popup on the bundled verified sample page. The verdict reads VERIFIED, consent is wired correctly on this page, all 9 checks passed.">
-  <br><sub>Before and after, on the two sample pages bundled in <code>tests/fixtures/</code>. Left: the consent default arrives 330 ms after <code>config</code> and the Meta Pixel sends while <code>ad_storage</code> is denied. Right: the same checks once consent is wired correctly.</sub>
+  <img src="docs/media/fix-demo.gif" width="880" alt="Four captioned frames from real Chromium with the unpacked extension loaded. 1: the bundled broken sample page, whose source runs gtag config at 60 ms and the consent default at 390 ms; the ConsentFlow popup, opened from the toolbar, shows BROKEN, 2 consent problems, and the finding Google tag configured before the consent default: config at +57 ms, consent default at +388 ms, a 332 ms gap, with the fix and how to verify it. 2: the fix, before and after source side by side: the consent default moved above config. 3: the correctly wired sample page; the popup shows VERIFIED, consent is wired correctly, all 9 checks passed. 4: the side panel opened with Open full trace, Timeline tab: consent default at +58 ms, Google tag config at +118 ms.">
+  <br><sub>A Consent Mode bug caught, fixed and confirmed, on the two sample pages bundled in <code>tests/fixtures/</code>. The fixed sample also differs in more than the fix (a OneTrust stub, a consent update, no Meta Pixel), so frame 3 is the same checks on a correctly wired page.</sub>
 </p>
 
 ## Who it's for
@@ -86,13 +85,8 @@ Content scripts don't run on `file://` pages, which is why the samples are serve
 HTTP. No local server? The landing page's
 [measurement test section](https://consentflow-psi.vercel.app/#measurement-playground) loads
 a disposable GTM container. To update, `git pull` and click reload on the extension's card.
-Release-zip install and a full tour of the popup and side panel:
+Release-zip install and a full tour of the popup and side panel, with screenshots:
 [docs/usage.md](docs/usage.md).
-
-<p align="center">
-  <img src="docs/media/demo.gif" width="960" alt="Real Chromium captures of the bundled broken sample page loading, the ConsentFlow popup showing its BROKEN verdict and top finding with its fix, the Open full trace control, and the side panel timeline and requests">
-  <br><sub>The bundled broken sample from page load through the popup to the side panel. Popup at 380 px, side panel about 400 px wide.</sub>
-</p>
 
 ## Known limits
 

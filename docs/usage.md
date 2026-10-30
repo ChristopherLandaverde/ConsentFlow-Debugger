@@ -49,6 +49,12 @@ release yet, install from source.
    - **Passed checks**, collapsed into one row.
    - **Open full trace**, which opens the side panel for this tab (below), and **Reload and
      recheck**, which reloads the tab and captures from the start.
+
+   <p align="center">
+     <img src="media/popup-broken.png" width="380" alt="ConsentFlow popup on the bundled broken sample page. The verdict reads BROKEN, 2 consent problems on this page. The first finding says the Google tag was configured at +41 ms but the consent default only ran at +372 ms, then gives the fix and how to verify it.">
+     <img src="media/popup-verified.png" width="380" alt="ConsentFlow popup on the bundled verified sample page. The verdict reads VERIFIED, consent is wired correctly on this page, all 9 checks passed.">
+     <br><sub>The popup on the two bundled samples in <code>tests/fixtures/</code>, at its real 380 px width. Left: <code>?s=broken</code>. Right: <code>?s=verified</code>.</sub>
+   </p>
 3. Click **Open full trace**, then interact with the consent banner (accept, reject,
    customise). The side panel stays open beside the page and updates every 2 seconds without
    resetting your scroll position, focus or what you expanded. Its tabs:
@@ -60,6 +66,11 @@ release yet, install from source.
      consent state and `gcd` consent detail) next to the consent on the page when it was sent,
      flagged `× mismatch` when they differ. Raw `gcs`/`gcd` values are behind a toggle.
    - **Consent**: the current consent state, denied first, and the recognized CMP.
+
+   <p align="center">
+     <img src="media/demo.gif" width="880" alt="Real Chromium captures of the bundled broken sample page loading, the ConsentFlow popup showing its BROKEN verdict and top finding with its fix, the Open full trace control, and the side panel timeline and requests">
+     <br><sub>The bundled broken sample from page load through the popup to the side panel. Popup at 380 px, side panel about 400 px wide.</sub>
+   </p>
 
    The panel follows the active tab in its window. The popup also refreshes every 4 seconds
    while open, and both remember what you expanded (and the panel's selected tab) for each tab
