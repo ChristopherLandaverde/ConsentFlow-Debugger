@@ -94,9 +94,15 @@ Google's loaders register each tag ID they load as a key of `window.google_tag_m
 plain gtag.js defines that object too, so the object alone does not mean a GTM container.
 Google Tag Manager is detected only from a `GTM-` key, or from a loader script whose URL has
 `id=GTM-` on any host or path (server-side tagging and the Google tag gateway serve it from
-the site's own domain). Google Ads is detected from an `AW-` key or an `id=AW-` loader (as well
-as `googleadservices.com` / `googlesyndication.com` scripts), and Floodlight from a `DC-` key or
-an `id=DC-` loader. `G-` and `GT-` IDs are Google tags, not containers. Google does not document
+the site's own domain). The same goes for the other Google tags: gtag.js loads one tag ID per
+URL (`gtag/js?id=TAG_ID`, [Install the Google tag][install]), so a loader is classified by that
+ID, not by its path (#30). Google Analytics 4 is detected from a `G-` key or an `id=G-` loader,
+Google Ads from an `AW-` key or an `id=AW-` loader (as well as `googleadservices.com` /
+`googlesyndication.com` scripts), and Floodlight from a `DC-` key or an `id=DC-` loader. A
+Google Ads-only install (`gtag/js?id=AW-…`) is Google Ads only. A `GT-` loader alone is no tag:
+a `GT-` Google tag can route to several products ([Tag Manager Help 12326985][gt-ids]), and
+whatever it runs registers its own `G-` / `AW-` / `DC-` key or sends its own requests.
+`G-` and `GT-` IDs are Google tags, not containers. Google does not document
 `window.google_tag_manager`; the evidence is in
 [research/gtag-vs-gtm-detection.md](research/gtag-vs-gtm-detection.md).
 

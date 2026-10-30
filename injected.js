@@ -835,10 +835,13 @@
       return state.networkHits.some(function (h) { return h.tag === name && !h.loader; });
     }
 
+    // gtag.js loads one tag ID per URL (gtag/js?id=TAG_ID), which can be AW- or DC- as well as
+    // G-, so the loader is classified by that ID (#30), on any host or path (first-party serving).
+    // A GT- Google tag can route to several products, so a GT- loader alone is not GA4; GA4
+    // behind it shows up as a G- key or as GA4 hits.
     check('Google Analytics 4', 'analytics', ['analytics_storage'], function () {
-      return sentRequests('Google Analytics 4') ||
-        !!document.querySelector('script[src*="gtag/js"]') ||
-        !!document.querySelector('script[src*="googletagmanager.com/gtag"]');
+      return sentRequests('Google Analytics 4') || hasGoogleTagId(/^G-[A-Z0-9]+$/) ||
+        !!document.querySelector('script[src*="id=G-"]');
     });
     // gtag.js defines window.google_tag_manager too, keyed by the IDs it loaded (G-, AW-, DC-),
     // so only a GTM- key means a GTM container ran. Before it has run, a loader script with
