@@ -44,6 +44,18 @@ describe("requestConsentRows", () => {
       { key: "ad_user_data", carried: null, onPage: "denied", mismatch: false },
     ]);
   });
+  test("keeps an undocumented gcd letter with the row, even when nothing else is known (#32)", () => {
+    const rows = plain(R.requestConsentRows({
+      requestConsent: { analytics_storage: "granted" },
+      gcdUnknown: { analytics_storage: "r", ad_user_data: "r" },
+      consentAtRequest: { analytics_storage: "granted" },
+    }));
+    assert.deepEqual(rows, [
+      { key: "analytics_storage", carried: "granted", onPage: "granted", mismatch: false, gcdLetter: "r" },
+      { key: "ad_user_data", carried: null, onPage: null, mismatch: false, gcdLetter: "r" },
+    ]);
+  });
+
   test("a request with no consent either way has no rows", () => {
     assert.deepEqual(plain(R.requestConsentRows({ host: "www.facebook.com" })), []);
   });

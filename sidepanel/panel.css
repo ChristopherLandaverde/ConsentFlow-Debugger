@@ -112,6 +112,7 @@ body.panel { width: auto; min-width: 0; }
   color: var(--ink-secondary);
 }
 .req-table { margin-top: var(--space-1); }
+.req-src { display: block; color: var(--ink-secondary); font-size: var(--text-small); }
 .req-table tr.mismatch td { font-weight: 600; }
 .flag {
   font-family: var(--font-mono);

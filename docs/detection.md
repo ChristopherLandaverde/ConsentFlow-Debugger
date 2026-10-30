@@ -34,6 +34,18 @@ Google Ads, DoubleClick, Google Syndication, and `www.google.com`'s `/pagead/`, 
 `npa` into personalized / non-personalized. The tracking ID (`tid`) and GA4 event name (`en`)
 are shown too.
 
+Google defines `gcs` (it carries `ad_storage` and `analytics_storage`) but not the letters of
+`gcd` ([Consent mode HTTP parameters][cm-params]: `gcd` "encodes detailed consent choices").
+ConsentFlow reads `l` (unset), `p` / `q` (denied by default / update) and `t` / `e` (granted by
+default / update), and leaves any other letter unknown instead of guessing. Real gtag.js sends
+`r` for a type granted by an update (measured: `gcs=G101` with `gcd=13p3r3p3p5l1`, and `G111`
+with `13r3r3r3r5l1`). When a letter is unknown, the request's consent for `ad_storage` and
+`analytics_storage` is read from `gcs`, and the side panel's Requests view shows "from `gcs`;
+`gcd` letter `r` is undocumented" next to the value. `ad_user_data` and `ad_personalization`
+have no `gcs` equivalent, so they show as unknown with the letter (#32).
+
+[cm-params]: https://developers.google.com/tag-platform/security/concepts/consent-mode
+
 ## Validation rules
 
 Eight checks, each reported as pass, fail, warn or not checked. A check

@@ -181,17 +181,23 @@
 
   // The consent a Google request carried (its own gcs/gcd) next to the consent on the page
   // when it was sent, per type. mismatch is true when both are known and they disagree.
+  // gcdLetter is set when the request's gcd letter for the type is undocumented (#32): carried
+  // then came from gcs, or is unknown when gcs does not cover the type.
   function requestConsentRows(hit) {
     // injected.js already normalises gcd, then gcs, to granted/denied in requestConsent.
     var own = hit.requestConsent || {};
+    var unknown = hit.gcdUnknown || {};
     var at = hit.consentAtRequest || {};
     var types = ['ad_storage', 'analytics_storage', 'ad_user_data', 'ad_personalization'];
     var rows = [];
     types.forEach(function (k) {
       var carried = own[k] || null;
       var onPage = k in at ? at[k] : null;
-      if (!carried && !onPage) return;
-      rows.push({ key: k, carried: carried, onPage: onPage, mismatch: !!(carried && onPage && carried !== onPage) });
+      var letter = typeof unknown[k] === 'string' ? unknown[k] : null;
+      if (!carried && !onPage && !letter) return;
+      var row = { key: k, carried: carried, onPage: onPage, mismatch: !!(carried && onPage && carried !== onPage) };
+      if (letter) row.gcdLetter = letter;
+      rows.push(row);
     });
     return rows;
   }
