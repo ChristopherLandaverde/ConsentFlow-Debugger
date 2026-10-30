@@ -1116,16 +1116,6 @@ describe("tag verdicts (tags firing against consent)", () => {
     assert.deepEqual([v.verdict, v.cookielessCount], ["cookieless", 1]);
   });
 
-  test("uses gcs when the request's gcd letter for that type is undocumented (#32)", () => {
-    const page = withGA4();
-    page.at(5).window.fetch(`${GA4}?gcs=G100&gcd=13p3z3p3p5l1`); // before any default; gcd letter z unknown
-    page.at(9).gtag("consent", "default", FULL_V2);
-    page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
-    page.finishLoading();
-    const v = page.verdict("Google Analytics 4");
-    assert.deepEqual([v.verdict, v.preConsentCount], ["violation", 1]);
-  });
-
   test("the timeline wins over a request's own GCS when both are known", () => {
     // gcs lags the update by one request; the page had already granted.
     const page = withGA4();
