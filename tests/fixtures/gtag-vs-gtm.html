@@ -22,8 +22,8 @@
     and are no longer counted against Google Ads, Floodlight or the GTM container, which needs
     no consent of its own. With ads denied, gtag.js still sends the Ads tag's cookieless
     pings (/ccm/collect?tid=AW-…, and /pagead/conversion/<id>/ for gtag-conv) and the
-    Floodlight tag's (/ccm/collect?tid=DC-…), so those tags are VIOLATION: that is Google's
-    advanced Consent Mode, which the README lists under known limits.
+    Floodlight tag's (/ccm/collect?tid=DC-…). Since #34 those are judged cookieless pings
+    (advanced Consent Mode): ! REVIEW, not × BROKEN.
 
     Unlike popup-states.html this page loads Google's real scripts, so it needs a network
     connection. The container and tag IDs are placeholders; googletagmanager.com still serves

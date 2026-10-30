@@ -409,20 +409,36 @@
       var consentTypes = tag.consentTypes || [];
       var verdict;
 
-      // Requests sent while a required consent type was denied at that moment
+      // Requests sent while a required consent type was denied at that moment: cookieless
+      // pings (advanced Consent Mode, #34) and violations (everything else).
       var preConsentCount = 0;
       var firstPreConsentMs = null;
       var deniedTypes = [];
+      var violationReasons = [];
+      var cookielessCount = 0;
+      var firstCookielessMs = null;
+      var firstCookielessGcs = null;
+      var cookielessTypes = [];
       var hosts = [];
       for (var h = 0; h < vendorHits.length; h++) {
-        var denied = deniedAtRequest(vendorHits[h], consentTypes);
-        if (hosts.indexOf(vendorHits[h].host) === -1) hosts.push(vendorHits[h].host);
-        if (denied.length === 0) continue;
-        preConsentCount++;
-        if (firstPreConsentMs === null) firstPreConsentMs = Math.round(vendorHits[h].ms);
-        for (var d = 0; d < denied.length; d++) {
-          if (deniedTypes.indexOf(denied[d]) === -1) deniedTypes.push(denied[d]);
+        var hit = vendorHits[h];
+        if (hosts.indexOf(hit.host) === -1) hosts.push(hit.host);
+        var judged = judgeRequest(hit, tag.name, consentTypes);
+        hit.judgement = judged;
+        if (!judged) continue;
+        if (judged.result === 'cookieless') {
+          cookielessCount++;
+          if (firstCookielessMs === null) {
+            firstCookielessMs = Math.round(hit.ms);
+            firstCookielessGcs = hit.gcs || null;
+          }
+          addAll(cookielessTypes, judged.types);
+          continue;
         }
+        preConsentCount++;
+        if (firstPreConsentMs === null) firstPreConsentMs = Math.round(hit.ms);
+        addAll(deniedTypes, judged.types);
+        addAll(violationReasons, [judged.reason]);
       }
 
       if (!hasConsentMode) {
@@ -442,6 +458,8 @@
 
         if (preConsentCount > 0) {
           verdict = 'violation';
+        } else if (cookielessCount > 0) {
+          verdict = 'cookieless';
         } else if (anyDenied) {
           verdict = 'blocked';
         } else if (hasRequests) {
@@ -460,12 +478,55 @@
         preConsentCount: preConsentCount,
         firstPreConsentMs: firstPreConsentMs,
         deniedTypes: deniedTypes,
+        violationReasons: violationReasons,
+        cookielessCount: cookielessCount,
+        firstCookielessMs: firstCookielessMs,
+        firstCookielessGcs: firstCookielessGcs,
+        cookielessTypes: cookielessTypes,
         hosts: hosts,
         verdict: verdict
       });
     }
 
     return results;
+  }
+
+  function addAll(list, items) {
+    for (var i = 0; i < items.length; i++) if (list.indexOf(items[i]) === -1) list.push(items[i]);
+  }
+
+  // ─── Cookieless pings (advanced Consent Mode, #34) ──────────
+  // "While consent is denied, the Google tags send cookieless pings" (Google Ads Help
+  // 10000067). A request sent while a consent type its tag needs was denied is a cookieless
+  // ping when (1) a consent-aware Google tag sent it, (2) the storage type that tag needs was
+  // denied, (3) the request's own gcs/gcd says so, (4) its own signals claim no denied type as
+  // granted, and (5) it carries no advertising cookie ID. Anything else is a violation. The
+  // rule and its sources are in docs/detection.md.
+  var CONSENT_MODE_TAGS = ['Google Analytics 4', 'Google Ads', 'Floodlight'];
+  var STORAGE_TYPES = ['ad_storage', 'analytics_storage'];
+  // Parameters that carry Google's advertising cookie values: auid / auiddc (_gcl_au) and
+  // gclaw (_gcl_aw). Measured with real gtag.js: sent only while ad_storage is granted.
+  var COOKIE_ID_PARAMS = ['auid', 'auiddc', 'gclaw'];
+
+  // → null when nothing the tag needs was denied, else { result: 'cookieless' | 'violation',
+  // types: denied types, reason: null | no_consent_mode | no_signal | claimed_granted |
+  // storage_granted | cookie_id }.
+  function judgeRequest(hit, tagName, consentTypes) {
+    var denied = deniedAtRequest(hit, consentTypes);
+    if (!denied.length) return null;
+    function violation(reason) { return { result: 'violation', types: denied, reason: reason }; }
+    if (CONSENT_MODE_TAGS.indexOf(tagName) === -1) return violation('no_consent_mode');
+    var own = hit.requestConsent || {};
+    var storage = consentTypes.filter(function (t) { return STORAGE_TYPES.indexOf(t) !== -1; });
+    var storageDenied = storage.length > 0 && storage.every(function (t) { return denied.indexOf(t) !== -1; });
+    if (!storageDenied) return violation('storage_granted');
+    if (!storage.every(function (t) { return own[t] === 'denied'; })) {
+      var claimedStorage = storage.some(function (t) { return own[t] === 'granted'; });
+      return violation(claimedStorage ? 'claimed_granted' : 'no_signal');
+    }
+    if (denied.some(function (t) { return own[t] === 'granted'; })) return violation('claimed_granted');
+    if (hit.cookieIds && hit.cookieIds.length) return violation('cookie_id');
+    return { result: 'cookieless', types: denied, reason: null };
   }
 
   // Consent types that were denied when this request was sent. The captured consent
@@ -548,6 +609,9 @@
         if (hit.gcs) hit.decoded.gcs = decodeGCS(hit.gcs);
         if (hit.gcd) hit.decoded.gcd = decodeGCD(hit.gcd);
         if (hit.npa) hit.decoded.npa = hit.npa === '1' ? 'non-personalized (ad_personalization denied)' : 'personalized';
+        // Names only: the values are cookie identifiers and are never recorded.
+        var cookieIds = COOKIE_ID_PARAMS.filter(function (k) { return params.has(k); });
+        if (cookieIds.length) hit.cookieIds = cookieIds;
         var own = requestConsentFrom(hit.decoded);
         hit.requestConsent = own.consent;
         if (Object.keys(own.unknown).length) hit.gcdUnknown = own.unknown;

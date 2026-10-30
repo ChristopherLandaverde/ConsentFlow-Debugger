@@ -335,7 +335,8 @@
         + '<span class="t-label">' + esc(h.host || '') + (h.en ? ' · ' + esc(h.en) : '') + '</span>'
         + (mismatch ? '<span class="flag"><span aria-hidden="true">×</span> mismatch</span>' : '')
         + '</p>'
-        + attributionHtml(h);
+        + attributionHtml(h)
+        + judgementHtml(h);
       if (rows.length) {
         html += '<table class="req-table"><caption class="visually-hidden">Consent for this request</caption>'
           + '<thead><tr><th scope="col">Type</th><th scope="col">Carried</th><th scope="col">On page</th></tr></thead><tbody>';
@@ -366,6 +367,29 @@
     }
     if (letter) return '<span class="muted">unknown: ' + letter + '</span>';
     return '<span class="muted">not sent</span>';
+  }
+
+  // How a request sent while its tag's consent was denied was judged (#34): a cookieless ping
+  // under advanced Consent Mode (review), or a violation with the reason it was not one.
+  var JUDGEMENT_REASONS = {
+    no_signal: 'It carried no consent signal.',
+    claimed_granted: 'It carried consent as granted.',
+    storage_granted: 'Storage was granted, so it used cookies.'
+  };
+
+  function judgementHtml(h) {
+    var j = h.judgement;
+    if (!j) return '';
+    var storage = (j.types || []).filter(function (t) { return t === 'ad_storage' || t === 'analytics_storage'; });
+    var named = (storage.length ? storage : j.types || []).map(function (t) { return '<code>' + esc(t) + '</code>'; }).join(', ');
+    if (j.result === 'cookieless') {
+      return '<p class="req-judge review"><span aria-hidden="true">!</span> Cookieless ping: ' + named
+        + ' denied in its own consent signal, no cookie ID.</p>';
+    }
+    var why = j.reason === 'cookie_id'
+      ? ' It carried a cookie ID (' + (h.cookieIds || []).map(function (k) { return '<code>' + esc(k) + '</code>'; }).join(', ') + ').'
+      : (JUDGEMENT_REASONS[j.reason] ? ' ' + JUDGEMENT_REASONS[j.reason] : '');
+    return '<p class="req-judge broken"><span aria-hidden="true">×</span> Sent while ' + named + ' was denied.' + why + '</p>';
   }
 
   // Which tag the request was attributed to (#28). Loader and unattributed requests are listed

@@ -21,7 +21,8 @@ Three kinds:
 - Requests sent before consent. Each captured request records the consent state at the moment
   it was sent, from the captured consent timeline and, for Google requests, from the request's
   own `gcs` / `gcd`. A request sent while a consent type its tag needs was `denied` counts as a
-  violation even if consent was granted later.
+  violation even if consent was granted later, unless it is one of Google's cookieless pings
+  under advanced Consent Mode ([below](#cookieless-pings-advanced-consent-mode)).
 
 ## GCS / GCD signals
 
@@ -100,14 +101,16 @@ denied:
 
 | Verdict | Meaning |
 |---|---|
-| `VIOLATION` | At least one request the tag sent went out while a required consent type was `denied` at that moment, even if consent was granted later |
+| `VIOLATION` | At least one request the tag sent went out while a required consent type was `denied` at that moment, and was not a cookieless ping, even if consent was granted later |
+| `COOKIELESS` | Every request the tag sent while a required type was `denied` was a [cookieless ping](#cookieless-pings-advanced-consent-mode) (advanced Consent Mode) |
 | `BLOCKED` | A required consent type is `denied` now and the tag sent no request while it was denied |
 | `FIRING` | None of its required consent types is `denied`, and requests were captured, all sent after consent |
 | `IDLE` | None of its required consent types is `denied`, and no requests were captured yet |
 | `CONTAINER` | Google Tag Manager on a page with a consent default. Not a check of its own |
 | `NO CONSENT MODE` | The page has no consent default at all |
 
-In the popup, `VIOLATION` is a broken finding, `BLOCKED` and `FIRING` count as passed checks,
+In the popup, `VIOLATION` is a broken finding, `COOKIELESS` a finding to review (`! REVIEW`),
+`BLOCKED` and `FIRING` count as passed checks,
 `IDLE` is not checked yet, `CONTAINER` is not shown as a finding, and `NO CONSENT MODE` is
 reported inside the missing-default finding.
 
@@ -115,6 +118,52 @@ So the number of checks in the popup's verdict ("All 9 checks passed") depends o
 it is the eight validation rules plus one check per detected tag other than Google Tag
 Manager (`buildFindings` in `popup/findings.js`). A page with GA4 as its only detected tag has
 nine, and so does a page with a GTM container that runs GA4.
+
+### Cookieless pings (advanced Consent Mode)
+
+With advanced Consent Mode, Google's tags load before the visitor chooses and keep sending
+while consent is denied: "While consent is denied, the Google tags send cookieless pings"
+([Google Ads Help 10000067][ads-cm]). Google's [Consent mode overview][cm-params] says what
+changes with each type denied: with `ad_storage` denied, no advertising cookies or device
+identifiers are read or written and "Requests are sent through a different domain (e.g.
+pagead2.googlesyndication.com)"; with `analytics_storage` denied, tags "won't read or write
+first-party analytics cookies". Pings can carry the consent state, whether the URL had ad-click
+information, and a "Random number generated on each page load". Full page URLs are still
+collected, "including ad-click information in URL parameters (e.g., GCLID / DCLID)".
+
+So a request a tag sent while a consent type it needs was `denied` is judged a **cookieless
+ping** when all of these hold (#34):
+
+| # | Condition | Why |
+|---|---|---|
+| 1 | Google Analytics 4, Google Ads or Floodlight sent it ([attribution](#which-tag-sent-a-request)) | They are the consent-aware Google tags. Other vendors have no Consent Mode, so their requests stay violations |
+| 2 | The storage type the tag needs was denied: `analytics_storage` for GA4, `ad_storage` for Google Ads and Floodlight | Cookieless means storage denied. With `ad_storage` granted and only `ad_user_data` or `ad_personalization` denied, the request used cookies |
+| 3 | The request's own consent signal says that storage type is denied (`gcs`, or a known `gcd` letter) | Consent state pings carry the consent state; `gcs` transmits `ad_storage` and `analytics_storage` ([Consent mode overview][cm-params]) |
+| 4 | Its own signals claim no denied type as `granted` | A request that tells Google consent was granted is not a denied-consent ping |
+| 5 | It carries no `auid`, `auiddc` or `gclaw` parameter | These carry Google's advertising cookie values (`_gcl_au`, `_gcl_aw`). Measured: gtag.js sends them only while `ad_storage` is granted |
+
+Anything else sent while denied is a violation, and the request records why: no consent
+signal, consent claimed as granted, storage granted, a cookie ID, or (other vendors) no
+Consent Mode. A tag whose requests while denied were all cookieless pings is `COOKIELESS`, a
+`! REVIEW` finding: correct for advanced Consent Mode, and still visible for anyone whose
+privacy policy counts any request before consent. One violation makes the tag `VIOLATION`; its
+finding also counts the cookieless pings. The side panel's Requests view marks each request
+sent while denied as "! Cookieless ping" or "× Sent while … was denied", with the reason.
+
+Measured with Google's real gtag.js in Playwright Chromium 151 (October 2026), in one browser
+profile that already had `_ga`, `_gcl_au` and `_gcl_aw` cookies from a granted visit:
+
+| Consent | Google Ads / Floodlight request | GA4 request |
+|---|---|---|
+| granted | `www.google.com/ccm/collect?…&auid=<_gcl_au>&gclaw=<_gcl_aw>`, `ad.doubleclick.net/activity;…;auiddc=<_gcl_au>;…` | `cid` = the `_ga` client ID |
+| denied | `pagead2.googlesyndication.com/ccm/collect?…&gcs=G101&rnd=<random>`, no `auid` / `gclaw` | `cid` new on every page load, not the `_ga` value; `gcs=G100` |
+
+ConsentFlow does not see request headers and does not read cookies, so it cannot compare a
+GA4 `cid` with `_ga`. For GA4 it relies on the request's own `gcs` and the measured behaviour
+above. `gclid` / `dclid` from the page URL do not count as cookie IDs, since Google sends full
+URLs while `ad_storage` is denied.
+
+[ads-cm]: https://support.google.com/google-ads/answer/10000067
 
 ### Which tag sent a request
 
