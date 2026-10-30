@@ -31,7 +31,7 @@ export const states = {
     page.at(1).gtag("consent", "default", { ...FULL_V2, wait_for_update: 500 });
     page.at(10).push(["config", "G-1"]);
     page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
-    page.at(950).window.fetch(`${GA4}?gcs=G110&en=page_view`);
+    page.at(950).window.fetch(`${GA4}?gcs=G101&en=page_view`);
     return page.finishLoading().requestState();
   },
   review() {

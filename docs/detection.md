@@ -26,8 +26,9 @@ Three kinds:
 ## GCS / GCD signals
 
 For requests to Google endpoints (Google Analytics, Google Tag Manager,
-Google Ads, DoubleClick, Google Syndication), the `gcs` parameter is decoded into
-`analytics_storage` / `ad_storage`, the `gcd` parameter into `ad_storage`,
+Google Ads, DoubleClick, Google Syndication), the `gcs` parameter
+(`G1<ad_storage><analytics_storage>`, `1` granted, `0` denied) is decoded into
+`ad_storage` / `analytics_storage`, the `gcd` parameter into `ad_storage`,
 `analytics_storage`, `ad_user_data` and `ad_personalization` with default/update source, and
 `npa` into personalized / non-personalized. The tracking ID (`tid`) and GA4 event name (`en`)
 are shown too.

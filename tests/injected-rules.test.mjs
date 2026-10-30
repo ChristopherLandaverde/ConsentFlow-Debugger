@@ -297,7 +297,7 @@ describe("rule 6: GCS Signal Consistency", () => {
   test("still fails a request that claimed granted while consent was denied, after consent is granted", () => {
     const page = loadPage();
     page.at(1).gtag("consent", "default", FULL_V2);
-    page.at(20).window.fetch(`${GA4}?gcs=G110`);
+    page.at(20).window.fetch(`${GA4}?gcs=G101`);
     page.at(900).gtag("consent", "update", { analytics_storage: "granted", ad_storage: "granted" });
     page.finishLoading();
     const rule = page.rule("gcs-consistency");
@@ -318,9 +318,23 @@ describe("rule 6: GCS Signal Consistency", () => {
     const page = loadPage();
     page.gtag("consent", "default", { analytics_storage: "denied" });
     page.window.fetch(`${GA4}?gcs=BAD`);
-    page.window.fetch(`${GA4}?gcs=G101`); // ad_storage granted, but ad_storage was never set
+    page.window.fetch(`${GA4}?gcs=G110`); // ad_storage granted, but ad_storage was never set
     page.finishLoading();
     assert.equal(page.rule("gcs-consistency").status, "pass");
+  });
+
+  test("passes gtag.js's G101 when analytics is granted and ads denied (#26)", () => {
+    const page = loadPage();
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(2).gtag("consent", "update", { analytics_storage: "granted" });
+    page.at(500).window.fetch(`${GA4}?gcs=G101&en=page_view`);
+    page.finishLoading();
+    const rule = page.rule("gcs-consistency");
+    assert.equal(rule.status, "pass", rule.detail);
+    assert.deepEqual(page.requestState().networkHits[0].requestConsent, {
+      ad_storage: "denied",
+      analytics_storage: "granted",
+    });
   });
 });
 
@@ -551,7 +565,7 @@ describe("tag verdicts (tags firing against consent)", () => {
     const page = withGA4();
     page.gtag("consent", "default", FULL_V2);
     page.gtag("consent", "update", { analytics_storage: "granted" });
-    page.window.fetch(`${GA4}?gcs=G110`);
+    page.window.fetch(`${GA4}?gcs=G101`);
     page.finishLoading();
     assert.equal(page.verdict("Google Analytics 4").verdict, "firing");
   });
@@ -588,7 +602,7 @@ describe("tag verdicts (tags firing against consent)", () => {
     const page = withGA4();
     page.at(1).gtag("consent", "default", FULL_V2);
     page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
-    page.at(950).window.fetch(`${GA4}?gcs=G110`);
+    page.at(950).window.fetch(`${GA4}?gcs=G101`);
     page.finishLoading();
     const v = page.verdict("Google Analytics 4");
     assert.equal(v.verdict, "firing");
@@ -615,7 +629,7 @@ describe("tag verdicts (tags firing against consent)", () => {
     page.at(1).gtag("consent", "default", FULL_V2);
     page.at(10).window.fetch("https://www.facebook.com/tr?ev=PageView"); // ad_storage denied
     page.at(500).gtag("consent", "update", { analytics_storage: "granted" });
-    page.at(600).window.fetch(`${GA4}?gcs=G110`); // analytics granted by now
+    page.at(600).window.fetch(`${GA4}?gcs=G101`); // analytics granted by now
     page.at(700).window.navigator.sendBeacon("https://www.facebook.com/tr?ev=ViewContent"); // still denied
     page.at(800).gtag("consent", "update", { ad_storage: "granted" });
     page.at(850).window.fetch("https://www.facebook.com/tr?ev=Purchase"); // granted
@@ -654,7 +668,7 @@ describe("tag verdicts (tags firing against consent)", () => {
     page.at(1).gtag("consent", "default", { analytics_storage: "denied", wait_for_update: 500 });
     page.at(20).window.fetch(`${GA4}?gcs=G100`);
     page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
-    page.at(950).window.fetch(`${GA4}?gcs=G110&gcd=13p3t`);
+    page.at(950).window.fetch(`${GA4}?gcs=G101&gcd=13p3t`);
     page.finishLoading();
     const hits = page.requestState().networkHits;
     assert.deepEqual(hits[0].consentAtRequest, { analytics_storage: "denied" });
@@ -704,7 +718,7 @@ describe("get-state message", () => {
     page.at(120).push(["config", "G-1"]);
     page.finishLoading();
     page.at(700).gtag("consent", "update", { analytics_storage: "granted" });
-    page.at(800).window.fetch(`${GA4}?gcs=G110&en=page_view`);
+    page.at(800).window.fetch(`${GA4}?gcs=G101&en=page_view`);
     const state = page.requestState();
     assert.equal(state.validation.find((r) => r.id === "consent-update-received").status, "pass");
     assert.equal(computeVerdict(state).status, "verified");

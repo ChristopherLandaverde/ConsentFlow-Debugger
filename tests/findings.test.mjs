@@ -61,7 +61,7 @@ const scenarios = {
     page.at(1).gtag("consent", "default", { ...FULL_V2, wait_for_update: 500 });
     page.at(10).push(["config", "G-1"]);
     page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
-    page.at(950).window.fetch(`${GA4}?gcs=G110`);
+    page.at(950).window.fetch(`${GA4}?gcs=G101`);
     return page.finishLoading().requestState();
   },
   // Every check passes except the ones that cannot apply here (no CMP recognized).
@@ -70,7 +70,7 @@ const scenarios = {
     page.at(1).gtag("consent", "default", FULL_V2);
     page.at(10).push(["config", "G-1"]);
     page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
-    page.at(950).window.fetch(`${GA4}?gcs=G110`);
+    page.at(950).window.fetch(`${GA4}?gcs=G101`);
     return page.finishLoading().requestState();
   },
   violations() {
