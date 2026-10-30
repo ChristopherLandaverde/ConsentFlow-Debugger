@@ -204,6 +204,25 @@ describe("requests view", () => {
     assert.match(html, /<p class="req-tag"><span class="req-none">– Not tied to a tag<\/span> Not judged\. Sent to an endpoint several Google tags share, with no tag ID\.<\/p>/);
   });
 
+  test("a type read from gcs because its gcd letter is undocumented says so, with the letter (#32)", () => {
+    const page = loadPage({ scripts: ["https://www.googletagmanager.com/gtag/js?id=G-1"] });
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(2).gtag("consent", "update", { analytics_storage: "granted" });
+    page.at(40).window.fetch(`${GA4}?tid=G-1&gcs=G101&gcd=13p3r3p3p5l1&en=page_view`);
+    page.at(50).window.fetch(`${GA4}?tid=G-1&gcd=13p3p3r3p5l1&en=scroll`);
+    const html = open(page.finishLoading().requestState()).html("view-requests");
+    assert.match(
+      html,
+      /<th scope="row" class="mono">analytics_storage<\/th><td><span class="cv granted"><span aria-hidden="true">✓<\/span> granted<\/span><span class="req-src">from <code>gcs<\/code>; <code>gcd<\/code> letter <code>r<\/code> is undocumented<\/span><\/td>/,
+    );
+    assert.doesNotMatch(html.slice(0, html.indexOf("scroll")), /not sent/);
+    assert.match(
+      html,
+      /<th scope="row" class="mono">ad_user_data<\/th><td><span class="muted">unknown: <code>gcd<\/code> letter <code>r<\/code> is undocumented<\/span><\/td>/,
+    );
+    assert.match(html, /Where a <code>gcd<\/code> letter is undocumented, the value comes from <code>gcs<\/code>/);
+  });
+
   test("empty requests say what to do", () => {
     assert.match(open(states.zeroRequests()).html("view-requests"), /No vendor requests yet\./);
   });

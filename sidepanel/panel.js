@@ -320,7 +320,8 @@
     var showRaw = !!ui.open['req-raw'];
     var html = '<dl class="terms">'
       + '<div><dt>Carried</dt><dd>The consent the request itself sent. For Google requests that is '
-      + '<code>gcs</code>, the Google consent state, and <code>gcd</code>, the Google consent detail.</dd></div>'
+      + '<code>gcs</code>, the Google consent state, and <code>gcd</code>, the Google consent detail. '
+      + 'Where a <code>gcd</code> letter is undocumented, the value comes from <code>gcs</code>.</dd></div>'
       + '<div><dt>On page</dt><dd>The consent on the page when the request was sent.</dd></div>'
       + '<div><dt>Sent by</dt><dd>The tag the request is judged against, from the tag ID or endpoint it carries.</dd></div>'
       + '</dl>'
@@ -340,7 +341,7 @@
           + '<thead><tr><th scope="col">Type</th><th scope="col">Carried</th><th scope="col">On page</th></tr></thead><tbody>';
         rows.forEach(function (r) {
           html += '<tr' + (r.mismatch ? ' class="mismatch"' : '') + '><th scope="row" class="mono">' + esc(r.key) + '</th>'
-            + '<td>' + (r.carried ? R.consentValue(r.carried) : '<span class="muted">not sent</span>') + '</td>'
+            + '<td>' + carriedHtml(r) + '</td>'
             + '<td>' + (r.onPage ? R.consentValue(r.onPage) : '<span class="muted">not set</span>') + '</td></tr>';
         });
         html += '</tbody></table>';
@@ -354,6 +355,17 @@
       html += '</li>';
     });
     return html + '</ol>';
+  }
+
+  // What the request carried for one type. An undocumented gcd letter is shown with the value
+  // read from gcs instead, or as unknown when gcs does not cover the type (#32).
+  function carriedHtml(r) {
+    var letter = r.gcdLetter ? '<code>gcd</code> letter <code>' + esc(r.gcdLetter) + '</code> is undocumented' : '';
+    if (r.carried) {
+      return R.consentValue(r.carried) + (letter ? '<span class="req-src">from <code>gcs</code>; ' + letter + '</span>' : '');
+    }
+    if (letter) return '<span class="muted">unknown: ' + letter + '</span>';
+    return '<span class="muted">not sent</span>';
   }
 
   // Which tag the request was attributed to (#28). Loader and unattributed requests are listed

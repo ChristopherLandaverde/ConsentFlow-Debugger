@@ -69,6 +69,42 @@ describe("GCD decoding", () => {
     assert.equal(hit.decoded.gcd.ad_storage, "unknown:z");
   });
 
+  // #32: gtag.js sends the letter r for a type granted by an update. Google does not define the
+  // gcd letters, so r stays unmapped; the type is read from gcs (ad_storage, analytics_storage)
+  // and the letter is kept as evidence.
+  test("real gtag.js hits: an undocumented gcd letter falls back to gcs for that type", () => {
+    const adsDenied = hitFor(`${GA4}?tid=G-1&gcs=G101&gcd=13p3r3p3p5l1&en=page_view`);
+    assert.equal(adsDenied.decoded.gcd.analytics_storage, "unknown:r");
+    assert.deepEqual(adsDenied.requestConsent, {
+      ad_storage: "denied",
+      analytics_storage: "granted",
+      ad_user_data: "denied",
+      ad_personalization: "denied",
+    });
+    assert.deepEqual(adsDenied.gcdUnknown, { analytics_storage: "r" });
+
+    const granted = hitFor(`${GA4}?tid=G-1&gcs=G111&gcd=13r3r3r3r5l1&en=page_view`);
+    assert.deepEqual(granted.requestConsent, { ad_storage: "granted", analytics_storage: "granted" });
+    assert.deepEqual(granted.gcdUnknown, {
+      ad_storage: "r",
+      analytics_storage: "r",
+      ad_user_data: "r",
+      ad_personalization: "r",
+    });
+  });
+
+  test("an undocumented gcd letter with no gcs leaves the type unknown, not denied or granted", () => {
+    const hit = hitFor(`${GA4}?tid=G-1&gcd=13r3p3p3p5l1`);
+    assert.deepEqual(hit.requestConsent, { analytics_storage: "denied", ad_user_data: "denied", ad_personalization: "denied" });
+    assert.deepEqual(hit.gcdUnknown, { ad_storage: "r" });
+  });
+
+  test("a known gcd letter still wins over gcs, and no gcdUnknown is recorded", () => {
+    const hit = hitFor(`${GA4}?tid=G-1&gcs=G111&gcd=13p3p3p3p5l1`);
+    assert.equal(hit.requestConsent.ad_storage, "denied");
+    assert.equal(hit.gcdUnknown, undefined);
+  });
+
   test("a one-character value is reported as too short", () => {
     const hit = hitFor(`${GA4}?gcd=1`);
     assert.deepEqual(hit.decoded.gcd, { raw: "1", error: "too short" });

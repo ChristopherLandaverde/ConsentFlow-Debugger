@@ -483,18 +483,28 @@
     return denied;
   }
 
-  // Normalise the request's own consent signals (GCD, then GCS) to granted/denied.
+  // Normalise the request's own consent signals to granted/denied: GCD first, then GCS. A GCD
+  // letter ConsentFlow does not know (Google does not document them; real gtag.js sends r for a
+  // type granted by an update) falls back to GCS for that type, and the letter is kept in
+  // unknown so the Requests view can show it (#32). GCS only carries ad_storage and
+  // analytics_storage, so an unknown letter for the other two stays unknown.
   function requestConsentFrom(decoded) {
     var out = {};
+    var unknown = {};
     var gcd = decoded.gcd && !decoded.gcd.error ? decoded.gcd : null;
     var gcs = decoded.gcs && !decoded.gcs.error ? decoded.gcs : null;
     ['ad_storage', 'analytics_storage', 'ad_user_data', 'ad_personalization'].forEach(function (t) {
-      var v = gcd && typeof gcd[t] === 'string' ? gcd[t] : (gcs ? gcs[t] : undefined);
+      var v = gcd ? gcd[t] : undefined;
+      if (typeof v === 'string' && v.indexOf('unknown:') === 0) {
+        unknown[t] = v.substring(8);
+        v = undefined;
+      }
+      if (typeof v !== 'string') v = gcs ? gcs[t] : undefined;
       if (typeof v !== 'string') return;
       if (v.indexOf('granted') === 0) out[t] = 'granted';
       else if (v.indexOf('denied') === 0) out[t] = 'denied';
     });
-    return out;
+    return { consent: out, unknown: unknown };
   }
 
   function isGoogleAnalyticsUrl(urlStr) {
@@ -538,7 +548,9 @@
         if (hit.gcs) hit.decoded.gcs = decodeGCS(hit.gcs);
         if (hit.gcd) hit.decoded.gcd = decodeGCD(hit.gcd);
         if (hit.npa) hit.decoded.npa = hit.npa === '1' ? 'non-personalized (ad_personalization denied)' : 'personalized';
-        hit.requestConsent = requestConsentFrom(hit.decoded);
+        var own = requestConsentFrom(hit.decoded);
+        hit.requestConsent = own.consent;
+        if (Object.keys(own.unknown).length) hit.gcdUnknown = own.unknown;
       }
 
       // Facebook param extraction
