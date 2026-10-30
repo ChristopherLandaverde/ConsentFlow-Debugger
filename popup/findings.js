@@ -495,9 +495,10 @@
     state = state || {};
     var out = [];
     (state.validation || []).forEach(function (rule) { out.push(ruleFinding(rule, state)); });
-    // Tags without Consent Mode are reported inside the missing-default finding.
+    // Tags without Consent Mode are reported inside the missing-default finding. A GTM
+    // container is not judged itself: the tags in it are judged by their own requests (#28).
     (state.tagImpact || []).forEach(function (t) {
-      if (t.verdict === 'no_consent_mode') return;
+      if (t.verdict === 'no_consent_mode' || t.verdict === 'container') return;
       out.push(tagCopy(t, state));
     });
     out.forEach(function (f, i) {

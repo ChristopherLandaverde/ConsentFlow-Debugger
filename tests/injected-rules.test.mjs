@@ -481,7 +481,7 @@ describe("CMP detection", () => {
 describe("tag detection", () => {
   const tags = [
     [{ scripts: ["https://www.googletagmanager.com/gtag/js?id=G-1"] }, "Google Analytics 4", ["analytics_storage"]],
-    [{ globals: { google_tag_manager: { "GTM-X": {} } } }, "Google Tag Manager", ["analytics_storage", "ad_storage"]],
+    [{ globals: { google_tag_manager: { "GTM-X": {} } } }, "Google Tag Manager", []],
     [{ scripts: ["https://www.googletagmanager.com/gtm.js?id=GTM-X"] }, "Google Tag Manager", null],
     [{ scripts: ["https://www.googleadservices.com/pagead/conversion.js"] }, "Google Ads", ["ad_storage", "ad_user_data", "ad_personalization"]],
     [{ globals: { fbq() {} } }, "Facebook Pixel", ["ad_storage"]],
@@ -619,6 +619,165 @@ describe("Google tag vs GTM container (#21)", () => {
     page.window.google_tag_manager["GTM-ABC123"] = {};
     page.tick();
     assert.deepEqual(names(page), ["Google Tag Manager"]);
+  });
+});
+
+// #28: each captured request is attributed to the tag that sent it, from the request itself
+// (tag ID, endpoint path, host), and judged only against that tag's consent types. Patterns
+// measured from real gtag.js in Chromium; see docs/detection.md.
+describe("request attribution (#28)", () => {
+  const GTAG_G = "https://www.googletagmanager.com/gtag/js?id=G-1";
+  const GTM_JS = "https://www.googletagmanager.com/gtm.js?id=GTM-ABC123";
+  const ADS_DENIED = (page) => {
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(2).gtag("consent", "update", { analytics_storage: "granted" });
+  };
+  const gaAndAds = () => loadPage({ scripts: [GTAG_G], globals: { google_tag_manager: { "G-1": {}, "AW-123456789": {} } } });
+  const attribution = (url) => {
+    const page = loadPage();
+    page.window.fetch(url);
+    const hit = page.debugState().networkHits[0];
+    return [hit.tag, hit.tagId];
+  };
+
+  const table = [
+    // GA4: tid=G- on /g/collect, any Google host (Google Signals sends to stats.g.doubleclick.net)
+    ["https://www.google-analytics.com/g/collect?v=2&tid=G-FIXTURE123&en=page_view", "Google Analytics 4", "G-FIXTURE123"],
+    ["https://region1.analytics.google.com/g/collect?tid=G-1", "Google Analytics 4", "G-1"],
+    ["https://stats.g.doubleclick.net/g/collect?v=2&tid=G-1", "Google Analytics 4", "G-1"],
+    // GA4 path or GA4-only host without a tid: still GA4, ID unknown
+    ["https://region1.google-analytics.com/g/collect?en=page_view", "Google Analytics 4", null],
+    // Google Ads: tid=AW- on /ccm/collect, or the numeric conversion ID in the path
+    ["https://www.google.com/ccm/collect?tid=AW-123456789&en=page_view", "Google Ads", "AW-123456789"],
+    ["https://pagead2.googlesyndication.com/ccm/collect?tid=AW-123456789&en=page_view", "Google Ads", "AW-123456789"],
+    ["https://www.googleadservices.com/pagead/conversion/123456789/?label=abc&en=conversion", "Google Ads", "AW-123456789"],
+    ["https://pagead2.googlesyndication.com/pagead/conversion/123456789/?en=conversion", "Google Ads", "AW-123456789"],
+    ["https://googleads.g.doubleclick.net/pagead/viewthroughconversion/123456789/?en=gtag.config", "Google Ads", "AW-123456789"],
+    ["https://www.google.com/rmkt/collect/123456789/?en=gtag.config", "Google Ads", "AW-123456789"],
+    ["https://www.google.com/pagead/1p-user-list/123456789/?en=gtag.config", "Google Ads", "AW-123456789"],
+    ["https://www.google.com/pagead/1p-conversion/123456789/?en=conversion", "Google Ads", "AW-123456789"],
+    // Floodlight: tid=DC-, or src=<advertiser ID> in the activity URL
+    ["https://pagead2.googlesyndication.com/ccm/collect?tid=DC-1234567&en=page_view", "Floodlight", "DC-1234567"],
+    ["https://ad.doubleclick.net/activity;src=1234567;type=invmedia;cat=fixtu0;ord=1", "Floodlight", "DC-1234567"],
+    ["https://1234567.fls.doubleclick.net/activityi;src=1234567;type=a;cat=b", "Floodlight", "DC-1234567"],
+    ["https://ade.googlesyndication.com/ddm/activity/src=1234567;type=a;cat=b", "Floodlight", "DC-1234567"],
+    ["https://adservice.google.com/ddm/fls/z/src=1234567;type=a;cat=b", "Floodlight", "DC-1234567"],
+    // Loaders: the GTM container and gtag.js
+    ["https://www.googletagmanager.com/gtm.js?id=GTM-ABC123", "Google Tag Manager", "GTM-ABC123"],
+    ["https://www.googletagmanager.com/gtag/js?id=AW-123456789", "Google Ads", "AW-123456789"],
+    // Not attributable: no tag ID and an endpoint several Google tags share
+    ["https://ad.doubleclick.net/ccm/s/collect?gtm=45be6as1", null, null],
+    ["https://www.google.com/ccm/collect?tid=GT-ABC123", null, null],
+    ["https://www.googletagmanager.com/a?id=AW-123456789", null, null],
+  ];
+  for (const [url, tag, tagId] of table) {
+    test(`${new URL(url).host}${new URL(url).pathname.split(";")[0]} → ${tag || "unattributed"}`, () => {
+      assert.deepEqual(attribution(url), [tag, tagId]);
+    });
+  }
+
+  test("GA4 + Google Ads, ads denied and analytics granted: GA4 hits pass and are not counted against Ads", () => {
+    const page = gaAndAds();
+    ADS_DENIED(page);
+    page.at(500).window.fetch(`${GA4}?tid=G-1&gcs=G101&en=page_view`);
+    page.at(700).window.navigator.sendBeacon(`${GA4}?tid=G-1&gcs=G101&en=scroll`);
+    page.finishLoading();
+    const ga = page.verdict("Google Analytics 4");
+    assert.deepEqual([ga.verdict, ga.requestCount, ga.preConsentCount], ["firing", 2, 0]);
+    const ads = page.verdict("Google Ads");
+    assert.deepEqual([ads.verdict, ads.requestCount, ads.preConsentCount], ["blocked", 0, 0]);
+    assert.notEqual(computeVerdict(page.requestState()).status, "broken");
+  });
+
+  test("an Ads conversion sent while ad_storage is denied makes Google Ads a VIOLATION, and only Ads", () => {
+    const page = gaAndAds();
+    ADS_DENIED(page);
+    page.at(500).window.fetch(`${GA4}?tid=G-1&gcs=G101&en=page_view`);
+    page.at(1500).window.fetch("https://pagead2.googlesyndication.com/pagead/conversion/123456789/?en=conversion&gcs=G101&label=abc");
+    page.finishLoading();
+    const ads = page.verdict("Google Ads");
+    assert.deepEqual([ads.verdict, ads.requestCount, ads.preConsentCount, ads.firstPreConsentMs], ["violation", 1, 1, 1500]);
+    assert.deepEqual(ads.hosts, ["pagead2.googlesyndication.com"]);
+    assert.equal(page.verdict("Google Analytics 4").verdict, "firing");
+    assert.equal(computeVerdict(page.requestState()).status, "broken");
+  });
+
+  test("GTM page with a GA4 tag: GA4 hits are judged against analytics_storage only, the container needs no consent", () => {
+    const page = loadPage({
+      scripts: [GTM_JS, `${GTAG_G}&cx=c&gtm=4e6as1`],
+      globals: { google_tag_manager: { "GTM-ABC123": {}, "G-1": {} } },
+    });
+    ADS_DENIED(page);
+    page.at(500).window.fetch(`${GA4}?tid=G-1&gcs=G101&en=page_view`);
+    page.finishLoading();
+    const gtm = page.verdict("Google Tag Manager");
+    assert.deepEqual(gtm.consentTypes, []);
+    assert.deepEqual([gtm.verdict, gtm.requestCount, gtm.preConsentCount], ["container", 0, 0]);
+    assert.equal(page.verdict("Google Analytics 4").verdict, "firing");
+    assert.notEqual(computeVerdict(page.requestState()).status, "broken");
+  });
+
+  test("GTM page whose GA4 tag sends directly: GA4 is detected from its own requests and judged", () => {
+    const page = loadPage({ scripts: [GTM_JS], globals: { google_tag_manager: { "GTM-ABC123": {} } } });
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(400).window.fetch("https://www.google-analytics.com/g/collect?tid=G-9&gcs=G100&en=page_view");
+    page.finishLoading();
+    assert.deepEqual(page.debugState().tags.map((t) => t.name), ["Google Analytics 4", "Google Tag Manager"]);
+    const ga = page.verdict("Google Analytics 4");
+    assert.deepEqual([ga.verdict, ga.preConsentCount, ga.deniedTypes], ["violation", 1, ["analytics_storage"]]);
+    assert.equal(page.verdict("Google Tag Manager").verdict, "container");
+  });
+
+  test("a GTM page without a consent default still reports the container as running without consent controls", () => {
+    const page = loadPage({ scripts: [GTM_JS], globals: { google_tag_manager: { "GTM-ABC123": {} } } }).finishLoading();
+    assert.equal(page.verdict("Google Tag Manager").verdict, "no_consent_mode");
+  });
+
+  test("Floodlight is judged on its own requests, not on GA4 hits", () => {
+    const page = loadPage({ scripts: [GTAG_G], globals: { google_tag_manager: { "G-1": {}, "DC-1234567": {} } } });
+    ADS_DENIED(page);
+    page.at(500).window.fetch(`${GA4}?tid=G-1&gcs=G101`);
+    page.finishLoading();
+    assert.deepEqual([page.verdict("Floodlight").verdict, page.verdict("Floodlight").requestCount], ["blocked", 0]);
+    page.at(900).window.fetch("https://ad.doubleclick.net/activity;src=1234567;type=a;cat=b;gcs=G101");
+    page.at(950).window.fetch("https://pagead2.googlesyndication.com/ccm/collect?tid=DC-1234567&gcs=G101");
+    const fl = page.verdict("Floodlight");
+    assert.deepEqual([fl.verdict, fl.requestCount, fl.preConsentCount], ["violation", 2, 2]);
+    assert.equal(page.verdict("Google Analytics 4").verdict, "firing");
+  });
+
+  test("an unattributable Google request is kept with a reason but changes no verdict", () => {
+    const page = gaAndAds();
+    ADS_DENIED(page);
+    page.at(500).window.fetch(`${GA4}?tid=G-1&gcs=G101`);
+    page.at(600).window.fetch("https://ad.doubleclick.net/ccm/s/collect?gtm=45be6as1&gcs=G101");
+    page.finishLoading();
+    const state = page.requestState();
+    const hit = state.networkHits.find((h) => h.host === "ad.doubleclick.net");
+    assert.equal(hit.tag, null);
+    assert.match(hit.unattributedReason, /no tag ID/);
+    assert.deepEqual(
+      state.tagImpact.map((t) => [t.name, t.verdict, t.requestCount]),
+      [["Google Analytics 4", "firing", 1], ["Google Ads", "blocked", 0]],
+    );
+    assert.notEqual(computeVerdict(state).status, "broken");
+  });
+
+  test("a loader request is attributed to its tag but never judged", () => {
+    const page = gaAndAds();
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(5).window.fetch("https://www.googletagmanager.com/gtag/js?id=AW-123456789");
+    page.finishLoading();
+    const hit = page.requestState().networkHits[0];
+    assert.deepEqual([hit.tag, hit.tagId, hit.loader], ["Google Ads", "AW-123456789", true]);
+    const ads = page.verdict("Google Ads");
+    assert.deepEqual([ads.verdict, ads.requestCount], ["blocked", 0]);
+  });
+
+  test("non-Google vendors are still attributed by vendor host", () => {
+    const page = loadPage({ globals: { fbq() {} } });
+    page.window.fetch("https://www.facebook.com/tr?ev=PageView");
+    assert.deepEqual(attribution("https://www.facebook.com/tr?ev=PageView"), ["Facebook Pixel", null]);
   });
 });
 

@@ -51,7 +51,7 @@ itself, in one click, with the fix for each problem.
 | | |
 |---|---|
 | **A verdict in one sentence** | `× BROKEN`, `! REVIEW`, `– INCOMPLETE` or `✓ VERIFIED`, with the most severe problem underneath. Checks that couldn't run say so and why; they never count as passed. |
-| **Every tag judged by the consent at the moment it sent** | A tag that sent a request while its consent was `denied` is a violation, even if the visitor accepted later. Covers GA4, GTM, Google Ads, Floodlight, Meta Pixel, LinkedIn, TikTok, Hotjar, Clarity, Pinterest and Snapchat. |
+| **Every tag judged by the consent at the moment it sent** | A tag that sent a request while its consent was `denied` is a violation, even if the visitor accepted later. Each request is judged only against the tag that sent it, read from its tag ID or endpoint, so a GA4 hit is never blamed on Google Ads. Covers GA4, Google Ads, Floodlight, Meta Pixel, LinkedIn, TikTok, Hotjar, Clarity, Pinterest and Snapchat, and the tags inside a GTM container. |
 | **Ordering and setup mistakes, timed in milliseconds** | `config` before the consent default, an `update` before the default, a missing default, duplicate defaults, missing v2 fields, no `wait_for_update` when a CMP is present. |
 | **A fix and a way to check it** | Every finding says what was observed, why it matters, how to fix it (page source and GTM) and what to look for after you reload. |
 | **Google's consent signals decoded** | `gcs` and `gcd` on each Google request, side by side with the consent the page had when it was sent, flagged when they disagree. |
@@ -93,10 +93,14 @@ Release-zip install and a full tour of the popup and side panel, with screenshot
 - Requests are captured only when made through `fetch`, `XMLHttpRequest` or
   `navigator.sendBeacon`. Image pixels and script loads are not seen, so a vendor that only
   uses `<img>` beacons can show as `IDLE` or `BLOCKED` while it is in fact sending data.
-- Any request to a vendor sent while a required consent type was denied counts toward
+- Any request a tag sent while a required consent type was denied counts toward
   `VIOLATION`, including Google's cookieless pings under advanced Consent Mode (a request whose
   own `gcs` reports the type as denied). Check the request's `gcs` under **Show captured data** before
   treating such a violation as data collected without consent.
+- A Google request with no tag ID on an endpoint several Google tags share (such as
+  `ad.doubleclick.net/ccm/s/collect`) is listed as "Not tied to a tag" in the side panel's
+  Requests view and changes no verdict. See
+  [docs/detection.md](docs/detection.md#which-tag-sent-a-request).
 - Only the top-level frame is inspected; iframes are not.
 - State is kept per page load. Reload the page to start a fresh capture.
 - If a tab was already open when the extension was installed or reloaded, the content script

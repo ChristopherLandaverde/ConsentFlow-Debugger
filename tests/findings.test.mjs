@@ -52,8 +52,9 @@ const scenarios = {
     page.at(1).gtag("consent", "default", { ad_storage: "denied", analytics_storage: "denied" });
     page.gtag("consent", "default", { ad_storage: "granted" });
     page.at(10).push(["config", "G-1"]);
-    page.at(50).window.fetch(`${GA4}?gcs=G100`);
     page.at(800).gtag("consent", "update", { analytics_storage: "granted", ad_storage: "granted" });
+    // GA4 is detected from this hit (#28); sent after the grant, so it passes.
+    page.at(850).window.fetch(`${GA4}?gcs=G111`);
     return page.finishLoading().requestState();
   },
   allPass() {
@@ -227,6 +228,23 @@ describe("buildFindings", () => {
       meta.evidence.map((r) => r.label),
       ["Requests while denied", "First at", "Sent to", "Needs consent"],
     );
+  });
+
+  test("a GTM container is not a check of its own: its tags are judged by their own requests (#28)", () => {
+    const page = loadPage({
+      scripts: ["https://www.googletagmanager.com/gtm.js?id=GTM-ABC123"],
+      globals: { OneTrust: {}, google_tag_manager: { "GTM-ABC123": {} } },
+    });
+    page.at(1).gtag("consent", "default", { ...FULL_V2, wait_for_update: 500 });
+    page.at(10).push(["config", "G-1"]);
+    page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
+    page.at(950).window.fetch(`${GA4}?tid=G-1&gcs=G101`);
+    const state = page.finishLoading().requestState();
+    const tags = buildFindings(state).filter((f) => f.kind === "tag").map((f) => [f.tag, f.status]);
+    assert.deepEqual(tags, [["Google Analytics 4", "verified"]]);
+    const v = computeVerdict(state);
+    assert.equal(v.status, "verified");
+    assert.equal(v.detail, "All 9 checks passed on this page load.");
   });
 
   test("the config race reports both times and the gap", () => {

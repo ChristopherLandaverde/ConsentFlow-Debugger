@@ -26,7 +26,8 @@ Three kinds:
 ## GCS / GCD signals
 
 For requests to Google endpoints (Google Analytics, Google Tag Manager,
-Google Ads, DoubleClick, Google Syndication), the `gcs` parameter
+Google Ads, DoubleClick, Google Syndication, and `www.google.com`'s `/pagead/`, `/ccm/` and
+`/rmkt/` paths and `adservice.google.com/ddm/`), the `gcs` parameter
 (`G1<ad_storage><analytics_storage>`, `1` granted, `0` denied) is decoded into
 `ad_storage` / `analytics_storage`, the `gcd` parameter into `ad_storage`,
 `analytics_storage`, `ad_user_data` and `ad_personalization` with default/update source, and
@@ -68,23 +69,96 @@ an `id=DC-` loader. `G-` and `GT-` IDs are Google tags, not containers. Google d
 [research/gtag-vs-gtm-detection.md](research/gtag-vs-gtm-detection.md).
 
 Each tag is mapped to the
-consent types it needs and to the requests captured for its vendor, then given a verdict. Each
-tag finding says how many of its requests were sent while required consent was denied:
+consent types it needs and to the requests it sent (see the next section), then given a
+verdict. Each tag finding says how many of its requests were sent while required consent was
+denied:
+
+| Tag | Consent types it needs |
+|---|---|
+| Google Analytics 4, Hotjar, Microsoft Clarity | `analytics_storage` |
+| Google Ads, Floodlight | `ad_storage`, `ad_user_data`, `ad_personalization` |
+| Meta Pixel, LinkedIn, TikTok, Pinterest, Snapchat | `ad_storage` |
+| Google Tag Manager | none: a container, judged through the tags it runs |
 
 | Verdict | Meaning |
 |---|---|
-| `VIOLATION` | At least one request to the vendor was sent while a required consent type was `denied` at that moment, even if consent was granted later |
-| `BLOCKED` | A required consent type is `denied` now and no request was sent while it was denied |
+| `VIOLATION` | At least one request the tag sent went out while a required consent type was `denied` at that moment, even if consent was granted later |
+| `BLOCKED` | A required consent type is `denied` now and the tag sent no request while it was denied |
 | `FIRING` | None of its required consent types is `denied`, and requests were captured, all sent after consent |
 | `IDLE` | None of its required consent types is `denied`, and no requests were captured yet |
+| `CONTAINER` | Google Tag Manager on a page with a consent default. Not a check of its own |
 | `NO CONSENT MODE` | The page has no consent default at all |
 
 In the popup, `VIOLATION` is a broken finding, `BLOCKED` and `FIRING` count as passed checks,
-`IDLE` is not checked yet, and `NO CONSENT MODE` is reported inside the missing-default finding.
+`IDLE` is not checked yet, `CONTAINER` is not shown as a finding, and `NO CONSENT MODE` is
+reported inside the missing-default finding.
 
 So the number of checks in the popup's verdict ("All 9 checks passed") depends on the page:
-it is the eight validation rules plus one check per detected tag (`buildFindings` in
-`popup/findings.js`). A page with GA4 as its only detected tag has nine.
+it is the eight validation rules plus one check per detected tag other than Google Tag
+Manager (`buildFindings` in `popup/findings.js`). A page with GA4 as its only detected tag has
+nine, and so does a page with a GTM container that runs GA4.
+
+### Which tag sent a request
+
+Google's tags share hosts: Google's [CSP guide][csp] lists `www.google.com` and
+`pagead2.googlesyndication.com` for Google Analytics, Google Ads and Floodlight alike, and the
+GA4 + Ads page in `tests/fixtures/gtag-vs-gtm.html` sends both tags' hits to
+`pagead2.googlesyndication.com`. So a host says which vendor a request went to, not which tag
+sent it. Each captured request is attributed to one tag from the request itself, in this
+order, and judged only against that tag's consent types (#28):
+
+| # | Request | Tag | Tag ID | Source |
+|---|---|---|---|---|
+| 1 | `gtm.js?id=GTM-…` or `gtag/js?id=G-…/AW-…/DC-…` on a Google host | the loaded tag, as a **loader** | the `id` | [Install the Google tag][install], GTM snippet ([Tag Manager Help 14847097][gtm-snippet]) |
+| 2 | any other `googletagmanager.com` request (`/a?id=…`, `/td`) | not attributed | | Google tag diagnostics ([Tag Manager Help 9323295][gtm-privacy]: GTM "may collect some aggregated data about tag firing") |
+| 3 | `tid=G-…` | Google Analytics 4 | the `tid` | measured: GA4's `/g/collect` |
+| 3 | `tid=AW-…` | Google Ads | the `tid` | measured: `/ccm/collect` on `www.google.com` and `pagead2.googlesyndication.com` |
+| 3 | `tid=DC-…` | Floodlight | the `tid` | measured: `/ccm/collect` |
+| 3 | `tid=GT-…` or any other `tid` | not attributed | | A `GT-` Google tag can route to several products ([Tag Manager Help 12326985][gt-ids]) |
+| 4 | `/pagead/conversion/<n>/`, `/pagead/viewthroughconversion/<n>/`, `/pagead/1p-conversion/<n>/`, `/pagead/1p-user-list/<n>/`, `/rmkt/collect/<n>/` | Google Ads | `AW-<n>` | `send_to: 'AW-CONVERSION_ID/CONVERSION_LABEL'` ([Google Ads Help 7548399][ads-send-to]); paths measured |
+| 5 | `/activity;…src=<n>;…` (`ad.doubleclick.net`, `*.fls.doubleclick.net/activityi;`), `/ddm/…src=<n>;…` (`ade.googlesyndication.com`, `adservice.google.com`) | Floodlight | `DC-<n>` | "The value of the `src=` key is the advertiser ID", conversion URL is what follows `ad.doubleclick.net/activity;` ([Campaign Manager 360 Help 2824087][fl-url]); hosts from the [CSP guide][csp] |
+| 6 | `/g/collect` on any host, or any request to `google-analytics.com` / `analytics.google.com` | Google Analytics 4 | the `tid`, if any | GA4 paths `/g/collect` ([server-side GA4 setup][sst-ga4]); those hosts are listed only for Google Analytics in the [CSP guide][csp] |
+| 7 | anything else to a Google host, such as `ad.doubleclick.net/ccm/s/collect` (no `tid`) | not attributed | | |
+| — | non-Google vendors (`facebook.com/tr`, `snap.licdn.com`, …) | that vendor's one tag | | one tag per vendor |
+
+"Measured" means observed from Google's real gtag.js (`gtag/js?id=G-FIXTURE123`, `AW-123456789`,
+`DC-1234567`, placeholder IDs) in Playwright Chromium 151, October 2026, with ads denied and
+with everything granted. A GTM container's GA4 tag was observed sending the same
+`/g/collect?tid=G-…` hits (blog.google, container `GTM-TRV24V`). Google does not document
+`tid` or the `/ccm/collect` endpoint, so rows 3 and 7 are observed behaviour.
+
+What follows from the table:
+
+- **The GTM container needs no consent of its own.** Loading `gtm.js` collects nothing
+  ([Tag Manager Help 9323295][gtm-privacy]: GTM "does not collect, retain, or share any
+  information about visitors"). The tags inside it send their own requests, which rows 3–6
+  attribute to GA4, Google Ads or Floodlight. So a GA4 hit on a GTM page is judged against
+  `analytics_storage` only, and Google Tag Manager's verdict is `CONTAINER`.
+- **Loader requests are listed, never judged.** Loading a tag's script is not measurement, and
+  the browser loads it as a `<script>`, which is not captured anyway.
+- **A tag that sent attributed requests is detected,** even if no loader or
+  `google_tag_manager` key showed it. A GTM container sends GA4, Ads and Floodlight hits
+  without necessarily loading gtag.js ([Tag Manager Help 17079602][gtm-direct]).
+- **Requests that can't be attributed** are shown in the side panel's Requests view as
+  "Not tied to a tag", with the reason, and change no verdict. A request with no tag ID on an
+  endpoint several tags share (row 7) could belong to any of them; blaming one would repeat the
+  bug this rule fixes. In the measurement, the only such request was
+  `ad.doubleclick.net/ccm/s/collect`, sent by the Ads and Floodlight tags only when
+  `ad_storage` was granted.
+- Attribution is per tag type, not per ID: two GA4 IDs on one page are both judged as
+  Google Analytics 4.
+- GA4 requests with Google signals or advertising features (`stats.g.doubleclick.net/g/collect?tid=G-…`)
+  are judged as GA4, against `analytics_storage` only.
+
+[csp]: https://developers.google.com/tag-platform/security/guides/csp
+[install]: https://developers.google.com/tag-platform/gtagjs/install
+[gtm-snippet]: https://support.google.com/tagmanager/answer/14847097
+[gtm-privacy]: https://support.google.com/tagmanager/answer/9323295
+[gt-ids]: https://support.google.com/tagmanager/answer/12326985
+[ads-send-to]: https://support.google.com/google-ads/answer/7548399
+[fl-url]: https://support.google.com/campaignmanager/answer/2824087
+[sst-ga4]: https://developers.google.com/tag-platform/learn/sst-fundamentals/5-sst-setup-analytics
+[gtm-direct]: https://support.google.com/tagmanager/answer/17079602
 
 ## Consent management platforms
 
