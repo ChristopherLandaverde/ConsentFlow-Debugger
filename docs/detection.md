@@ -52,9 +52,21 @@ reason, never as a pass:
 
 ## Tags and tag firing violations
 
-Detects ten tags from page globals and script URLs (Google
-Analytics 4, Google Tag Manager, Google Ads, Meta/Facebook Pixel, LinkedIn Insight, TikTok
-Pixel, Hotjar, Microsoft Clarity, Pinterest Tag, Snapchat Pixel). Each tag is mapped to the
+Detects eleven tags from page globals and script URLs (Google
+Analytics 4, Google Tag Manager, Google Ads, Floodlight, Meta/Facebook Pixel, LinkedIn Insight,
+TikTok Pixel, Hotjar, Microsoft Clarity, Pinterest Tag, Snapchat Pixel).
+
+Google's loaders register each tag ID they load as a key of `window.google_tag_manager`, and
+plain gtag.js defines that object too, so the object alone does not mean a GTM container.
+Google Tag Manager is detected only from a `GTM-` key, or from a loader script whose URL has
+`id=GTM-` on any host or path (server-side tagging and the Google tag gateway serve it from
+the site's own domain). Google Ads is detected from an `AW-` key or an `id=AW-` loader (as well
+as `googleadservices.com` / `googlesyndication.com` scripts), and Floodlight from a `DC-` key or
+an `id=DC-` loader. `G-` and `GT-` IDs are Google tags, not containers. Google does not document
+`window.google_tag_manager`; the evidence is in
+[research/gtag-vs-gtm-detection.md](research/gtag-vs-gtm-detection.md).
+
+Each tag is mapped to the
 consent types it needs and to the requests captured for its vendor, then given a verdict. Each
 tag finding says how many of its requests were sent while required consent was denied:
 

@@ -55,9 +55,8 @@
     }
   </script>
   <!-- Tag detection looks for a script whose src contains "gtag/js". The path is local on
-       purpose (it 404s): loading Google's real gtag.js defines window.google_tag_manager, so
-       ConsentFlow would also detect Google Tag Manager and judge the sample's GA4 hit against
-       ad_storage, and the verified scenario would show BROKEN whenever you are online. -->
+       purpose (it 404s), so the scenarios don't depend on Google's real gtag.js, which sends
+       requests of its own and registers its ID on window.google_tag_manager. -->
   <script async src="gtag/js?id=G-FIXTURE"></script>
   <script>
     // slow: hold DOMContentLoaded so the popup shows its loading state.

@@ -284,6 +284,7 @@
     'Google Analytics 4': 'google',
     'Google Tag Manager': 'google',
     'Google Ads': 'google',
+    'Floodlight': 'google',
     'Facebook Pixel': 'facebook',
     'LinkedIn Insight': 'linkedin',
     'TikTok Pixel': 'tiktok',
@@ -569,6 +570,14 @@
   }
 
   // ─── Tag Detection ────────────────────────────────────────────
+  // True when a Google tag or container registered an ID matching pattern as a key of
+  // window.google_tag_manager.
+  function hasGoogleTagId(pattern) {
+    var gtm = window.google_tag_manager;
+    if (!gtm || typeof gtm !== 'object') return false;
+    return Object.keys(gtm).some(function (k) { return pattern.test(k); });
+  }
+
   function detectTags() {
     const found = [];
     function check(name, type, consentTypes, test) {
@@ -581,13 +590,23 @@
       return !!document.querySelector('script[src*="gtag/js"]') ||
         !!document.querySelector('script[src*="googletagmanager.com/gtag"]');
     });
+    // gtag.js defines window.google_tag_manager too, keyed by the IDs it loaded (G-, AW-, DC-),
+    // so only a GTM- key means a GTM container ran. Before it has run, a loader script with
+    // id=GTM- (any host or path: server-side tagging and the tag gateway serve it first-party).
+    // The object is undocumented; see docs/research/gtag-vs-gtm-detection.md (#21).
     check('Google Tag Manager', 'tag_manager', ['analytics_storage', 'ad_storage'], function () {
-      return !!window.google_tag_manager ||
-        !!document.querySelector('script[src*="googletagmanager.com/gtm.js"]');
+      return hasGoogleTagId(/^GTM-[A-Z0-9]+$/) ||
+        !!document.querySelector('script[src*="id=GTM-"]');
     });
     check('Google Ads', 'advertising', ['ad_storage', 'ad_user_data', 'ad_personalization'], function () {
-      return !!document.querySelector('script[src*="googleadservices.com"]') ||
+      return hasGoogleTagId(/^AW-[A-Z0-9]+$/) ||
+        !!document.querySelector('script[src*="id=AW-"]') ||
+        !!document.querySelector('script[src*="googleadservices.com"]') ||
         !!document.querySelector('script[src*="googlesyndication.com"]');
+    });
+    check('Floodlight', 'advertising', ['ad_storage', 'ad_user_data', 'ad_personalization'], function () {
+      return hasGoogleTagId(/^DC-[A-Z0-9]+$/) ||
+        !!document.querySelector('script[src*="id=DC-"]');
     });
     check('Facebook Pixel', 'advertising', ['ad_storage'], function () {
       return !!window.fbq || !!document.querySelector('script[src*="connect.facebook.net"]');

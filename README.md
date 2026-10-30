@@ -51,7 +51,7 @@ itself, in one click, with the fix for each problem.
 | | |
 |---|---|
 | **A verdict in one sentence** | `× BROKEN`, `! REVIEW`, `– INCOMPLETE` or `✓ VERIFIED`, with the most severe problem underneath. Checks that couldn't run say so and why; they never count as passed. |
-| **Every tag judged by the consent at the moment it sent** | A tag that sent a request while its consent was `denied` is a violation, even if the visitor accepted later. Covers GA4, GTM, Google Ads, Meta Pixel, LinkedIn, TikTok, Hotjar, Clarity, Pinterest and Snapchat. |
+| **Every tag judged by the consent at the moment it sent** | A tag that sent a request while its consent was `denied` is a violation, even if the visitor accepted later. Covers GA4, GTM, Google Ads, Floodlight, Meta Pixel, LinkedIn, TikTok, Hotjar, Clarity, Pinterest and Snapchat. |
 | **Ordering and setup mistakes, timed in milliseconds** | `config` before the consent default, an `update` before the default, a missing default, duplicate defaults, missing v2 fields, no `wait_for_update` when a CMP is present. |
 | **A fix and a way to check it** | Every finding says what was observed, why it matters, how to fix it (page source and GTM) and what to look for after you reload. |
 | **Google's consent signals decoded** | `gcs` and `gcd` on each Google request, side by side with the consent the page had when it was sent, flagged when they disagree. |
