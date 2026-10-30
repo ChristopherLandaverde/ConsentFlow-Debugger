@@ -38,8 +38,9 @@ export const states = {
     const page = loadPage({ globals: { Cookiebot: {} } });
     page.at(1).gtag("consent", "default", FULL_V2);
     page.at(10).push(["config", "G-1"]);
-    page.at(50).window.fetch(`${GA4}?gcs=G100`);
     page.at(800).gtag("consent", "update", { analytics_storage: "granted", ad_storage: "granted" });
+    // GA4 is detected from this hit (#28); sent after the grant, so it passes.
+    page.at(850).window.fetch(`${GA4}?gcs=G111`);
     return page.finishLoading().requestState();
   },
 };

@@ -102,6 +102,15 @@ body.panel { width: auto; min-width: 0; }
 .req { padding: var(--space-2) 0; border-top: var(--rule) solid var(--line-subtle); }
 .req-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
 .req-head .t-time { padding-top: 0; }
+.req-tag { margin-top: var(--space-1); font-size: var(--text-small); }
+.req-none {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-secondary);
+}
 .req-table { margin-top: var(--space-1); }
 .req-table tr.mismatch td { font-weight: 600; }
 .flag {

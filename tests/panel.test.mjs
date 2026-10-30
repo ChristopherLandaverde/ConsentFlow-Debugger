@@ -191,6 +191,19 @@ describe("requests view", () => {
     assert.match(panel.html("view-requests"), /<p class="raw">gcs=G111 · gcd=13t3t3t3t5l1<\/p>/);
   });
 
+  test("names the tag each request was attributed to, and shows unattributed requests as not judged (#28)", () => {
+    const page = loadPage({ scripts: ["https://www.googletagmanager.com/gtag/js?id=G-1"] });
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(5).window.fetch("https://www.googletagmanager.com/gtag/js?id=AW-123456789");
+    page.at(40).window.fetch(`${GA4}?tid=G-1&gcs=G100&en=page_view`);
+    page.at(60).window.fetch("https://ad.doubleclick.net/ccm/s/collect?gtm=45be6as1");
+    const html = open(page.finishLoading().requestState()).html("view-requests");
+    assert.match(html, /<div><dt>Sent by<\/dt><dd>The tag the request is judged against/);
+    assert.match(html, /<p class="req-tag">Sent by Google Analytics 4 <span class="mono">G-1<\/span><\/p>/);
+    assert.match(html, /<p class="req-tag">Loads Google Ads <span class="mono">AW-123456789<\/span>\. Not judged: loading a tag collects nothing\.<\/p>/);
+    assert.match(html, /<p class="req-tag"><span class="req-none">– Not tied to a tag<\/span> Not judged\. Sent to an endpoint several Google tags share, with no tag ID\.<\/p>/);
+  });
+
   test("empty requests say what to do", () => {
     assert.match(open(states.zeroRequests()).html("view-requests"), /No vendor requests yet\./);
   });

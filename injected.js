@@ -269,7 +269,8 @@
   // Multi-vendor domain fragments for broad network capture
   var VENDOR_DOMAINS = {
     google: ['google-analytics.com', 'analytics.google.com', 'googletagmanager.com',
-             'googlesyndication.com', 'googleadservices.com', 'doubleclick.net', 'google.com/pagead'],
+             'googlesyndication.com', 'googleadservices.com', 'doubleclick.net', 'google.com/pagead',
+             'google.com/ccm/', 'google.com/rmkt/', 'adservice.google.com/ddm/'],
     facebook: ['facebook.net', 'facebook.com/tr', 'fbcdn.net', 'meta.com'],
     linkedin: ['snap.licdn.com', 'linkedin.com/li/'],
     tiktok: ['analytics.tiktok.com', 'tiktokapi.com'],
@@ -293,6 +294,81 @@
     'Pinterest Tag': 'pinterest',
     'Snapchat Pixel': 'snapchat'
   };
+
+  // ─── Request → tag attribution (#28) ─────────────────────────
+  // Google's tags share hosts (Google's CSP guide lists www.google.com and
+  // pagead2.googlesyndication.com for Analytics, Ads and Floodlight alike), so a Google request
+  // is tied to the tag that sent it by the tag ID it carries, then by an endpoint only one tag
+  // uses. The table and its sources are in docs/detection.md.
+  var GOOGLE_ID_TAGS = [
+    [/^G-[A-Z0-9]+$/, 'Google Analytics 4'],
+    [/^AW-[0-9]+$/, 'Google Ads'],
+    [/^DC-[0-9]+$/, 'Floodlight'],
+    [/^GTM-[A-Z0-9]+$/, 'Google Tag Manager']
+  ];
+  // Google Ads endpoints that carry the conversion ID (the number in AW-<id>) in the path.
+  var ADS_ID_PATH = /\/(?:pagead\/(?:conversion|viewthroughconversion|1p-conversion|1p-user-list)|rmkt\/collect)\/([0-9]+)(?:\/|$)/;
+  // Floodlight activity URLs (ad.doubleclick.net/activity;…, *.fls.doubleclick.net/activityi;…,
+  // ade.googlesyndication.com/ddm/activity/…, adservice.google.com/ddm/fls/…) carry
+  // src=<advertiser ID> as a ;-separated parameter in the path.
+  var FLOODLIGHT_PATH = /\/(?:activityi?;|ddm\/)/;
+  var FLOODLIGHT_SRC = /[;\/]src=([0-9]+)(?:;|$)/;
+
+  function tagForGoogleId(id) {
+    if (typeof id !== 'string') return null;
+    for (var i = 0; i < GOOGLE_ID_TAGS.length; i++) {
+      if (GOOGLE_ID_TAGS[i][0].test(id)) return GOOGLE_ID_TAGS[i][1];
+    }
+    return null;
+  }
+
+  // → { tag, tagId, by, loader, reason }. tag is a detectTags() name, or null when the
+  // request can't be tied to one tag (reason says why); such requests are shown, not judged.
+  function attributeRequest(url, vendor) {
+    function to(tag, tagId, by, loader) {
+      return { tag: tag, tagId: tagId || null, by: by, loader: !!loader, reason: null };
+    }
+    function none(reason) { return { tag: null, tagId: null, by: null, loader: false, reason: reason }; }
+
+    if (vendor !== 'google') {
+      var names = Object.keys(TAG_VENDOR_MAP);
+      for (var n = 0; n < names.length; n++) {
+        if (TAG_VENDOR_MAP[names[n]] === vendor) return to(names[n], null, 'host');
+      }
+      return none('No tag is known for this vendor.');
+    }
+
+    var path = url.pathname;
+    var params = url.searchParams;
+    // Loaders: gtm.js (a GTM container) and gtag/js. Loading a script is not measurement, so
+    // these are attributed to their tag but never judged.
+    if (/\/gtm\.js$|\/gtag\/js$/.test(path)) {
+      var loaded = params.get('id');
+      var loaderTag = tagForGoogleId(loaded);
+      return loaderTag ? to(loaderTag, loaded, 'loader', true) : none('A Google tag loader with no recognized tag ID.');
+    }
+    // Other googletagmanager.com requests are Google tag scripts or diagnostics, not one tag's measurement.
+    if (/(^|\.)googletagmanager\.com$/.test(url.hostname)) {
+      return none('A Google tag script or diagnostics request, not measurement by one tag.');
+    }
+    // 1. The tag ID the request carries (tid=G-…, tid=AW-…, tid=DC-…).
+    var tid = params.get('tid');
+    var tidTag = tagForGoogleId(tid);
+    if (tidTag && tidTag !== 'Google Tag Manager') return to(tidTag, tid, 'tid');
+    if (tid) return none('Carries tag ID ' + tid + ', which does not name one GA4, Google Ads or Floodlight tag.');
+    // 2. Endpoints only one tag uses, with the ID in the path.
+    var ads = ADS_ID_PATH.exec(path);
+    if (ads) return to('Google Ads', 'AW-' + ads[1], 'path');
+    if (FLOODLIGHT_PATH.test(path)) {
+      var src = FLOODLIGHT_SRC.exec(path);
+      if (src) return to('Floodlight', 'DC-' + src[1], 'path');
+    }
+    // 3. GA4's collection paths, and hosts only Google Analytics uses.
+    if (/\/g\/collect$/.test(path) || /(^|\.)(google-analytics\.com|analytics\.google\.com)$/.test(url.hostname)) {
+      return to('Google Analytics 4', null, 'path');
+    }
+    return none('Sent to an endpoint several Google tags share, with no tag ID.');
+  }
 
   // Reverse lookup: URL string → vendor key
   function identifyVendor(urlStr) {
@@ -321,12 +397,12 @@
       var tag = tags[i];
       var vendor = TAG_VENDOR_MAP[tag.name] || null;
 
-      // Count network requests for this vendor
+      // The requests this tag sent (#28). Loader requests and requests that could not be
+      // attributed to one tag are never judged.
       var vendorHits = [];
-      if (vendor) {
-        for (var j = 0; j < state.networkHits.length; j++) {
-          if (state.networkHits[j].vendor === vendor) vendorHits.push(state.networkHits[j]);
-        }
+      for (var j = 0; j < state.networkHits.length; j++) {
+        var hitJ = state.networkHits[j];
+        if (hitJ.tag === tag.name && !hitJ.loader) vendorHits.push(hitJ);
       }
 
       var hasRequests = vendorHits.length > 0;
@@ -351,6 +427,9 @@
 
       if (!hasConsentMode) {
         verdict = 'no_consent_mode';
+      } else if (tag.type === 'tag_manager') {
+        // A container needs no consent of its own; the tags in it are judged by their requests.
+        verdict = 'container';
       } else {
         // Is any required consent type denied now?
         var anyDenied = false;
@@ -442,6 +521,12 @@
         // Consent as captured from the timeline at the moment of this request
         consentAtRequest: safeClone(state.currentConsent)
       };
+      var attributed = attributeRequest(url, vendor);
+      hit.tag = attributed.tag;
+      hit.tagId = attributed.tagId;
+      hit.attributedBy = attributed.by;
+      if (attributed.loader) hit.loader = true;
+      if (!attributed.tag) hit.unattributedReason = attributed.reason;
 
       // Google-specific param decoding
       if (vendor === 'google') {
@@ -590,26 +675,35 @@
       } catch { /* ignore */ }
     }
 
+    // A tag that sent requests attributed to it is on the page, even when its loader was not
+    // seen (a GTM container sends GA4, Ads and Floodlight hits without loading gtag.js).
+    function sentRequests(name) {
+      return state.networkHits.some(function (h) { return h.tag === name && !h.loader; });
+    }
+
     check('Google Analytics 4', 'analytics', ['analytics_storage'], function () {
-      return !!document.querySelector('script[src*="gtag/js"]') ||
+      return sentRequests('Google Analytics 4') ||
+        !!document.querySelector('script[src*="gtag/js"]') ||
         !!document.querySelector('script[src*="googletagmanager.com/gtag"]');
     });
     // gtag.js defines window.google_tag_manager too, keyed by the IDs it loaded (G-, AW-, DC-),
     // so only a GTM- key means a GTM container ran. Before it has run, a loader script with
     // id=GTM- (any host or path: server-side tagging and the tag gateway serve it first-party).
     // The object is undocumented; see docs/research/gtag-vs-gtm-detection.md (#21).
-    check('Google Tag Manager', 'tag_manager', ['analytics_storage', 'ad_storage'], function () {
+    // A container has no consent type of its own: loading gtm.js collects nothing, and each tag
+    // in it is judged by the requests it sends (#28).
+    check('Google Tag Manager', 'tag_manager', [], function () {
       return hasGoogleTagId(/^GTM-[A-Z0-9]+$/) ||
         !!document.querySelector('script[src*="id=GTM-"]');
     });
     check('Google Ads', 'advertising', ['ad_storage', 'ad_user_data', 'ad_personalization'], function () {
-      return hasGoogleTagId(/^AW-[A-Z0-9]+$/) ||
+      return sentRequests('Google Ads') || hasGoogleTagId(/^AW-[A-Z0-9]+$/) ||
         !!document.querySelector('script[src*="id=AW-"]') ||
         !!document.querySelector('script[src*="googleadservices.com"]') ||
         !!document.querySelector('script[src*="googlesyndication.com"]');
     });
     check('Floodlight', 'advertising', ['ad_storage', 'ad_user_data', 'ad_personalization'], function () {
-      return hasGoogleTagId(/^DC-[A-Z0-9]+$/) ||
+      return sentRequests('Floodlight') || hasGoogleTagId(/^DC-[A-Z0-9]+$/) ||
         !!document.querySelector('script[src*="id=DC-"]');
     });
     check('Facebook Pixel', 'advertising', ['ad_storage'], function () {

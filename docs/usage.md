@@ -64,7 +64,9 @@ release yet, install from source.
      away.
    - **Requests**: for each vendor request, the consent it carried (for Google, its `gcs`
      consent state and `gcd` consent detail) next to the consent on the page when it was sent,
-     flagged `× mismatch` when they differ. Raw `gcs`/`gcd` values are behind a toggle.
+     flagged `× mismatch` when they differ, and the tag it was attributed to ("Sent by Google
+     Analytics 4 G-…"). A Google request that can't be tied to one tag says "Not tied to a
+     tag" and why, and changes no verdict. Raw `gcs`/`gcd` values are behind a toggle.
    - **Consent**: the current consent state, denied first, and the recognized CMP.
 
    <p align="center">

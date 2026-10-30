@@ -322,6 +322,7 @@
       + '<div><dt>Carried</dt><dd>The consent the request itself sent. For Google requests that is '
       + '<code>gcs</code>, the Google consent state, and <code>gcd</code>, the Google consent detail.</dd></div>'
       + '<div><dt>On page</dt><dd>The consent on the page when the request was sent.</dd></div>'
+      + '<div><dt>Sent by</dt><dd>The tag the request is judged against, from the tag ID or endpoint it carries.</dd></div>'
       + '</dl>'
       + R.disclosureButton('req-raw', 'view-requests', showRaw, showRaw ? 'Hide raw gcs and gcd values' : 'Show raw gcs and gcd values')
       + '<ol class="request-list">';
@@ -332,7 +333,8 @@
         + '<p class="req-head"><span class="t-time">' + esc(R.msLabel(h.ms)) + '</span>'
         + '<span class="t-label">' + esc(h.host || '') + (h.en ? ' · ' + esc(h.en) : '') + '</span>'
         + (mismatch ? '<span class="flag"><span aria-hidden="true">×</span> mismatch</span>' : '')
-        + '</p>';
+        + '</p>'
+        + attributionHtml(h);
       if (rows.length) {
         html += '<table class="req-table"><caption class="visually-hidden">Consent for this request</caption>'
           + '<thead><tr><th scope="col">Type</th><th scope="col">Carried</th><th scope="col">On page</th></tr></thead><tbody>';
@@ -352,6 +354,18 @@
       html += '</li>';
     });
     return html + '</ol>';
+  }
+
+  // Which tag the request was attributed to (#28). Loader and unattributed requests are listed
+  // but change no verdict.
+  function attributionHtml(h) {
+    var id = h.tagId ? ' <span class="mono">' + esc(h.tagId) + '</span>' : '';
+    if (h.tag && h.loader) {
+      return '<p class="req-tag">Loads ' + esc(h.tag) + id + '. Not judged: loading a tag collects nothing.</p>';
+    }
+    if (h.tag) return '<p class="req-tag">Sent by ' + esc(h.tag) + id + '</p>';
+    return '<p class="req-tag"><span class="req-none">– Not tied to a tag</span> Not judged. '
+      + esc(h.unattributedReason || '') + '</p>';
   }
 
   // ─── Consent state ──────────────────────────────────────────
