@@ -467,7 +467,7 @@ describe("CMP detection", () => {
 describe("tag detection", () => {
   const tags = [
     [{ scripts: ["https://www.googletagmanager.com/gtag/js?id=G-1"] }, "Google Analytics 4", ["analytics_storage"]],
-    [{ globals: { google_tag_manager: {} } }, "Google Tag Manager", ["analytics_storage", "ad_storage"]],
+    [{ globals: { google_tag_manager: { "GTM-X": {} } } }, "Google Tag Manager", ["analytics_storage", "ad_storage"]],
     [{ scripts: ["https://www.googletagmanager.com/gtm.js?id=GTM-X"] }, "Google Tag Manager", null],
     [{ scripts: ["https://www.googleadservices.com/pagead/conversion.js"] }, "Google Ads", ["ad_storage", "ad_user_data", "ad_personalization"]],
     [{ globals: { fbq() {} } }, "Facebook Pixel", ["ad_storage"]],
@@ -507,6 +507,104 @@ describe("tag detection", () => {
       page.debugState().tags.map((t) => t.name),
       ["Microsoft Clarity"],
     );
+  });
+});
+
+// #21: gtag.js defines window.google_tag_manager too, keyed by the IDs it loaded (G-, AW-, DC-).
+// Only a GTM- key, or a loader script with id=GTM-, means a GTM container is on the page.
+// See docs/research/gtag-vs-gtm-detection.md.
+describe("Google tag vs GTM container (#21)", () => {
+  const GTAG = "https://www.googletagmanager.com/gtag/js?id=G-1";
+  const GTM_JS = "https://www.googletagmanager.com/gtm.js?id=GTM-ABC123";
+  const names = (page) => page.debugState().tags.map((t) => t.name);
+
+  test("gtag.js with only a GA4 ID is GA4, not Google Tag Manager", () => {
+    const page = loadPage({ scripts: [GTAG], globals: { google_tag_manager: { "G-1": {} } } }).finishLoading();
+    assert.deepEqual(names(page), ["Google Analytics 4"]);
+  });
+
+  test("a GA4 hit on a gtag.js page with ads denied is judged against analytics_storage only", () => {
+    const page = loadPage({ scripts: [GTAG], globals: { google_tag_manager: { "G-1": {} } } });
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(2).gtag("consent", "update", { analytics_storage: "granted" });
+    page.at(500).window.fetch(`${GA4}?en=page_view`);
+    page.finishLoading();
+    const impact = page.requestState().tagImpact;
+    assert.deepEqual(impact.map((t) => [t.name, t.verdict]), [["Google Analytics 4", "firing"]]);
+  });
+
+  test("an empty google_tag_manager or a GT- Google tag ID is not a GTM container", () => {
+    assert.deepEqual(names(loadPage({ globals: { google_tag_manager: {} } }).finishLoading()), []);
+    const gt = loadPage({ scripts: [GTAG], globals: { google_tag_manager: { "GT-ABC123": {}, "G-1": {} } } });
+    assert.deepEqual(names(gt.finishLoading()), ["Google Analytics 4"]);
+  });
+
+  test("gtag.js with an AW- ID detects Google Ads, judged against the ad consent types", () => {
+    const page = loadPage({ scripts: [GTAG], globals: { google_tag_manager: { "G-1": {}, "AW-123456789": {} } } });
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(2).gtag("consent", "update", { analytics_storage: "granted" });
+    page.at(500).window.fetch("https://www.googleadservices.com/pagead/conversion/123456789/?gcs=G100");
+    page.finishLoading();
+    assert.deepEqual(names(page), ["Google Analytics 4", "Google Ads"]);
+    const ads = page.verdict("Google Ads");
+    assert.deepEqual(ads.consentTypes, ["ad_storage", "ad_user_data", "ad_personalization"]);
+    assert.equal(ads.vendor, "google");
+    assert.equal(ads.verdict, "violation");
+    assert.deepEqual(ads.deniedTypes, ["ad_storage", "ad_user_data", "ad_personalization"]);
+  });
+
+  test("a gtag.js loader for an AW- ID detects Google Ads before gtag.js has run", () => {
+    const page = loadPage({ scripts: ["https://www.googletagmanager.com/gtag/js?id=AW-123456789"] }).finishLoading();
+    assert.ok(names(page).includes("Google Ads"));
+    assert.ok(!names(page).includes("Google Tag Manager"));
+  });
+
+  test("a DC- ID detects Floodlight, judged against the ad consent types", () => {
+    const page = loadPage({ scripts: [GTAG], globals: { google_tag_manager: { "G-1": {}, "DC-1234567": {} } } });
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(500).window.fetch("https://fls.doubleclick.net/activityi;src=1234567;type=a;cat=b");
+    page.finishLoading();
+    assert.deepEqual(names(page), ["Google Analytics 4", "Floodlight"]);
+    const fl = page.verdict("Floodlight");
+    assert.equal(fl.type, "advertising");
+    assert.equal(fl.vendor, "google");
+    assert.deepEqual(fl.consentTypes, ["ad_storage", "ad_user_data", "ad_personalization"]);
+    assert.equal(fl.verdict, "violation");
+  });
+
+  test("a GTM container is detected from its GTM- key", () => {
+    const page = loadPage({ scripts: [GTM_JS], globals: { google_tag_manager: { "GTM-ABC123": {} } } }).finishLoading();
+    assert.deepEqual(names(page), ["Google Tag Manager"]);
+  });
+
+  test("a GTM container that loaded gtag.js is both Google Tag Manager and GA4", () => {
+    const page = loadPage({
+      scripts: [GTM_JS, GTAG],
+      globals: { google_tag_manager: { "GTM-ABC123": {}, "G-1": {} } },
+    }).finishLoading();
+    assert.deepEqual(names(page), ["Google Analytics 4", "Google Tag Manager"]);
+  });
+
+  test("a GTM container served from a first-party host and path is detected", () => {
+    for (const src of [
+      "https://shop.example/metrics/gtm.js?id=GTM-ABC123",
+      "https://sgtm.shop.example/x7q2?id=GTM-ABC123&l=dataLayer",
+    ]) {
+      assert.deepEqual(names(loadPage({ scripts: [src] }).finishLoading()), ["Google Tag Manager"], src);
+    }
+    const keyed = loadPage({
+      scripts: ["https://shop.example/metrics/x7q2.js"],
+      globals: { google_tag_manager: { "GTM-ABC123": {} } },
+    }).finishLoading();
+    assert.deepEqual(names(keyed), ["Google Tag Manager"]);
+  });
+
+  test("a GTM- key registered after the first pass is picked up", () => {
+    const page = loadPage({ globals: { google_tag_manager: { "G-1": {} } } }).finishLoading();
+    assert.deepEqual(names(page), []);
+    page.window.google_tag_manager["GTM-ABC123"] = {};
+    page.tick();
+    assert.deepEqual(names(page), ["Google Tag Manager"]);
   });
 });
 
