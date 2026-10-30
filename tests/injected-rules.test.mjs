@@ -970,6 +970,49 @@ describe("cookieless pings under advanced Consent Mode (#34)", () => {
   });
 });
 
+// #36: Floodlight activity images and iframes are judged too, against the consent at the
+// moment they were requested (Resource Timing reports them only once they finish loading).
+describe("Floodlight images and iframes (#36)", () => {
+  const FL_IMG = "https://ade.googlesyndication.com/ddm/activity/src=1234567;type=invmedia;cat=fixtu0;ord=1;npa=1;gcs=G101;gcd=13p3r3p3p5l1;dc_fmt=8?";
+  const flPage = () => loadPage({ globals: { google_tag_manager: { "G-1": {}, "DC-1234567": {} } } });
+
+  test("gtag.js's Floodlight image with ad_storage denied is a cookieless ping, judged at its start time", () => {
+    const page = flPage();
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(2).gtag("consent", "update", { analytics_storage: "granted" });
+    page.at(1450).window.fetch("https://pagead2.googlesyndication.com/ccm/collect?tid=DC-1234567&gcs=G101&gcd=13p3r3p3p5l1");
+    page.at(1800).gtag("consent", "update", { ad_storage: "granted", ad_user_data: "granted", ad_personalization: "granted" });
+    page.at(2000).resource(FL_IMG, "img", 1500); // requested at 1500, before the grant at 1800
+    page.finishLoading();
+    const state = page.requestState();
+    const img = state.networkHits.find((h) => h.method === "img");
+    assert.equal(img.consentAtRequest.ad_storage, "denied");
+    const fl = page.verdict("Floodlight");
+    assert.deepEqual([fl.verdict, fl.requestCount, fl.cookielessCount, fl.preConsentCount], ["cookieless", 2, 2, 0]);
+  });
+
+  test("a hard-coded Floodlight image with no consent signal, sent while denied, is a VIOLATION (it used to be unseen)", () => {
+    const page = flPage();
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.finishLoading();
+    assert.equal(page.verdict("Floodlight").verdict, "blocked");
+    page.at(700).resource("https://ad.doubleclick.net/activity;src=1234567;type=sales;cat=buy01;ord=1?", "img", 600);
+    const fl = page.verdict("Floodlight");
+    assert.deepEqual([fl.verdict, fl.preConsentCount, fl.firstPreConsentMs, fl.violationReasons], ["violation", 1, 600, ["no_signal"]]);
+  });
+
+  test("a late-arriving entry is placed in request order in the timeline and request list", () => {
+    const page = flPage();
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(100).window.fetch(`${GA4}?tid=G-1&gcs=G100`);
+    page.at(300).window.fetch(`${GA4}?tid=G-1&gcs=G100&en=scroll`);
+    page.at(400).resource(FL_IMG, "img", 200);
+    const state = page.debugState();
+    assert.deepEqual(state.networkHits.map((h) => h.ms), [100, 200, 300]);
+    assert.deepEqual(state.timeline.filter((e) => e.type === "network_hit").map((e) => e.ms), [100, 200, 300]);
+  });
+});
+
 describe("tag verdicts (tags firing against consent)", () => {
   const withGA4 = () => loadPage({ scripts: ["https://www.googletagmanager.com/gtag/js?id=G-1"] });
 

@@ -204,3 +204,84 @@ describe("which requests are captured", () => {
     assert.equal(event.detail.gcs, "G111");
   });
 });
+
+// #36: Floodlight sends activity requests as <img> / <iframe>, and Google Ads some hits as
+// <img>. They are seen through Resource Timing (a PerformanceObserver in the page), and
+// Floodlight's consent signals are ;-separated parameters in the path. URLs measured from real
+// gtag.js (DC-1234567) in Chromium.
+describe("image and iframe requests, and ;-parameters in the path (#36)", () => {
+  const FL_IMG_DENIED =
+    "https://ade.googlesyndication.com/ddm/activity/src=1234567;type=invmedia;cat=fixtu0;rcb=10;ord=987761624692;npa=1;pscdl=denied;frm=0;_tu=IFA;gtm=45fe6as1za200xecxf1;gcs=G101;gcd=13p3r3p3p5l1;dma_cps=-;dma=0;dc_fmt=8;epver=2;~oref=https%3A%2F%2Fshop.example%2Fcheckout?";
+  const FL_IFRAME_GRANTED =
+    "https://1234567.fls.doubleclick.net/activityi;src=1234567;type=invmedia;cat=fixtu0;rcb=1;ord=6921626417323;npa=0;auiddc=1941375432.1793382834;pscdl=noapi;frm=0;gcs=G111;gcd=13r3r3r3r5l1;dma=0;dc_fmt=2;dc_random=1793382835_JsUh;~oref=https%3A%2F%2Fshop.example%2Fcheckout?";
+
+  test("an <img> to a Google host is captured at its start time, with gcs, gcd and npa read from the path", () => {
+    const page = loadPage();
+    page.at(2000).resource(FL_IMG_DENIED, "img", 1500);
+    const hit = page.debugState().networkHits[0];
+    assert.deepEqual([hit.method, hit.host, hit.url, hit.ms], ["img", "ade.googlesyndication.com", "/ddm/activity/src=1234567", 1500]);
+    assert.deepEqual([hit.tag, hit.tagId], ["Floodlight", "DC-1234567"]);
+    assert.deepEqual([hit.gcs, hit.gcd, hit.npa], ["G101", "13p3r3p3p5l1", "1"]);
+    assert.deepEqual(hit.requestConsent, {
+      ad_storage: "denied",
+      analytics_storage: "granted",
+      ad_user_data: "denied",
+      ad_personalization: "denied",
+    });
+  });
+
+  test("an <iframe> is captured; its ;auiddc= cookie ID is recorded by name only, and the stored path stops at the first ;", () => {
+    const page = loadPage();
+    page.at(900).resource(FL_IFRAME_GRANTED, "iframe", 800);
+    const hit = page.debugState().networkHits[0];
+    assert.deepEqual([hit.method, hit.url, hit.gcs, hit.cookieIds], ["iframe", "/activityi", "G111", ["auiddc"]]);
+    assert.doesNotMatch(JSON.stringify(page.debugState()), /1941375432|oref|shop\.example%2Fcheckout/);
+  });
+
+  test(";-parameters are read for a Floodlight request captured through fetch too", () => {
+    const hit = hitFor("https://ad.doubleclick.net/activity;src=1234567;type=invmedia;cat=fixtu0;npa=0;gcs=G111;gcd=13r3r3r3r5l1;dc_fmt=3?");
+    assert.deepEqual([hit.url, hit.gcs, hit.gcd, hit.tag], ["/activity", "G111", "13r3r3r3r5l1", "Floodlight"]);
+  });
+
+  test("a query parameter wins over a path parameter of the same name", () => {
+    const hit = hitFor("https://ad.doubleclick.net/activity;src=1234567;gcs=G100?gcs=G111");
+    assert.equal(hit.gcs, "G111");
+  });
+
+  test("Google Ads hits sent as images are captured too", () => {
+    const page = loadPage();
+    page.resource("https://www.google.com/pagead/1p-user-list/123456789/?random=1&gcd=13r3r3r3r5l1&en=page_view", "img", 300);
+    const hit = page.debugState().networkHits[0];
+    assert.deepEqual([hit.method, hit.tag, hit.tagId], ["img", "Google Ads", "AW-123456789"]);
+  });
+
+  test("skips what the wrappers already capture, scripts, other vendors and Google tag diagnostics", () => {
+    const page = loadPage();
+    page.resource("https://www.google-analytics.com/g/collect?tid=G-1", "fetch", 10);
+    page.resource("https://www.google-analytics.com/g/collect?tid=G-1", "xmlhttprequest", 11);
+    page.resource("https://www.google-analytics.com/g/collect?tid=G-1", "beacon", 12);
+    page.resource("https://www.googletagmanager.com/gtag/js?id=G-1", "script", 13);
+    page.resource("https://www.facebook.com/tr?ev=PageView", "img", 14);
+    page.resource("https://www.googletagmanager.com/a?id=G-1&v=3&t=t", "img", 15);
+    page.resource("https://cdn.shop.example/logo.png", "img", 16);
+    assert.deepEqual(page.debugState().networkHits, []);
+  });
+
+  test("skips resources that started before the extension's capture began", () => {
+    const page = loadPage();
+    page.resource(FL_IMG_DENIED, "img", -5);
+    assert.deepEqual(page.debugState().networkHits, []);
+  });
+
+  test("observes resource entries, including ones buffered before the observer started", () => {
+    const page = loadPage();
+    assert.equal(page.observers.length, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(page.observers[0].options)), { type: "resource", buffered: true });
+  });
+
+  test("a page without PerformanceObserver still captures fetch, XHR and beacons", () => {
+    const page = loadPage({ noPerformanceObserver: true });
+    page.window.fetch(`${GA4}?tid=G-1`);
+    assert.equal(page.debugState().networkHits.length, 1);
+  });
+});

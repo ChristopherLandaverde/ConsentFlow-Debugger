@@ -280,6 +280,12 @@ describe("buildFindings", () => {
     assert.doesNotMatch(f.observed, /may be cookieless/);
   });
 
+  test("an idle Google tag no longer says image pixels are missed; other vendors still do (#36)", () => {
+    const base = { type: "advertising", consentTypes: ["ad_storage"], requestCount: 0, preConsentCount: 0, hosts: [], verdict: "idle" };
+    assert.equal(tagCopy({ ...base, name: "Floodlight", vendor: "google" }, all.bare).observed, "No requests to Google captured yet.");
+    assert.match(tagCopy({ ...base, name: "TikTok Pixel", vendor: "tiktok" }, all.bare).observed, /Image pixels are not captured\.$/);
+  });
+
   test("a GTM container is not a check of its own: its tags are judged by their own requests (#28)", () => {
     const page = loadPage({
       scripts: ["https://www.googletagmanager.com/gtm.js?id=GTM-ABC123"],
