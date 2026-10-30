@@ -90,9 +90,12 @@ Release-zip install and a full tour of the popup and side panel, with screenshot
 
 ## Known limits
 
-- Requests are captured only when made through `fetch`, `XMLHttpRequest` or
-  `navigator.sendBeacon`. Image pixels and script loads are not seen, so a vendor that only
-  uses `<img>` beacons can show as `IDLE` or `BLOCKED` while it is in fact sending data.
+- Requests are captured when made through `fetch`, `XMLHttpRequest` or
+  `navigator.sendBeacon`. Image and iframe requests are seen only for Google hosts (Floodlight
+  activity tags, some Google Ads hits), through the page's Resource Timing entries, which
+  appear once the load finishes; one that never finishes may be missed. Other vendors' image
+  pixels and all script loads are not seen, so a vendor that only uses `<img>` beacons can show
+  as `IDLE` or `BLOCKED` while it is in fact sending data.
 - Google's cookieless pings under advanced Consent Mode are a `! REVIEW` finding, not a
   violation, when the request's own `gcs` / `gcd` reports its storage type as denied and it
   carries no advertising cookie ID (`auid`, `auiddc`, `gclaw`). ConsentFlow can't see request
@@ -124,7 +127,8 @@ Two things to know:
   captured about that page (`window.__cfDebug`).
 - It wraps `fetch`, `XMLHttpRequest.prototype.open`, `navigator.sendBeacon` and
   `dataLayer.push` to observe them, and defines `gtag` if the page has none. Calls are passed
-  through unchanged.
+  through unchanged. It also reads the page's Resource Timing entries (a `PerformanceObserver`)
+  for the URLs of image and iframe loads to Google hosts.
 
 | Permission | Why |
 |---|---|

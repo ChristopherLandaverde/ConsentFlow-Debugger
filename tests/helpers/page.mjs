@@ -15,6 +15,7 @@ const source = readFileSync(new URL("../../injected.js", import.meta.url), "utf8
  * @param {object}   [options.globals]   extra page globals (CMPs, pixels, an existing gtag...)
  * @param {Array}    [options.dataLayer] dataLayer entries pushed before injected.js runs
  * @param {string}   [options.readyState] document.readyState when injected.js runs
+ * @param {boolean}  [options.noPerformanceObserver] leave PerformanceObserver undefined
  */
 export function loadPage(options = {}) {
   const clock = { now: 0 };
@@ -52,6 +53,20 @@ export function loadPage(options = {}) {
     }
   }
 
+  // PerformanceObserver for resource entries: the test delivers entries with page.resource().
+  const observers = [];
+  class PerformanceObserver {
+    constructor(callback) {
+      this.callback = callback;
+    }
+    observe(options) {
+      this.options = options;
+      observers.push(this);
+    }
+    disconnect() {}
+  }
+  PerformanceObserver.supportedEntryTypes = ["resource"];
+
   const win = {
     document,
     location: { origin: "https://shop.example", href: "https://shop.example/" },
@@ -67,6 +82,7 @@ export function loadPage(options = {}) {
     },
     XMLHttpRequest,
     Request,
+    ...(options.noPerformanceObserver ? {} : { PerformanceObserver }),
     URL,
     performance: { now: () => clock.now },
     setTimeout(fn, ms) {
@@ -113,6 +129,13 @@ export function loadPage(options = {}) {
     addScript(src) {
       scripts.push({ src });
     },
+    /** Deliver a Resource Timing entry (a finished img, iframe, script… load) to the observers. */
+    resource(name, initiatorType, startTime) {
+      const entry = { name, initiatorType, startTime, entryType: "resource" };
+      for (const o of observers) o.callback({ getEntries: () => [entry] }, o);
+      return page;
+    },
+    observers,
     /** Fire DOMContentLoaded and the pending timeouts (the 500 ms detection pass). */
     finishLoading() {
       for (const fn of listeners.DOMContentLoaded.splice(0)) fn();

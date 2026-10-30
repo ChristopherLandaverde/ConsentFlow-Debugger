@@ -538,7 +538,7 @@
       copy = {
         status: 'not_checked',
         title: t.name + ' requests',
-        observed: 'No requests to ' + vendor + ' captured yet. Image pixels are not captured.',
+        observed: 'No requests to ' + vendor + ' captured yet.' + (t.vendor === 'google' ? '' : ' Image pixels are not captured.'),
         consequence: 'Whether ' + t.name + ' respects consent cannot be judged yet.',
         fix: ['Browse the page or accept the banner, then reopen ConsentFlow.'],
         verify: 'Requests to ' + vendor + ' appear here once the tag fires.',

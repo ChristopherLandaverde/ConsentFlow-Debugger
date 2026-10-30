@@ -24,6 +24,25 @@ Three kinds:
   violation even if consent was granted later, unless it is one of Google's cookieless pings
   under advanced Consent Mode ([below](#cookieless-pings-advanced-consent-mode)).
 
+## Which requests are captured
+
+- `fetch`, `XMLHttpRequest` and `navigator.sendBeacon` calls to a vendor host, when they are
+  made.
+- Image and iframe requests to Google hosts (#36). Floodlight sends its activity as an `<img>`
+  (`ade.googlesyndication.com/ddm/activity/…` with `ad_storage` denied) or an `<iframe>`
+  (`<id>.fls.doubleclick.net/activityi;…`), as hard-coded Floodlight tags do
+  ([Campaign Manager 360 Help 2824087][fl-url]), and Google Ads sends some hits as images
+  (`www.google.com/pagead/1p-user-list/<id>/`). A `PerformanceObserver` for `resource` entries
+  sees them without any extra permission. An entry arrives only once the load finishes, so the
+  request is placed at the entry's `startTime` and judged by the consent the page had then,
+  rebuilt from the captured consent commands. A load that never finishes may not produce an
+  entry. `googletagmanager.com` images are skipped: they are Google tag diagnostics, not
+  measurement (#28). Other vendors' image pixels and script loads are not captured.
+- For each request, the host and the path up to the first `;` are kept, never the query
+  string. Floodlight puts its parameters after `;` in the path
+  (`…/activity;src=1234567;…;gcs=G101;gcd=…;auiddc=…;~oref=<page URL>`). They are read like
+  query parameters for `gcs`, `gcd`, `npa` and the cookie-ID check, and are not stored.
+
 ## GCS / GCD signals
 
 For requests to Google endpoints (Google Analytics, Google Tag Manager,

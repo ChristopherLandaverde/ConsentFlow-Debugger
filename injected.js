@@ -24,18 +24,28 @@
   let eventId = 0;
   function ts() { return performance.now() - state.t0; }
 
-  function addEvent(type, detail, source) {
+  // atMs: when the event happened, for events reported after the fact (a resource entry
+  // arrives when the load finishes). Such events are placed in time order.
+  function addEvent(type, detail, source, atMs) {
+    const late = typeof atMs === 'number';
     const evt = {
       id: eventId++,
       type: type,
       detail: safeClone(detail),
       source: source || 'unknown',
-      ms: Math.round(ts() * 100) / 100,
-      wall: Date.now()
+      ms: Math.round((late ? atMs : ts()) * 100) / 100,
+      wall: late ? Date.now() - (ts() - atMs) : Date.now()
     };
-    state.timeline.push(evt);
+    insertByMs(state.timeline, evt);
     notify('event', evt);
     return evt;
+  }
+
+  // Append, or insert before the first item with a later ms (stable for equal ms).
+  function insertByMs(list, item) {
+    var i = list.length;
+    while (i > 0 && list[i - 1].ms > item.ms) i--;
+    list.splice(i, 0, item);
   }
 
   function safeClone(obj) {
@@ -188,7 +198,19 @@
       state.consentUpdates.push(record);
       Object.assign(state.currentConsent, settings);
       addEvent('consent_update', settings, source);
+    } else {
+      return;
     }
+    consentHistory.push({ ms: record.ms, consent: safeClone(state.currentConsent) });
+  }
+
+  // The merged consent after each consent command, so a request reported after the fact can
+  // be judged by the consent at the moment it was requested (#36).
+  const consentHistory = [];
+  function consentAt(ms) {
+    var at = {};
+    for (var i = 0; i < consentHistory.length && consentHistory[i].ms <= ms; i++) at = consentHistory[i].consent;
+    return safeClone(at);
   }
 
   // ─── gtag Function Trap ───────────────────────────────────────
@@ -575,22 +597,54 @@
     } catch { return false; }
   }
 
-  function captureNetworkHit(urlStr, method) {
+  // Parameters Floodlight sends as ;key=value in the path (…/activity;src=…;gcs=G101;…), with
+  // the query string winning over the path for the same name (#36).
+  function requestParams(url) {
+    var fromPath = {};
+    var re = /[;\/]([A-Za-z_~][\w~.-]*)=([^;\/]*)/g;
+    var path = url.pathname;
+    var cut = path.indexOf(';');
+    var slash = cut === -1 ? -1 : path.lastIndexOf('/', cut);
+    var m;
+    // Only the segment holding the first ; carries parameters (…/activity;… or …/ddm/activity/src=…;…).
+    if (cut !== -1) {
+      var segment = path.substring(slash);
+      while ((m = re.exec(segment)) !== null) {
+        if (!(m[1] in fromPath)) {
+          try { fromPath[m[1]] = decodeURIComponent(m[2]); } catch (e) { fromPath[m[1]] = m[2]; }
+        }
+      }
+    }
+    return {
+      get: function (k) {
+        var q = url.searchParams.get(k);
+        if (q !== null) return q;
+        return k in fromPath ? fromPath[k] : null;
+      },
+      has: function (k) { return url.searchParams.has(k) || k in fromPath; }
+    };
+  }
+
+  // atMs: when the request started, for requests reported after the fact (Resource Timing).
+  function captureNetworkHit(urlStr, method, atMs) {
     var vendor = identifyVendor(urlStr);
     if (!vendor) return;
     try {
       const url = new URL(urlStr, window.location.origin);
-      const params = url.searchParams;
+      const params = requestParams(url);
+      const late = typeof atMs === 'number';
+      const semi = url.pathname.indexOf(';');
       const hit = {
-        url: url.pathname,
+        // Path only, up to the first ; (Floodlight puts cookie IDs and the page URL after it).
+        url: semi === -1 ? url.pathname : url.pathname.substring(0, semi),
         host: url.hostname,
         method: method,
         vendor: vendor,
-        ms: ts(),
-        wall: Date.now(),
+        ms: late ? atMs : ts(),
+        wall: late ? Date.now() - (ts() - atMs) : Date.now(),
         decoded: {},
-        // Consent as captured from the timeline at the moment of this request
-        consentAtRequest: safeClone(state.currentConsent)
+        // Consent on the page at the moment of this request
+        consentAtRequest: late ? consentAt(atMs) : safeClone(state.currentConsent)
       };
       var attributed = attributeRequest(url, vendor);
       hit.tag = attributed.tag;
@@ -627,9 +681,33 @@
         hit.event = params.get('event');   // TikTok event name
       }
 
-      state.networkHits.push(hit);
-      addEvent('network_hit', hit, 'network');
+      insertByMs(state.networkHits, hit);
+      addEvent('network_hit', hit, 'network', late ? atMs : undefined);
     } catch { /* swallow malformed URLs */ }
+  }
+
+  // Image and iframe requests (Floodlight activity tags, some Google Ads hits) are not made
+  // through fetch, XHR or sendBeacon. Resource Timing lists them, with no extra permission, once
+  // they finish loading; startTime says when they were requested (#36). Only Google hosts, and
+  // not googletagmanager.com, whose images are tag diagnostics, not measurement.
+  var RESOURCE_TYPES = ['img', 'iframe'];
+  function observeResources() {
+    if (typeof window.PerformanceObserver !== 'function') return;
+    try {
+      var observer = new window.PerformanceObserver(function (list) {
+        var entries = list.getEntries();
+        for (var i = 0; i < entries.length; i++) {
+          var e = entries[i];
+          if (RESOURCE_TYPES.indexOf(e.initiatorType) === -1) continue;
+          var at = e.startTime - state.t0;
+          if (!(at >= 0)) continue; // requested before capture started
+          if (identifyVendor(e.name) !== 'google') continue;
+          if (/^https?:\/\/([^\/]*\.)?googletagmanager\.com\//.test(e.name)) continue;
+          captureNetworkHit(e.name, e.initiatorType, at);
+        }
+      });
+      observer.observe({ type: 'resource', buffered: true });
+    } catch (e) { /* Resource Timing unavailable: fetch/XHR/beacon capture still works */ }
   }
 
   function interceptNetwork() {
@@ -996,6 +1074,7 @@
   interceptDataLayer();
   interceptGtag();
   interceptNetwork();
+  observeResources();
 
   // Delayed detection (DOM must be available)
   function runDetection() {

@@ -18,7 +18,10 @@ Two things to know:
 - To capture network requests it wraps `fetch`, `XMLHttpRequest.prototype.open` and
   `navigator.sendBeacon`, and it wraps `dataLayer.push`. If the page has no `gtag` function
   yet, it defines one that forwards to `dataLayer`, as the standard gtag snippet does. Calls are
-  passed through unchanged.
+  passed through unchanged. Image and iframe requests to Google hosts are read from the page's
+  Resource Timing entries with a `PerformanceObserver`, which needs no permission and sees only
+  each resource's URL and timing. For every captured request it keeps the host and the path up
+  to the first `;`, never the query string or Floodlight's `;` parameters.
 
 What each manifest entry is for:
 
