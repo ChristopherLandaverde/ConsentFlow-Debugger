@@ -113,17 +113,12 @@
     }
 
     if (request.action === 'getState') {
-      // Return cached state or request fresh
-      if (cachedState && cachedState.ready) {
-        // Still request a fresh one in the background for next time
-        requestFreshState();
-        sendResponse(withPage(cachedState));
-      } else {
-        requestFreshState().then(function (state) {
-          sendResponse(state ? withPage(state) : { ready: false });
-        });
-        return true; // keep channel open for async
-      }
+      // Always answer with a fresh read: the cache can be seconds old and miss the page's
+      // latest consent commands (#22). requestFreshState falls back to the cache after 3 s.
+      requestFreshState().then(function (state) {
+        sendResponse(state ? withPage(state) : { ready: false });
+      });
+      return true; // keep channel open for async
     }
   });
 

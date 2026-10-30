@@ -141,9 +141,10 @@ function loadContent() {
   const windowListeners = [];
   const runtimeListeners = [];
   const intervals = [];
+  const requests = [];
   const window = {
     addEventListener: (type, fn) => type === "message" && windowListeners.push(fn),
-    postMessage() {},
+    postMessage: (m) => requests.push(plain(m)),
   };
   const chrome = {
     runtime: {
@@ -165,13 +166,16 @@ function loadContent() {
     setInterval: (fn, ms) => intervals.push({ fn, ms }),
   });
   vm.runInContext(read("content.js"), context, { filename: "content.js" });
-  const post = (payload) => windowListeners.forEach((fn) => fn({ data: { source: "cf-debug-injected", type: "full-state", payload } }));
-  const ask = () => {
+  const post = (payload, requestId) => windowListeners.forEach((fn) => fn({ data: { source: "cf-debug-injected", type: "full-state", payload, requestId } }));
+  // Ask as the popup does; injected.js answers each get-state with `answer` (if given).
+  const ask = async (answer) => {
     let reply;
     runtimeListeners.forEach((fn) => fn({ action: "getState" }, {}, (r) => (reply = r)));
+    if (answer) post(answer, requests.at(-1).requestId);
+    await null; // the reply is sent once injected.js has answered
     return reply;
   };
-  return { sent, post, ask, intervals };
+  return { sent, post, ask, intervals, requests };
 }
 
 describe("content.js reporting", () => {
@@ -194,10 +198,19 @@ describe("content.js reporting", () => {
     assert.equal(content.sent.length, 1);
   });
 
-  test("adds the page's host to the state it gives the popup and side panel", () => {
+  test("adds the page's host to the state it gives the popup and side panel", async () => {
     const content = loadContent();
-    content.post(states.broken());
-    assert.deepEqual(plain(content.ask().page), { host: "shop.example" });
+    assert.deepEqual(plain((await content.ask(states.broken())).page), { host: "shop.example" });
+  });
+
+  test("answers the popup with a fresh read of the page, not its cached copy (#22)", async () => {
+    const content = loadContent();
+    content.post(states.zeroRequests()); // cached from an earlier read
+    const fresh = states.verified();
+    const reply = await content.ask(fresh);
+    assert.ok(reply, "the popup gets an answer");
+    assert.deepEqual(plain(reply.validation), plain(fresh.validation));
+    assert.equal(computeVerdict(reply).status, "verified");
   });
 
   test("re-reads the page every 3 seconds while the tab is visible", () => {
