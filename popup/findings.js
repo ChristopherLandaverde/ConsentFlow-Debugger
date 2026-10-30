@@ -405,6 +405,29 @@
     tag_manager: 'Tags in this container may collect data from visitors who declined.'
   };
 
+  var STORAGE_TYPES = ['ad_storage', 'analytics_storage'];
+
+  // Why a Google request sent while consent was denied was not a cookieless ping (#34): the
+  // reason injected.js gave the first such request. observed() completes "It …" / "The first …".
+  var REASONS = {
+    no_signal: {
+      observed: function () { return 'carried no consent signal, so it was not a cookieless ping.'; },
+      fix: 'Set the consent default before this tag loads, so its requests carry `gcs`.'
+    },
+    claimed_granted: {
+      observed: function () { return 'carried consent as granted while the page had it denied.'; },
+      fix: 'Remove any second Google tag or early consent update that grants consent before the visitor chooses.'
+    },
+    cookie_id: {
+      observed: function () { return 'carried a cookie ID (`auid`, `auiddc` or `gclaw`), so it was not a cookieless ping.'; },
+      fix: 'Send this tag through gtag.js or GTM, which leave out cookie IDs while `ad_storage` is denied.'
+    },
+    storage_granted: {
+      observed: function (denied) { return 'used cookies: storage was granted, and only ' + codeList(denied) + ' was denied.'; },
+      fix: null
+    }
+  };
+
   function tagCopy(t, state) {
     var types = t.consentTypes || [];
     var vendor = VENDOR_LABELS[t.vendor] || t.vendor || 'the vendor';
@@ -416,26 +439,64 @@
     if (t.verdict === 'violation') {
       var denied = t.deniedTypes && t.deniedTypes.length ? t.deniedTypes : types;
       var isGoogle = t.vendor === 'google';
+      var reason = REASONS[(t.violationReasons || [])[0]] || null;
+      var others = t.cookielessCount || 0;
+      var observed = t.preConsentCount + ' of ' + plural(t.requestCount, 'request') + ' to ' + vendor + ' went out with ' +
+        codeList(denied) + ' denied, first at ' + ms(t.firstPreConsentMs) + '.';
+      if (reason && isGoogle) {
+        observed += ' ' + (t.preConsentCount === 1 ? 'It' : 'The first') + ' ' + reason.observed(denied);
+      }
+      if (others) {
+        observed += ' ' + (others === 1 ? '1 other was a cookieless ping.' : others + ' others were cookieless pings.');
+      }
       copy = {
         status: 'broken',
-        title: t.name + ' sent ' + plural(t.preConsentCount, 'request') + ' while ' + joinList(denied) + ' was denied',
-        observed: t.preConsentCount + ' of ' + plural(t.requestCount, 'request') + ' to ' + vendor + ' went out while ' +
-          codeList(denied) + ' was denied, first at ' + ms(t.firstPreConsentMs) + '.' +
-          (isGoogle ? ' Under advanced Consent Mode these may be cookieless pings.' : ''),
+        title: t.name + ' sent ' + plural(t.preConsentCount, 'request') + ' while ' + joinList(denied) + ' ' +
+          (denied.length === 1 ? 'was' : 'were') + ' denied',
+        observed: observed,
         consequence: CONSEQUENCE_BY_TYPE[t.type] || CONSEQUENCE_BY_TYPE.advertising,
         fix: isGoogle
-          ? ['For basic Consent Mode, add `Require additional consent` for ' + codeList(types) + ' on the tag in GTM.',
-             'For advanced Consent Mode, confirm each request carries `gcs=G100` (consent state: both denied) while consent is denied.']
+          ? (reason && reason.fix ? [reason.fix] : []).concat(
+            ['For basic Consent Mode, add `Require additional consent` for ' + codeList(types) + ' on the tag in GTM.'])
           : ['In GTM, open the ' + t.name + ' tag and add `Require additional consent` for ' + codeList(types) + '.',
              "Or fire it on your CMP's consent-granted event instead of All Pages."],
-        verify: 'Reject the banner and reload. No requests to ' + host + ' should appear before you accept.',
+        verify: 'Reject the banner and reload. No requests to ' + host + ' should appear before you accept' +
+          (isGoogle ? ', other than cookieless pings.' : '.'),
         evidence: [
           { label: 'Requests while denied', value: t.preConsentCount + ' of ' + t.requestCount },
           { label: 'First at', value: ms(t.firstPreConsentMs) },
           { label: 'Sent to', value: (t.hosts || []).join(', ') || vendor },
           needs
-        ],
+        ].concat(others ? [{ label: 'Cookieless pings', value: String(others) }] : []),
         firstMs: t.firstPreConsentMs
+      };
+    } else if (t.verdict === 'cookieless') {
+      // Advanced Consent Mode (#34): pings without cookies while storage was denied.
+      var storage = (t.cookielessTypes || []).filter(function (x) { return STORAGE_TYPES.indexOf(x) !== -1; });
+      if (!storage.length) storage = (t.cookielessTypes || types).slice(0, 1);
+      var n = t.cookielessCount || 0;
+      copy = {
+        status: 'review',
+        title: t.name + ' sent ' + plural(n, 'cookieless ping') + ' while ' + joinList(storage) + ' was denied',
+        observed: n + ' of ' + plural(t.requestCount, 'request') + ' went out while ' + codeList(storage) +
+          ' was denied, first at ' + ms(t.firstCookielessMs) + '. ' + (n === 1 ? 'It' : 'Each') + ' carried ' +
+          codeList(storage) + ' denied in its own consent signal and no cookie ID.',
+        consequence: "Google's advanced Consent Mode sends these without cookies, for modelling. " +
+          'A strict privacy policy may still count them as collection.',
+        fix: [
+          'Nothing to change if you use advanced Consent Mode on purpose.',
+          'To send nothing before consent, use basic Consent Mode: block ' + t.name + ' until ' + codeList(storage) + ' is granted.'
+        ],
+        verify: 'Reject the banner and reload. Requests to ' + host + ' should keep ' + codeList(storage) +
+          ' denied in `gcs` until you accept.',
+        evidence: [
+          { label: 'Cookieless pings', value: n + ' of ' + t.requestCount },
+          { label: 'First at', value: ms(t.firstCookielessMs) },
+          { label: 'Sent to', value: (t.hosts || []).join(', ') || vendor },
+          { label: 'Carried', value: t.firstCookielessGcs ? 'gcs=' + t.firstCookielessGcs : 'gcd only' },
+          needs
+        ],
+        firstMs: t.firstCookielessMs
       };
     } else if (t.verdict === 'no_consent_mode') {
       copy = {

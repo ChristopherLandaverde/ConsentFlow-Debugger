@@ -223,6 +223,22 @@ describe("requests view", () => {
     assert.match(html, /Where a <code>gcd<\/code> letter is undocumented, the value comes from <code>gcs<\/code>/);
   });
 
+  test("marks each request sent while denied as a cookieless ping or a violation, with the reason (#34)", () => {
+    const page = loadPage({ globals: { google_tag_manager: { "G-1": {}, "AW-123456789": {} } } });
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(2).gtag("consent", "update", { analytics_storage: "granted" });
+    page.at(40).window.fetch(`${GA4}?tid=G-1&gcs=G101&en=page_view`);
+    page.at(50).window.fetch("https://pagead2.googlesyndication.com/ccm/collect?tid=AW-123456789&gcs=G101&gcd=13p3r3p3p5l1&en=ads_view");
+    page.at(60).window.fetch("https://pagead2.googlesyndication.com/ccm/collect?tid=AW-123456789&en=conversion");
+    page.at(70).window.fetch("https://pagead2.googlesyndication.com/ccm/collect?tid=AW-123456789&gcs=G101&auid=1.2&en=purchase");
+    const html = open(page.finishLoading().requestState()).html("view-requests");
+    const item = (en) => html.slice(html.indexOf(`· ${en}<`), html.indexOf("</li>", html.indexOf(`· ${en}<`)));
+    assert.doesNotMatch(item("page_view"), /req-judge/);
+    assert.match(item("ads_view"), /<p class="req-judge review"><span aria-hidden="true">!<\/span> Cookieless ping: <code>ad_storage<\/code> denied in its own consent signal, no cookie ID\.<\/p>/);
+    assert.match(item("conversion"), /<p class="req-judge broken"><span aria-hidden="true">×<\/span> Sent while <code>ad_storage<\/code> was denied\. It carried no consent signal\.<\/p>/);
+    assert.match(item("purchase"), /<p class="req-judge broken"><span aria-hidden="true">×<\/span> Sent while <code>ad_storage<\/code> was denied\. It carried a cookie ID \(<code>auid<\/code>\)\.<\/p>/);
+  });
+
   test("empty requests say what to do", () => {
     assert.match(open(states.zeroRequests()).html("view-requests"), /No vendor requests yet\./);
   });

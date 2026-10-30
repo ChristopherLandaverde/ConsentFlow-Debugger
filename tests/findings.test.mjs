@@ -83,6 +83,26 @@ const scenarios = {
     page.at(500).window.fetch(`${GA4}?gcs=G111`);
     return page.finishLoading().requestState();
   },
+  // Advanced Consent Mode: GA4 granted, Google Ads denied, Ads sends cookieless pings (#34).
+  cookieless() {
+    const page = loadPage({ scripts: [GTAG], globals: { OneTrust: {}, google_tag_manager: { "G-1": {}, "AW-123456789": {} } } });
+    page.at(1).gtag("consent", "default", { ...FULL_V2, wait_for_update: 500 });
+    page.at(10).push(["config", "G-1"]);
+    page.at(20).gtag("consent", "update", { analytics_storage: "granted" });
+    page.at(300).window.fetch(`${GA4}?tid=G-1&gcs=G101&gcd=13p3r3p3p5l1`);
+    page.at(412).window.fetch("https://pagead2.googlesyndication.com/ccm/collect?tid=AW-123456789&gcs=G101&gcd=13p3r3p3p5l1");
+    page.at(1500).window.fetch("https://pagead2.googlesyndication.com/pagead/conversion/123456789/?gcs=G101&gcd=13p3r3p3p5l1");
+    return page.finishLoading().requestState();
+  },
+  // A Google tag that sent without any consent signal while denied, plus one cookieless ping.
+  googleViolation() {
+    const page = loadPage({ scripts: [GTAG], globals: { google_tag_manager: { "G-1": {}, "AW-123456789": {} } } });
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(10).push(["config", "G-1"]);
+    page.at(300).window.fetch("https://pagead2.googlesyndication.com/ccm/collect?tid=AW-123456789&gcs=G100");
+    page.at(600).window.fetch("https://www.google.com/ccm/collect?tid=AW-123456789&gcs=G100&auid=1.2");
+    return page.finishLoading().requestState();
+  },
   updateBeforeDefault() {
     const page = loadPage();
     page.at(5).gtag("consent", "update", { ad_storage: "granted" });
@@ -230,6 +250,36 @@ describe("buildFindings", () => {
     );
   });
 
+  test("cookieless pings are a review finding, not broken, with Google's advanced Consent Mode explained (#34)", () => {
+    const f = buildFindings(all.cookieless).find((x) => x.tag === "Google Ads");
+    assert.equal(f.status, "review");
+    assert.equal(f.title, "Google Ads sent 2 cookieless pings while ad_storage was denied");
+    assert.match(f.observed, /^2 of 2 requests went out while `ad_storage` was denied, first at \+412 ms\./);
+    assert.match(f.observed, /no cookie ID/);
+    assert.match(f.consequence, /advanced Consent Mode/);
+    assert.match(f.consequence, /strict privacy/i);
+    assert.match(f.fix[0], /^Nothing to change if you use advanced Consent Mode on purpose\./);
+    assert.match(f.fix[1], /basic Consent Mode/);
+    assert.match(f.verify, /`gcs`/);
+    assert.deepEqual(
+      f.evidence.map((r) => r.label),
+      ["Cookieless pings", "First at", "Sent to", "Carried", "Needs consent"],
+    );
+    assert.equal(f.evidence[3].value, "gcs=G101");
+    const v = computeVerdict(all.cookieless);
+    assert.equal(v.status, "review");
+    assert.equal(v.counts.broken, 0);
+  });
+
+  test("a Google violation says why it is not a cookieless ping, and counts the pings that were (#34)", () => {
+    const f = buildFindings(all.googleViolation).find((x) => x.tag === "Google Ads");
+    assert.equal(f.status, "broken");
+    assert.equal(f.title, "Google Ads sent 1 request while ad_storage, ad_user_data and ad_personalization were denied");
+    assert.match(f.observed, /It carried a cookie ID \(`auid`, `auiddc` or `gclaw`\), so it was not a cookieless ping\./);
+    assert.match(f.observed, /1 other was a cookieless ping\./);
+    assert.doesNotMatch(f.observed, /may be cookieless/);
+  });
+
   test("a GTM container is not a check of its own: its tags are judged by their own requests (#28)", () => {
     const page = loadPage({
       scripts: ["https://www.googletagmanager.com/gtm.js?id=GTM-ABC123"],
@@ -303,7 +353,7 @@ describe("finding copy model (#14)", () => {
 
   test("covers every tag verdict, including the one folded into the missing default", () => {
     const state = all.noConsentModeWithTags;
-    for (const verdict of ["violation", "blocked", "firing", "idle", "no_consent_mode"]) {
+    for (const verdict of ["violation", "cookieless", "blocked", "firing", "idle", "no_consent_mode"]) {
       for (const type of ["analytics", "advertising", "tag_manager"]) {
         const f = tagCopy(
           {
@@ -315,6 +365,9 @@ describe("finding copy model (#14)", () => {
             preConsentCount: verdict === "violation" ? 2 : 0,
             firstPreConsentMs: verdict === "violation" ? 40 : null,
             deniedTypes: verdict === "violation" ? ["ad_storage"] : [],
+            cookielessCount: verdict === "cookieless" ? 2 : 0,
+            firstCookielessMs: verdict === "cookieless" ? 40 : null,
+            cookielessTypes: verdict === "cookieless" ? ["ad_storage"] : [],
             hosts: ["www.facebook.com"],
             verdict,
           },

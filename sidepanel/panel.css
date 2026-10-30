@@ -111,6 +111,10 @@ body.panel { width: auto; min-width: 0; }
   text-transform: uppercase;
   color: var(--ink-secondary);
 }
+.req-judge { margin-top: var(--space-1); font-size: var(--text-small); }
+.req-judge > span[aria-hidden] { font-weight: 600; }
+.req-judge.broken > span[aria-hidden] { color: var(--state-exception); }
+.req-judge.review > span[aria-hidden] { color: var(--state-warning); }
 .req-table { margin-top: var(--space-1); }
 .req-src { display: block; color: var(--ink-secondary); font-size: var(--text-small); }
 .req-table tr.mismatch td { font-weight: 600; }

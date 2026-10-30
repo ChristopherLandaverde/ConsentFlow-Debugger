@@ -557,7 +557,8 @@ describe("Google tag vs GTM container (#21)", () => {
     const page = loadPage({ scripts: [GTAG], globals: { google_tag_manager: { "G-1": {}, "AW-123456789": {} } } });
     page.at(1).gtag("consent", "default", FULL_V2);
     page.at(2).gtag("consent", "update", { analytics_storage: "granted" });
-    page.at(500).window.fetch("https://www.googleadservices.com/pagead/conversion/123456789/?gcs=G100");
+    // No consent signal, so not a cookieless ping (#34): a violation.
+    page.at(500).window.fetch("https://www.googleadservices.com/pagead/conversion/123456789/");
     page.finishLoading();
     assert.deepEqual(names(page), ["Google Analytics 4", "Google Ads"]);
     const ads = page.verdict("Google Ads");
@@ -693,7 +694,8 @@ describe("request attribution (#28)", () => {
     const page = gaAndAds();
     ADS_DENIED(page);
     page.at(500).window.fetch(`${GA4}?tid=G-1&gcs=G101&en=page_view`);
-    page.at(1500).window.fetch("https://pagead2.googlesyndication.com/pagead/conversion/123456789/?en=conversion&gcs=G101&label=abc");
+    // No consent signal, so not a cookieless ping (#34).
+    page.at(1500).window.fetch("https://pagead2.googlesyndication.com/pagead/conversion/123456789/?en=conversion&label=abc");
     page.finishLoading();
     const ads = page.verdict("Google Ads");
     assert.deepEqual([ads.verdict, ads.requestCount, ads.preConsentCount, ads.firstPreConsentMs], ["violation", 1, 1, 1500]);
@@ -720,7 +722,7 @@ describe("request attribution (#28)", () => {
   test("GTM page whose GA4 tag sends directly: GA4 is detected from its own requests and judged", () => {
     const page = loadPage({ scripts: [GTM_JS], globals: { google_tag_manager: { "GTM-ABC123": {} } } });
     page.at(1).gtag("consent", "default", FULL_V2);
-    page.at(400).window.fetch("https://www.google-analytics.com/g/collect?tid=G-9&gcs=G100&en=page_view");
+    page.at(400).window.fetch("https://www.google-analytics.com/g/collect?tid=G-9&en=page_view");
     page.finishLoading();
     assert.deepEqual(page.debugState().tags.map((t) => t.name), ["Google Analytics 4", "Google Tag Manager"]);
     const ga = page.verdict("Google Analytics 4");
@@ -739,8 +741,9 @@ describe("request attribution (#28)", () => {
     page.at(500).window.fetch(`${GA4}?tid=G-1&gcs=G101`);
     page.finishLoading();
     assert.deepEqual([page.verdict("Floodlight").verdict, page.verdict("Floodlight").requestCount], ["blocked", 0]);
-    page.at(900).window.fetch("https://ad.doubleclick.net/activity;src=1234567;type=a;cat=b;gcs=G101");
-    page.at(950).window.fetch("https://pagead2.googlesyndication.com/ccm/collect?tid=DC-1234567&gcs=G101");
+    // No consent signals, so not cookieless pings (#34).
+    page.at(900).window.fetch("https://ad.doubleclick.net/activity;src=1234567;type=a;cat=b");
+    page.at(950).window.fetch("https://pagead2.googlesyndication.com/ccm/collect?tid=DC-1234567");
     const fl = page.verdict("Floodlight");
     assert.deepEqual([fl.verdict, fl.requestCount, fl.preConsentCount], ["violation", 2, 2]);
     assert.equal(page.verdict("Google Analytics 4").verdict, "firing");
@@ -781,6 +784,136 @@ describe("request attribution (#28)", () => {
   });
 });
 
+// #34: under advanced Consent Mode Google's tags send cookieless pings while consent is denied
+// (Google Ads Help 10000067). Requests below are the ones real gtag.js sent in Chromium.
+describe("cookieless pings under advanced Consent Mode (#34)", () => {
+  const ADS_PING = "https://pagead2.googlesyndication.com/ccm/collect?tid=AW-123456789&en=page_view&rnd=662018345.1793382932&npa=1&gcs=G101&gcd=13p3r3p3p5l1";
+  const ADS_CONV = "https://pagead2.googlesyndication.com/pagead/conversion/123456789/?en=conversion&label=FixtureLabel&gcs=G101&gcd=13p3r3p3p5l1";
+  const GA4_DENIED = `${GA4}?v=2&tid=G-1&cid=943277194.1793382938&sid=1793382937&gcs=G100&gcd=13p3p3p3p5l1&en=page_view`;
+  const gaAndAds = () => loadPage({ globals: { google_tag_manager: { "G-1": {}, "AW-123456789": {} } } });
+  const adsDenied = (page) => {
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(2).gtag("consent", "update", { analytics_storage: "granted" });
+  };
+
+  test("Google Ads' pings with ad_storage denied in gcs and no cookie ID are cookieless pings, not violations", () => {
+    const page = gaAndAds();
+    adsDenied(page);
+    page.at(500).window.fetch(ADS_PING);
+    page.at(1500).window.fetch(ADS_CONV);
+    page.finishLoading();
+    const ads = page.verdict("Google Ads");
+    assert.equal(ads.verdict, "cookieless");
+    assert.deepEqual(
+      [ads.requestCount, ads.preConsentCount, ads.cookielessCount, ads.firstCookielessMs],
+      [2, 0, 2, 500],
+    );
+    assert.deepEqual(ads.cookielessTypes, ["ad_storage", "ad_user_data", "ad_personalization"]);
+    assert.deepEqual(ads.deniedTypes, []);
+    assert.equal(computeVerdict(page.requestState()).status, "review");
+  });
+
+  test("a GA4 hit with analytics_storage denied in gcs is a cookieless ping; its random cid is not a cookie ID", () => {
+    const page = loadPage({ scripts: ["https://www.googletagmanager.com/gtag/js?id=G-1"] });
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(300).window.fetch(GA4_DENIED);
+    page.finishLoading();
+    const ga = page.verdict("Google Analytics 4");
+    assert.deepEqual([ga.verdict, ga.cookielessCount, ga.preConsentCount], ["cookieless", 1, 0]);
+    assert.deepEqual(ga.cookielessTypes, ["analytics_storage"]);
+  });
+
+  const stillViolations = [
+    // [why, url, reason]
+    ["it carried no consent signal", "https://pagead2.googlesyndication.com/ccm/collect?tid=AW-123456789&en=page_view", "no_signal"],
+    ["its gcs claimed ad_storage granted", "https://pagead2.googlesyndication.com/ccm/collect?tid=AW-123456789&gcs=G111", "claimed_granted"],
+    ["its gcd claimed ad_user_data granted", "https://pagead2.googlesyndication.com/ccm/collect?tid=AW-123456789&gcs=G101&gcd=13p3r3t3p5l1", "claimed_granted"],
+    ["it carried auid, the _gcl_au cookie value", `${ADS_PING}&auid=1192308007.1793382921`, "cookie_id"],
+    ["it carried gclaw, the _gcl_aw cookie value", `${ADS_PING}&gclaw=TESTGCLID`, "cookie_id"],
+    ["it carried auiddc", `${ADS_PING}&auiddc=1192308007.1793382921`, "cookie_id"],
+  ];
+  for (const [why, url, reason] of stillViolations) {
+    test(`a Google Ads request sent while ad_storage was denied stays a VIOLATION when ${why}`, () => {
+      const page = gaAndAds();
+      adsDenied(page);
+      page.at(500).window.fetch(url);
+      page.finishLoading();
+      const ads = page.verdict("Google Ads");
+      assert.deepEqual([ads.verdict, ads.preConsentCount, ads.cookielessCount], ["violation", 1, 0]);
+      assert.deepEqual(ads.violationReasons, [reason]);
+      assert.equal(page.requestState().networkHits[0].judgement.reason, reason);
+    });
+  }
+
+  test("a click ID in the page URL is not a cookie ID: Google sends full URLs while ad_storage is denied", () => {
+    const page = gaAndAds();
+    adsDenied(page);
+    page.at(500).window.fetch(`${ADS_PING}&gclid=TESTGCLID&dl=https%3A%2F%2Fshop.example%2F%3Fgclid%3DTESTGCLID`);
+    page.finishLoading();
+    assert.equal(page.verdict("Google Ads").verdict, "cookieless");
+  });
+
+  test("with ad_storage granted and only ad_user_data denied, the request used cookies: still a VIOLATION", () => {
+    const page = gaAndAds();
+    page.at(1).gtag("consent", "default", { ...FULL_V2, ad_storage: "granted", analytics_storage: "granted" });
+    page.at(500).window.fetch("https://www.google.com/ccm/collect?tid=AW-123456789&gcs=G111&gcd=13t3t3p3p5l1");
+    page.finishLoading();
+    const ads = page.verdict("Google Ads");
+    assert.deepEqual([ads.verdict, ads.deniedTypes, ads.violationReasons], ["violation", ["ad_user_data", "ad_personalization"], ["storage_granted"]]);
+  });
+
+  test("other vendors have no Consent Mode: their requests while denied stay violations", () => {
+    const page = loadPage({ globals: { fbq() {} } });
+    page.at(1).gtag("consent", "default", FULL_V2);
+    page.at(500).window.fetch("https://www.facebook.com/tr?ev=PageView&gcs=G100");
+    page.finishLoading();
+    const fb = page.verdict("Facebook Pixel");
+    assert.deepEqual([fb.verdict, fb.violationReasons], ["violation", ["no_consent_mode"]]);
+  });
+
+  test("a tag with a violation and cookieless pings is a VIOLATION that counts both", () => {
+    const page = gaAndAds();
+    adsDenied(page);
+    page.at(500).window.fetch(ADS_PING);
+    page.at(700).window.fetch(`${ADS_PING}&auid=1.2`);
+    page.finishLoading();
+    const ads = page.verdict("Google Ads");
+    assert.deepEqual(
+      [ads.verdict, ads.requestCount, ads.preConsentCount, ads.firstPreConsentMs, ads.cookielessCount],
+      ["violation", 2, 1, 700, 1],
+    );
+  });
+
+  test("each request sent while denied is marked as a cookieless ping or a violation; others are not marked", () => {
+    const page = gaAndAds();
+    adsDenied(page);
+    page.at(400).window.fetch(`${GA4}?tid=G-1&gcs=G101`);
+    page.at(500).window.fetch(ADS_PING);
+    page.at(600).window.fetch("https://pagead2.googlesyndication.com/ccm/collect?tid=AW-123456789");
+    page.finishLoading();
+    const hits = page.requestState().networkHits;
+    assert.equal(hits[0].judgement, null);
+    assert.deepEqual(hits[1].judgement, {
+      result: "cookieless",
+      types: ["ad_storage", "ad_user_data", "ad_personalization"],
+      reason: null,
+    });
+    assert.deepEqual(hits[2].judgement, {
+      result: "violation",
+      types: ["ad_storage", "ad_user_data", "ad_personalization"],
+      reason: "no_signal",
+    });
+  });
+
+  test("only the names of cookie ID parameters are recorded, never their values", () => {
+    const page = gaAndAds();
+    page.window.fetch(`${ADS_PING}&auid=1192308007.1793382921&gclaw=TESTGCLID`);
+    const hit = page.debugState().networkHits[0];
+    assert.deepEqual(hit.cookieIds, ["auid", "gclaw"]);
+    assert.doesNotMatch(JSON.stringify(hit), /1192308007|TESTGCLID/);
+  });
+});
+
 describe("tag verdicts (tags firing against consent)", () => {
   const withGA4 = () => loadPage({ scripts: ["https://www.googletagmanager.com/gtag/js?id=G-1"] });
 
@@ -794,8 +927,9 @@ describe("tag verdicts (tags firing against consent)", () => {
   test("VIOLATION when a required type is denied and the vendor sent requests", () => {
     const page = withGA4();
     page.gtag("consent", "default", FULL_V2);
-    page.window.fetch(`${GA4}?gcs=G100`);
-    page.window.navigator.sendBeacon(`${GA4}?gcs=G100`);
+    // No gcs: not cookieless pings (#34).
+    page.window.fetch(GA4);
+    page.window.navigator.sendBeacon(GA4);
     page.finishLoading();
     assert.deepEqual(page.verdict("Google Analytics 4"), {
       name: "Google Analytics 4",
@@ -806,6 +940,11 @@ describe("tag verdicts (tags firing against consent)", () => {
       preConsentCount: 2,
       firstPreConsentMs: 0,
       deniedTypes: ["analytics_storage"],
+      violationReasons: ["no_signal"],
+      cookielessCount: 0,
+      firstCookielessMs: null,
+      firstCookielessGcs: null,
+      cookielessTypes: [],
       hosts: ["region1.google-analytics.com"],
       verdict: "violation",
     });
@@ -905,9 +1044,9 @@ describe("tag verdicts (tags firing against consent)", () => {
     page.at(9).gtag("consent", "default", FULL_V2);
     page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
     page.finishLoading();
+    // Denied by its own gcs, which also makes it a cookieless ping (#34).
     const v = page.verdict("Google Analytics 4");
-    assert.equal(v.verdict, "violation");
-    assert.equal(v.preConsentCount, 1);
+    assert.deepEqual([v.verdict, v.cookielessCount, v.preConsentCount], ["cookieless", 1, 0]);
   });
 
   test("uses gcs when the request's gcd letter for that type is undocumented (#32)", () => {
@@ -916,8 +1055,9 @@ describe("tag verdicts (tags firing against consent)", () => {
     page.at(9).gtag("consent", "default", FULL_V2);
     page.at(900).gtag("consent", "update", { analytics_storage: "granted" });
     page.finishLoading();
+    // Denied by its own gcs, which also makes it a cookieless ping (#34).
     const v = page.verdict("Google Analytics 4");
-    assert.deepEqual([v.verdict, v.preConsentCount], ["violation", 1]);
+    assert.deepEqual([v.verdict, v.cookielessCount], ["cookieless", 1]);
   });
 
   test("the timeline wins over a request's own GCS when both are known", () => {
