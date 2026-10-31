@@ -1,12 +1,14 @@
 # Development and testing
 
-Requires Node.js 22 (the version CI uses). The extension has no dependencies. The one dev
-dependency, `playwright`, runs the headless runner's tests (`tests/consentflow-check.test.mjs`)
-in real Chromium; install its browser once with `npx playwright install chromium`.
+Requires Node.js 22 (the version CI uses). The extension has no dependencies. The dev
+dependencies are `playwright`, which runs the headless runner's tests
+(`tests/consentflow-check.test.mjs`, `tests/consentflow-mcp.test.mjs`) in real Chromium (install
+its browser once with `npx playwright install chromium`), and `@modelcontextprotocol/sdk` and
+`zod` for the MCP server.
 
 ```bash
 npm ci --ignore-scripts
-npx playwright install chromium   # once, for tests/consentflow-check.test.mjs
+npx playwright install chromium   # once, for the runner and MCP tests
 npm test           # node --test "tests/*.test.mjs"
 npm run validate   # node scripts/validate.mjs
 ```
@@ -24,6 +26,7 @@ so race-condition timings are exact. What is covered:
 | `tests/findings.test.mjs` | The verdict for every state (including "Not enough data yet" with zero Google requests), finding order, and the copy model: every rule status and tag verdict has observed, consequence, fix, verify and evidence, with a copy lint |
 | `tests/popup.test.mjs` | Fetching state (including the inject-and-retry path), loading, error and content states, the verdict, findings, disclosures, the review link, live refresh keeping expanded items, scroll and focus, captured data, HTML escaping, and page-to-popup runs that feed `injected.js` output into the popup |
 | `tests/consentflow-check.test.mjs` | The headless runner (`scripts/consentflow-check.mjs`) in real Chromium on the bundled fixtures served locally, with every other host stubbed: BROKEN, VERIFIED and INCOMPLETE verdicts, the pinned JSON shape, the popup rendering the same verdict and findings from the runner's capture, `--consent accept` / `deny` on stand-in OneTrust, Cookiebot, Funding Choices and Usercentrics banners, `not_found`, `click_failed`, hidden duplicate buttons and reloads after the click, no verdict when capture doesn't finish (including a page whose main thread is blocked), exit codes and usage errors |
+| `tests/consentflow-mcp.test.mjs` | The MCP server (`scripts/consentflow-mcp.mjs`) through the SDK's client over the in-memory transport: the three tools listed as read-only, `check_url` on the BROKEN and VERIFIED fixtures equal to the CLI's JSON (timings aside), `file:` / `data:` / `chrome:` / `javascript:` and other non-http URLs refused, schema errors, `navigation_failed`, `capture_not_ready`, the `busy` cap on concurrent runs, a click that didn't happen, `list_checks` against the rules and tags real runs report (only GA4, Google Ads and Floodlight can be `review`), `explain_finding` copy equal to a real run's; and a real stdio process, with logging forced through console and `process.stdout.write`, writing only JSON-RPC to stdout |
 | `tests/static-validation.test.mjs` | The `postMessage` boundary in `content.js`, landing-page checks and a committed-secret scan |
 
 Every test runs as a real assertion; there are no `todo` or skipped tests.

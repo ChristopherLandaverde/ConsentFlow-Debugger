@@ -11,6 +11,8 @@
     "validate": "node scripts/validate.mjs"
   },
   "devDependencies": {
-    "playwright": "1.63.0"
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "playwright": "1.63.0",
+    "zod": "4.6.7"
   }
 }
