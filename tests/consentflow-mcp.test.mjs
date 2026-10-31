@@ -180,9 +180,11 @@ describe("check_url", () => {
     const capped = await connect({ route: offline, maxConcurrentChecks: 2 });
     try {
       const url = `${origin}/popup-states.html?s=verified`;
-      const results = await Promise.all(
-        [0, 1, 2].map(() => capped.client.callTool({ name: "check_url", arguments: { url, waitMs: 1500 } })),
-      );
+      const calls = [0, 1, 2].map(() => capped.client.callTool({ name: "check_url", arguments: { url, waitMs: 1500 } }));
+      // An invalid URL sent while both slots are busy gets invalid_url, not busy.
+      const bad = await capped.client.callTool({ name: "check_url", arguments: { url: "file:///etc/hosts" } });
+      assert.equal(bad.structuredContent.error.code, "invalid_url");
+      const results = await Promise.all(calls);
       const busy = results.filter((r) => r.isError);
       assert.equal(busy.length, 1);
       assert.equal(busy[0].structuredContent.error.code, "busy");

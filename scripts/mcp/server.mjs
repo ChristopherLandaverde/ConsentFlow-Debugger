@@ -5,7 +5,7 @@
 // Start it with `node scripts/consentflow-mcp.mjs` (stdio), which keeps stdout for JSON-RPC.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { DEFAULT_WAIT_MS, NavigationError, UsageError, checkUrl } from "../consentflow-check.mjs";
+import { DEFAULT_WAIT_MS, NavigationError, UsageError, checkUrl, normalizeUrl } from "../consentflow-check.mjs";
 import { UnknownFindingError, explainFinding, listChecks } from "./catalog.mjs";
 
 export const SERVER_NAME = "consentflow";
@@ -67,6 +67,13 @@ export function createServer({ maxConcurrentChecks = MAX_CONCURRENT_CHECKS, ...o
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async ({ url, consent = "none", waitMs = DEFAULT_WAIT_MS }) => {
+      // Validate before the cap so a bad URL gets invalid_url, never busy, and never takes a slot.
+      try {
+        normalizeUrl(url);
+      } catch (e) {
+        if (e instanceof UsageError) return toolError("invalid_url", e.message, { url });
+        throw e;
+      }
       if (running >= maxConcurrentChecks) {
         return toolError(
           "busy",
