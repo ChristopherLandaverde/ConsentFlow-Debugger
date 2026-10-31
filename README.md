@@ -62,8 +62,7 @@ from `popup/findings.js`.
 | "Why does `consent-default-before-config` matter, and where is it judged?" | `explain_finding` | The finding's copy and the `popup/findings.js` lines that build it | Nothing |
 | "Which tags can send cookieless pings without counting as a violation?" | `list_checks` | The 8 rules and 11 tags in `injected.js` (only GA4, Google Ads and Floodlight can get `review`) | Nothing |
 
-Agentic levels: L1 machine-readable · L2 agent-callable · L3 live read · L4 proposes changes
-for you to approve. ConsentFlow: L1 (JSON report with `schemaVersion` and exit codes) · L2 (MCP
+Agentic levels: L1 machine-readable · L2 agent-callable · L3 live read. ConsentFlow: L1 (JSON report with `schemaVersion` and exit codes) · L2 (MCP
 server) · L3 (fixture-verified: tested on the bundled sample pages and stand-in CMP banners, not
 yet on a public site or a vendor's real banner). It has no L4: nothing writes.
 
