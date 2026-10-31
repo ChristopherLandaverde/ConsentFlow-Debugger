@@ -17,7 +17,8 @@ and their guides are legacy and not part of the extension.
 
 ## Commands
 
-Node.js 22. No dependencies.
+Node.js 22. The extension has no dependencies; the only dev dependency is `playwright`, for
+the headless runner's tests (its Chromium: `npx playwright install chromium`).
 
 ```bash
 npm ci --ignore-scripts
@@ -26,7 +27,12 @@ npm run validate   # node scripts/validate.mjs: required files, manifest content
 ```
 
 Run all three before every commit. CI (`.github/workflows/ci.yml`) is one job that runs them
-plus `npm audit --audit-level=moderate`.
+plus `npx playwright install --with-deps chromium` and `npm audit --audit-level=moderate`.
+
+`scripts/consentflow-check.mjs` is the headless runner (README, "Use it from an agent / CLI"):
+Playwright Chromium with `injected.js` added by `addInitScript`, state read through the same
+`get-state` message `content.js` uses, verdict from `popup/findings.js`. Keep it reusing those
+files unchanged; it must never send captured data anywhere.
 
 ## Loading the extension
 

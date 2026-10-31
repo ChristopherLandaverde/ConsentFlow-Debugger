@@ -1,9 +1,12 @@
 # Development and testing
 
-Requires Node.js 22 (the version CI uses). There are no runtime or dev dependencies.
+Requires Node.js 22 (the version CI uses). The extension has no dependencies. The one dev
+dependency, `playwright`, runs the headless runner's tests (`tests/consentflow-check.test.mjs`)
+in real Chromium; install its browser once with `npx playwright install chromium`.
 
 ```bash
 npm ci --ignore-scripts
+npx playwright install chromium   # once, for tests/consentflow-check.test.mjs
 npm test           # node --test "tests/*.test.mjs"
 npm run validate   # node scripts/validate.mjs
 ```
@@ -20,6 +23,7 @@ so race-condition timings are exact. What is covered:
 | `tests/injected-rules.test.mjs` | All eight validation rules (pass, fail, warn, not checked cases), the default-before-config and update-before-default races, CMP and tag detection, the five tag verdicts judged by consent at the time of each request, the `get-state` message and the 300/200 export limits |
 | `tests/findings.test.mjs` | The verdict for every state (including "Not enough data yet" with zero Google requests), finding order, and the copy model: every rule status and tag verdict has observed, consequence, fix, verify and evidence, with a copy lint |
 | `tests/popup.test.mjs` | Fetching state (including the inject-and-retry path), loading, error and content states, the verdict, findings, disclosures, the review link, live refresh keeping expanded items, scroll and focus, captured data, HTML escaping, and page-to-popup runs that feed `injected.js` output into the popup |
+| `tests/consentflow-check.test.mjs` | The headless runner (`scripts/consentflow-check.mjs`) in real Chromium on the bundled fixtures served locally, with every other host stubbed: BROKEN, VERIFIED and INCOMPLETE verdicts, the pinned JSON shape, the popup rendering the same verdict and findings from the runner's capture, `--consent accept` / `deny` on a stand-in OneTrust banner, `not_found` when no known banner is present, exit codes and usage errors |
 | `tests/static-validation.test.mjs` | The `postMessage` boundary in `content.js`, landing-page checks and a committed-secret scan |
 
 Every test runs as a real assertion; there are no `todo` or skipped tests.

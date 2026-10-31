@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ConsentFlow CMP banner fixture</title>
+  <!--
+    A stand-in OneTrust banner for the headless runner's --consent accept / deny tests
+    (tests/consentflow-check.test.mjs). It uses OneTrust's documented button IDs; it is not
+    OneTrust's code. Consent Mode is wired correctly: denied default with wait_for_update,
+    then the banner sends the visitor's choice as a consent update.
+  -->
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    window.OneTrust = {};
+    gtag('consent', 'default', {
+      ad_storage: 'denied', analytics_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied',
+      wait_for_update: 500
+    });
+    gtag('config', 'G-FIXTURE');
+    function choose(granted) {
+      var v = granted ? 'granted' : 'denied';
+      gtag('consent', 'update', { ad_storage: v, analytics_storage: v, ad_user_data: v, ad_personalization: v });
+      document.getElementById('onetrust-banner-sdk').hidden = true;
+      if (granted) {
+        fetch('https://region1.google-analytics.com/g/collect?v=2&tid=G-FIXTURE&gcs=G111&en=page_view', { mode: 'no-cors', keepalive: true }).catch(function () {});
+      }
+    }
+  </script>
+  <!-- Local on purpose (it 404s): GA4 is detected from the loader's id=G- without loading Google's script. -->
+  <script async src="gtag/js?id=G-FIXTURE"></script>
+</head>
+<body>
+  <h1>ConsentFlow CMP banner fixture</h1>
+  <div id="onetrust-banner-sdk" hidden>
+    <p>We use cookies.</p>
+    <button id="onetrust-accept-btn-handler" onclick="choose(true)">Accept All Cookies</button>
+    <button id="onetrust-reject-all-handler" onclick="choose(false)">Reject All</button>
+  </div>
+  <script>
+    // Banners load after the page; show it a moment later, as a CMP script would.
+    setTimeout(function () { document.getElementById('onetrust-banner-sdk').hidden = false; }, 300);
+  </script>
+</body>
+</html>
