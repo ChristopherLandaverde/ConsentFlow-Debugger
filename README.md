@@ -148,7 +148,7 @@ page at that moment. `--format text` prints the same verdict as lines instead.
 | Option | |
 |---|---|
 | `--consent none` (default) | Load the page and touch nothing. This is the mode that catches tags firing before consent. |
-| `--consent accept` / `deny` | Click the accept-all or reject-all button of OneTrust, Cookiebot, Google Funding Choices or Usercentrics, using known button selectors. Each is tested only on a stand-in banner (`tests/fixtures/cmp-banner.html`), not on the vendor's real one. With none of those buttons on the page it reports `"consentInteraction": "not_found"` and clicks nothing; a button it can't click (covered by another element, say) is `"click_failed"`. If the page navigates or reloads after the click, `navigatedAfterConsent` is `true` and the capture covers the new page load. |
+| `--consent accept` / `deny` | Click the accept-all or reject-all button of OneTrust, Cookiebot, Google Funding Choices or Usercentrics, using known button selectors. Each is tested only on a stand-in banner (`tests/fixtures/cmp-banner.html`), not on the vendor's real one. With none of those buttons on the page it reports `"consentInteraction": "not_found"` and clicks nothing; a button it can't click (covered by another element, say) is `"click_failed"`. If a new document loads during the wait after the click (a navigation or reload), `navigatedAfterConsent` is `true` and the capture covers that new page load. A URL change without a new document (`pushState`, a hash change) leaves it `false`. |
 | `--wait <ms>` | How long to keep capturing after the page loads, and again after a click. Default 3000. |
 
 Exit codes: `0` VERIFIED or REVIEW; `1` BROKEN; `3` INCOMPLETE, a capture that didn't
@@ -159,8 +159,8 @@ a page that couldn't be loaded or answered HTTP 400 or above, or the runner itse
 
 Run time: a normal page takes a few seconds plus `--wait` (twice `--wait` after a click).
 Every step has a time limit, so with the defaults a run that hits all of them ends within about
-56 s for `--consent none` and 70 s for `accept` / `deny`, plus browser start-up: 31 s to load
-the page, 11 s for ConsentFlow's first pass, the 3 s wait, 6 s to read the state and 5 s to close
+57 s for `--consent none` and 71 s for `accept` / `deny`, plus browser start-up: 31 s to load
+the page, 11 s for ConsentFlow's first pass, the 3 s wait, 6 s to read the state and 6 s to close
 the browser, and for a click up to 11 s more for the banner and another 3 s wait.
 
 What it doesn't do: it checks one page load from wherever you run it, so visitor regions are
