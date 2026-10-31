@@ -58,6 +58,11 @@ export function catalog() {
   const vendorMap = {};
   const mapStart = injectedLines.findIndex((l) => /^ {2}var TAG_VENDOR_MAP = \{$/.test(l));
   for (const m of block(injectedLines, mapStart, /^ {2}\};$/).code.matchAll(/'([^']+)': '(\w+)'/g)) vendorMap[m[1]] = m[2];
+  // Only these tags can send cookieless pings (verdict `cookieless`, a review finding); for any
+  // other tag, judgeRequest() returns a violation before the cookieless test.
+  const cmLine = injectedLines.find((l) => /^ {2}var CONSENT_MODE_TAGS = \[.*\];$/.test(l));
+  if (!cmLine) throw new Error("CONSENT_MODE_TAGS not found in injected.js");
+  const consentModeTags = quoted(cmLine);
   const tags = [];
   injectedLines.forEach((line, i) => {
     const m = line.match(/^ {4}check\('([^']+)', '(\w+)', \[([^\]]*)\], function/);
@@ -91,7 +96,11 @@ export function catalog() {
   // A tag whose detection lists no consent types is a container (verdict `container`).
   const judged = (t) => t.consentTypes.length > 0;
 
-  cached = { rules, tags, vendorMap, copySource, tagCopySource, notCheckedSource, tagVerdicts, engine, plain, judged };
+  // The verdicts a tag can get: cookieless only for the consent-mode-aware Google tags.
+  const verdictsFor = (t) => tagVerdicts.filter((v) => v !== "cookieless" || consentModeTags.includes(t.name));
+  const tagStatusesFor = (t) => [...new Set(verdictsFor(t).map((v) => tagFinding({ engine, plain }, t, v).status))];
+
+  cached = { rules, tags, vendorMap, consentModeTags, verdictsFor, tagStatusesFor, copySource, tagCopySource, notCheckedSource, tagVerdicts, engine, plain, judged };
   return cached;
 }
 
@@ -101,7 +110,6 @@ const pick = (f) => Object.fromEntries(COPY_FIELDS.map((k) => [k, f[k] ?? null])
 /** The checks the engine runs: 8 Consent Mode rules from injected.js plus one finding per detected tag. */
 export function listChecks() {
   const c = catalog();
-  const tagStatuses = [...new Set(c.tagVerdicts.map((verdict) => tagFinding(c, c.tags.find(c.judged), verdict).status))];
   return {
     schemaVersion: "1",
     tool: "consentflow",
@@ -120,13 +128,15 @@ export function listChecks() {
       vendor: t.vendor,
       consentTypes: t.consentTypes,
       judged: c.judged(t),
-      statuses: c.judged(t) ? tagStatuses : [],
+      statuses: c.judged(t) ? c.tagStatusesFor(t) : [],
+      cookielessPings: c.consentModeTags.includes(t.name),
       source: t.source,
     })),
     notes: [
       "Every rule gives one finding per page load. A tag gives a finding only when it is detected on the page, with id `tag:<name>`.",
       "A tag with no consent types (Google Tag Manager) is a container: it is not judged itself; the tags it loads are judged by the requests they send.",
       "Tags on a page with no consent default are reported inside the consent-default-exists finding, not as tag findings.",
+      "Only tags with cookielessPings true (injected.js CONSENT_MODE_TAGS) can get the review status: a cookieless ping under advanced Consent Mode. For any other tag, a request sent while its consent was denied is a violation.",
     ],
   };
 }
@@ -175,7 +185,8 @@ export function explainFinding(id) {
   const tag = id.startsWith("tag:") ? c.tags.find((t) => `tag:${t.name}` === id && c.judged(t)) : null;
   if (tag) {
     // These verdicts' copy depends only on the tag's name, vendor and consent types.
-    const fixed = ["blocked", "idle"].filter((v) => c.tagVerdicts.includes(v));
+    const verdicts = c.verdictsFor(tag);
+    const fixed = ["blocked", "idle"].filter((v) => verdicts.includes(v));
     return {
       id,
       kind: "tag",
@@ -183,16 +194,21 @@ export function explainFinding(id) {
       type: tag.type,
       vendor: tag.vendor,
       consentTypes: tag.consentTypes,
-      statuses: [...new Set(c.tagVerdicts.map((v) => tagFinding(c, tag, v).status))],
+      statuses: c.tagStatusesFor(tag),
+      verdicts,
       copy: Object.fromEntries(fixed.map((v) => [v, pick(tagFinding(c, tag, v))])),
       copySource: {
         file: "popup/findings.js",
         lines: [c.tagCopySource.start, c.tagCopySource.end],
         code: c.tagCopySource.code,
-        covers: c.tagVerdicts.filter((v) => !fixed.includes(v)),
+        covers: verdicts.filter((v) => !fixed.includes(v)),
       },
       detectionSource: tag.source,
-      note: "`copy` is keyed by the tag verdict injected.js reports. The verdicts under copySource.covers quote measured counts and times (cookieless pings, a review finding, apply to Google tags only), so their copy is built per page load from that code. Call check_url for the concrete text on a page.",
+      note:
+        "`copy` is keyed by the tag verdict injected.js reports. The verdicts under copySource.covers quote measured counts and times, so their copy is built per page load from that code. Call check_url for the concrete text on a page." +
+        (c.consentModeTags.includes(tag.name)
+          ? " As a consent-mode-aware Google tag, it can send cookieless pings (verdict cookieless, status review)."
+          : " This tag cannot send cookieless pings: any request sent while its consent was denied is a violation."),
     };
   }
   const known = [...c.rules.map((r) => r.id), ...c.tags.filter(c.judged).map((t) => `tag:${t.name}`)];

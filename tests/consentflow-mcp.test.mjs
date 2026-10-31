@@ -176,6 +176,26 @@ describe("check_url", () => {
     }
   });
 
+  test("more concurrent runs than the cap get a busy error; the others finish", async () => {
+    const capped = await connect({ route: offline, maxConcurrentChecks: 2 });
+    try {
+      const url = `${origin}/popup-states.html?s=verified`;
+      const results = await Promise.all(
+        [0, 1, 2].map(() => capped.client.callTool({ name: "check_url", arguments: { url, waitMs: 1500 } })),
+      );
+      const busy = results.filter((r) => r.isError);
+      assert.equal(busy.length, 1);
+      assert.equal(busy[0].structuredContent.error.code, "busy");
+      assert.equal(busy[0].structuredContent.error.max, 2);
+      assert.deepEqual(results.filter((r) => !r.isError).map((r) => r.structuredContent.verdict.status), ["verified", "verified"]);
+      // The slots are free again once those runs finish.
+      const again = await capped.client.callTool({ name: "check_url", arguments: { url, waitMs: 0 } });
+      assert.equal(again.isError, undefined);
+    } finally {
+      await capped.close();
+    }
+  });
+
   test("a requested click that didn't happen is returned as the report, with consentInteraction not_found", async () => {
     const quick = await connect({ route: offline, timeouts: { banner: 1000 } });
     try {
@@ -223,9 +243,19 @@ describe("list_checks and explain_finding", () => {
       vendor: "facebook",
       consentTypes: ["ad_storage"],
       judged: true,
-      statuses: ["broken", "review", "verified", "not_checked"],
+      statuses: ["broken", "verified", "not_checked"],
+      cookielessPings: false,
       source: list.tags.find((t) => t.name === "Facebook Pixel").source,
     });
+
+    // Only the consent-mode-aware Google tags (injected.js CONSENT_MODE_TAGS) can send cookieless
+    // pings, the one tag verdict that gives review.
+    for (const t of list.tags.filter((x) => x.judged)) {
+      const google = ["Google Analytics 4", "Google Ads", "Floodlight"].includes(t.name);
+      assert.equal(t.cookielessPings, google, t.name);
+      assert.equal(t.statuses.includes("review"), google, t.name);
+    }
+    assert.ok(!list.tags.find((t) => t.name === "Facebook Pixel").statuses.includes("review"));
 
     for (const page of ["popup-states.html?s=broken", "popup-states.html?s=verified", "popup-states.html?s=zero"]) {
       const report = (await mcp.client.callTool({ name: "check_url", arguments: { url: `${origin}/${page}`, waitMs: WAIT } }))
@@ -274,7 +304,13 @@ describe("list_checks and explain_finding", () => {
     const tag = (await mcp.client.callTool({ name: "explain_finding", arguments: { id: "tag:Facebook Pixel" } })).structuredContent;
     assert.equal(tag.kind, "tag");
     assert.equal(tag.copy.blocked.title, "Facebook Pixel held back while ad_storage is denied");
-    assert.deepEqual(tag.copySource.covers, ["violation", "cookieless", "firing"]);
+    assert.deepEqual(tag.statuses, ["broken", "verified", "not_checked"]);
+    assert.ok(!tag.verdicts.includes("cookieless"));
+    assert.deepEqual(tag.copySource.covers, ["violation", "firing"]);
+
+    const ga4 = (await mcp.client.callTool({ name: "explain_finding", arguments: { id: "tag:Google Analytics 4" } })).structuredContent;
+    assert.deepEqual(ga4.statuses, ["broken", "review", "verified", "not_checked"]);
+    assert.deepEqual(ga4.copySource.covers, ["violation", "cookieless", "firing"]);
     assert.match(tag.copySource.code, /^ {2}function tagCopy\(t, state\) \{/);
   });
 

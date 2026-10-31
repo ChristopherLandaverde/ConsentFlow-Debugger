@@ -182,22 +182,36 @@ an MCP registry. All three tools are read-only:
 |---|---|---|
 | `check_url` | `url` (http or https only), `consent?` `none` / `accept` / `deny`, `waitMs?` (0 to 60000) | The runner's JSON report above, unchanged. |
 | `explain_finding` | `id`, e.g. `consent-default-before-config` or `tag:Facebook Pixel` | The finding's statuses, the observed / consequence / fix / verify / evidence copy `popup/findings.js` gives where it quotes no measured value, and the `findings.js` source (file, lines, code) that builds the rest. |
-| `list_checks` | none | The 8 rules and 11 tags the engine knows, read from `injected.js`, each with its source location. |
+| `list_checks` | none | The 8 rules and 11 tags the engine knows, read from `injected.js`, each with the statuses it can give and its source location. Only GA4, Google Ads and Floodlight can get `review` (a cookieless ping under advanced Consent Mode); for any other tag, a request sent while its consent was denied is `broken`. |
 
 The verdict and every number come from `popup/findings.js` through the runner; the server only
 checks input and shapes errors. Errors come back as tool errors with
 `{ "error": { "code", "message" } }`: `invalid_url` (anything but http/https, such as `file:`,
 `data:` or `chrome:`), `navigation_failed`, `capture_not_ready` / `capture_no_response`
-(with the report, which has no verdict), `runner_failed` (for example, Chromium not installed)
-and `unknown_finding`. A requested banner click that didn't happen is not an error: the report
-comes back with `consentInteraction` `not_found` or `click_failed`. Stdout carries JSON-RPC
-only; every log goes to stderr.
+(with the report, which has no verdict), `runner_failed` (for example, Chromium not installed),
+`busy` (more than 2 `check_url` runs at once; each starts its own Chromium) and
+`unknown_finding`. Input that doesn't match a tool's schema (an unknown `consent` value, a
+negative `waitMs`, no `url`) is refused by the MCP SDK before the tool runs: a tool error whose
+text starts `MCP error -32602: Input validation error`. A requested banner click that didn't
+happen is not an error: the report comes back with `consentInteraction` `not_found` or
+`click_failed`. Stdout carries JSON-RPC only; every log goes to stderr.
 
 **What goes where.** The server sends nothing anywhere itself, and Chromium loads the page you
 name as the CLI does. What the tools return (the report, with the page's URL, findings and
 request hosts and paths) goes to your MCP client, and through it to the model behind your
 agent and that model's provider. Don't check pages whose URLs or requests you can't share with
-that provider.
+that provider. Three more things to know:
+
+- `check_url` loads any http(s) URL from your machine, including `localhost` and private
+  network addresses. That is how you check a local or staging build, but it also means an agent
+  following instructions planted in content it read (a prompt injection) could make your
+  machine load an internal page. What comes back is limited to the report: `finalUrl`, the
+  findings, and the host and path of each request to a known ad or analytics vendor, not page
+  content.
+- Strings taken from the page (tag and config IDs, CMP names, request hosts and paths, the final
+  URL) reach the model as they are, unfiltered.
+- The URL is echoed back as given (normalized), so credentials or tokens in it (`user:pass@`,
+  a `?token=` query) go to the model too. Don't pass URLs that carry secrets.
 
 Setup, after `npm ci --ignore-scripts` and `npx playwright install chromium` in this repo.
 Use absolute paths. If you use nvm, `node` may not be on the PATH the client starts servers
@@ -208,6 +222,9 @@ Claude Code (all projects):
 ```bash
 claude mcp add -s user consentflow -- "$(which node)" "$PWD/scripts/consentflow-mcp.mjs"
 claude mcp list   # consentflow: … - Connected
+
+# If Playwright's browsers are not in the default cache (see below):
+claude mcp add -s user consentflow -e PLAYWRIGHT_BROWSERS_PATH=/path/to/browsers -- "$(which node)" "$PWD/scripts/consentflow-mcp.mjs"
 ```
 
 Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS,
@@ -227,8 +244,8 @@ take the same block:
 
 MCP clients start servers with a reduced environment. If Playwright's browsers are somewhere
 other than the default cache (`PLAYWRIGHT_BROWSERS_PATH` is set in your shell), add
-`"env": { "PLAYWRIGHT_BROWSERS_PATH": "/that/path" }` to the block, or `-e
-PLAYWRIGHT_BROWSERS_PATH=/that/path` to `claude mcp add`; without it `check_url` returns
+`"env": { "PLAYWRIGHT_BROWSERS_PATH": "/that/path" }` to the block, or use the second
+`claude mcp add` command above (`-e` goes after the server name); without it `check_url` returns
 `runner_failed` with Playwright's "Executable doesn't exist" message.
 
 Then ask, for example: "Use consentflow to check http://localhost:8000/popup-states.html?s=broken
@@ -253,23 +270,24 @@ shown; the `+ms` timings vary per load.
   findings[].id/status: consent-default-before-config broken · tag:Facebook Pixel broken ·
             consent-update-received, gcs-consistency, default-before-update, wait-for-update not_checked ·
             consent-default-exists, v2-types-present, no-duplicate-defaults, tag:Google Analytics 4 verified
-  findings[0]: "observed": "`config` for G-FIXTURE ran at +62 ms; the consent default ran at +392 ms."
+  findings[0]: "observed": "`config` for G-FIXTURE ran at +61 ms; the consent default ran at +391 ms."
                "consequence": "Requests in that 330 ms gap assume consent is granted."
-               "evidence": First config = G-FIXTURE at +62 ms · Consent default = +392 ms · Gap = 330 ms
+               "evidence": First config = G-FIXTURE at +61 ms · Consent default = +391 ms · Gap = 330 ms
   requests: 2
 
 → tools/call explain_finding {"id": "tag:Facebook Pixel"}
-← statuses: broken, review, verified, not_checked
+← statuses: broken, verified, not_checked
+  verdicts: violation, blocked, firing, idle
   copy.blocked: {"status": "verified", "title": "Facebook Pixel held back while ad_storage is denied",
                  "observed": "`ad_storage` is denied, and no requests to Meta went out.", …}
-  copySource: popup/findings.js lines 431-552, covers violation, cookieless, firing
+  copySource: popup/findings.js lines 431-552, covers violation, firing
 
 → tools/call check_url {"url": "file:///etc/passwd"}
 ← isError: true
   {"error": {"code": "invalid_url", "message": "Only http and https URLs can be checked.", "url": "file:///etc/passwd"}}
 
 → tools/call list_checks {}
-← 8 rules, 11 tags
+← 8 rules, 11 tags; cookielessPings true for Google Analytics 4, Google Ads, Floodlight
 ```
 
 </details>

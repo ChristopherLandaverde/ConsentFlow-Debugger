@@ -11,6 +11,8 @@ import { UnknownFindingError, explainFinding, listChecks } from "./catalog.mjs";
 export const SERVER_NAME = "consentflow";
 export const SERVER_VERSION = "1.0.0";
 export const MAX_WAIT_MS = 60000;
+// Each check_url run starts its own Chromium; more than this many at once are refused (busy).
+export const MAX_CONCURRENT_CHECKS = 2;
 
 const json = (value) => [{ type: "text", text: JSON.stringify(value, null, 2) }];
 const ok = (value) => ({ content: json(value), structuredContent: value });
@@ -25,9 +27,10 @@ const firstLine = (e) => String((e && e.message) || e).split("\n")[0];
 
 /**
  * @param {object} [options] passed to the runner for every check (tests stub hosts with
- *   `route` and shorten `timeouts`, as the runner tests do)
+ *   `route` and shorten `timeouts`, as the runner tests do), except `maxConcurrentChecks`
  */
-export function createServer(options = {}) {
+export function createServer({ maxConcurrentChecks = MAX_CONCURRENT_CHECKS, ...options } = {}) {
+  let running = 0;
   const server = new McpServer(
     { name: SERVER_NAME, version: SERVER_VERSION },
     {
@@ -47,7 +50,9 @@ export function createServer(options = {}) {
         "and evidence, and the vendor requests captured with the consent on the page when each was sent. " +
         "consent: none (default) touches nothing, so tags that fire before consent are caught; accept / deny click a known " +
         "OneTrust, Cookiebot, Google Funding Choices or Usercentrics button. If consentInteraction is not_found or click_failed, the " +
-        "requested scenario did not run (the CLI exits 3). It changes nothing on the site; the page itself makes its own requests as for any visitor.",
+        "requested scenario did not run (the CLI exits 3). At most " +
+        `${maxConcurrentChecks} runs at once; more return a busy error. ` +
+        "It changes nothing on the site; the page itself makes its own requests as for any visitor.",
       inputSchema: {
         url: z.string().describe("The page to check. http or https only."),
         consent: z.enum(["none", "accept", "deny"]).optional().describe("Banner interaction. Default none."),
@@ -62,6 +67,14 @@ export function createServer(options = {}) {
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async ({ url, consent = "none", waitMs = DEFAULT_WAIT_MS }) => {
+      if (running >= maxConcurrentChecks) {
+        return toolError(
+          "busy",
+          `${running} check_url runs are already in progress (at most ${maxConcurrentChecks} at once, each in its own browser). Retry when one finishes.`,
+          { url, running, max: maxConcurrentChecks },
+        );
+      }
+      running++;
       let report;
       try {
         report = await checkUrl(url, { ...options, consent, wait: waitMs });
@@ -69,6 +82,8 @@ export function createServer(options = {}) {
         if (e instanceof UsageError) return toolError("invalid_url", e.message, { url });
         if (e instanceof NavigationError) return toolError("navigation_failed", firstLine(e), { url });
         return toolError("runner_failed", firstLine(e), { url });
+      } finally {
+        running--;
       }
       if (report.capture !== "complete") {
         const message =
