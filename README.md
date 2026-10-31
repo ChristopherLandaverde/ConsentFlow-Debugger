@@ -88,6 +88,89 @@ a disposable GTM container. To update, `git pull` and click reload on the extens
 Release-zip install and a full tour of the popup and side panel, with screenshots:
 [docs/usage.md](docs/usage.md).
 
+## Use it from an agent / CLI
+
+`scripts/consentflow-check.mjs` checks a URL in headless Chromium with the extension's own
+code and prints the verdict as JSON, so a script, CI job or coding agent can read it. It adds
+`injected.js` to the page before any page script runs (top frame only, like the extension),
+reads the state the way `content.js` does, and builds the verdict and findings with
+`popup/findings.js`, the file the popup renders. Verified on the bundled fixtures served
+locally; not yet run against a public site.
+
+```bash
+npm ci --ignore-scripts
+npx playwright install chromium   # once: the browser the runner drives
+python3 -m http.server 8000 -d tests/fixtures &
+node scripts/consentflow-check.mjs "http://localhost:8000/popup-states.html?s=broken" \
+  | jq '{schemaVersion, tool, consentMode, verdict: .verdict.label, title: .verdict.title, first: .findings[0], requests: (.requests | length)}'
+```
+
+Output from that run (exit code 1). The `+ms` timings are measured on each load, so they
+vary from run to run:
+
+```json
+{
+  "schemaVersion": "1",
+  "tool": "consentflow",
+  "consentMode": "none",
+  "verdict": "× BROKEN",
+  "title": "2 consent problems on this page.",
+  "first": {
+    "id": "consent-default-before-config",
+    "status": "broken",
+    "title": "Google tag configured before the consent default",
+    "observed": "`config` for G-FIXTURE ran at +73 ms; the consent default ran at +398 ms.",
+    "consequence": "Requests in that 325 ms gap assume consent is granted.",
+    "fix": [
+      "Move the consent default above the Google tag snippet in the page source.",
+      "In GTM, fire the consent default on the Consent Initialization – All Pages trigger."
+    ],
+    "verify": "Reload. The consent default should come before `config` in the timeline.",
+    "evidence": [
+      { "label": "First config", "value": "G-FIXTURE at +73 ms" },
+      { "label": "Consent default", "value": "+398 ms" },
+      { "label": "Gap", "value": "325 ms" }
+    ]
+  },
+  "requests": 2
+}
+```
+
+The full report is `{ schemaVersion, tool, url, finalUrl, capture, consentMode,
+consentInteraction, consentButton, navigatedAfterConsent, verdict, findings, requests }`.
+`capture` is `complete` when ConsentFlow finished its first pass on the page; if it didn't
+(`not_ready`, or `no_response` when the page stopped answering), `verdict` is `null` and
+`findings` is empty, because there is nothing to judge. Each finding has `id`, `status`, `title`,
+`observed`, `consequence`, `fix`, `verify` and `evidence`; each request has when it was sent,
+its vendor, host, path, the tag it is attributed to, `gcs` / `gcd`, and the consent on the
+page at that moment. `--format text` prints the same verdict as lines instead.
+
+| Option | |
+|---|---|
+| `--consent none` (default) | Load the page and touch nothing. This is the mode that catches tags firing before consent. |
+| `--consent accept` / `deny` | Click the accept-all or reject-all button of OneTrust, Cookiebot, Google Funding Choices or Usercentrics, using known button selectors. Each is tested only on a stand-in banner (`tests/fixtures/cmp-banner.html`), not on the vendor's real one. With none of those buttons on the page it reports `"consentInteraction": "not_found"` and clicks nothing; a button it can't click (covered by another element, say) is `"click_failed"`. If a new document loads during the wait after the click (a navigation or reload), `navigatedAfterConsent` is `true` and the capture covers that new page load. A URL change without a new document (`pushState`, a hash change) leaves it `false`. |
+| `--wait <ms>` | How long to keep capturing after the page loads, and again after a click. Default 3000. |
+
+Exit codes: `0` VERIFIED or REVIEW; `1` BROKEN; `3` INCOMPLETE, a capture that didn't
+finish, or a requested banner click that didn't happen (`not_found` or `click_failed`, even
+when the page is also BROKEN, since the scenario you asked for wasn't run); `2` bad arguments,
+a page that couldn't be loaded or answered HTTP 400 or above, or the runner itself failing
+(for example, Chromium not installed).
+
+Run time: a normal page takes a few seconds plus `--wait` (twice `--wait` after a click).
+Every step has a time limit, so with the defaults a run that hits all of them ends within about
+57 s for `--consent none` and 71 s for `accept` / `deny`, plus browser start-up: 31 s to load
+the page, 11 s for ConsentFlow's first pass, the 3 s wait, 6 s to read the state and 6 s to close
+the browser, and for a click up to 11 s more for the banner and another 3 s wait.
+
+What it doesn't do: it checks one page load from wherever you run it, so visitor regions are
+not simulated (a CMP that shows its banner only in the EU may not show it to a run from
+elsewhere); only the four CMPs above can be clicked, and their selectors have not been checked
+against the real banners; capture starts slightly earlier than in the extension, whose
+script loads asynchronously; and the [known limits](#known-limits) below apply as they do in
+the extension. The runner sends nothing anywhere itself: the browser loads the page you
+name, and that page makes its own requests as it would for any visitor.
+
 ## Known limits
 
 - Requests are captured when made through `fetch`, `XMLHttpRequest` or
@@ -151,10 +234,12 @@ Cookiebot helper scripts that are not part of the extension.
 
 ## Development
 
-Requires Node.js 22. No runtime or dev dependencies.
+Requires Node.js 22. The extension has no dependencies; the one dev dependency, Playwright,
+runs the headless runner's tests in Chromium.
 
 ```bash
 npm ci --ignore-scripts
+npx playwright install chromium   # once, for the runner's tests
 npm test           # runs the real injected.js and popup code in node:vm
 npm run validate   # required files, manifest content script, node --check
 ```

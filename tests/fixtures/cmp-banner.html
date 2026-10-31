@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ConsentFlow CMP banner fixture</title>
+  <!--
+    Stand-in cookie banners for the headless runner's --consent accept / deny tests
+    (tests/consentflow-check.test.mjs). Each uses the button selectors the runner knows for
+    that CMP; none of this is the vendor's code, so the tests prove the runner's clicking,
+    not that the selectors match the real banners. Consent Mode is wired correctly: denied
+    default with wait_for_update, then the banner sends the visitor's choice as an update.
+
+    ?cmp=onetrust (default) | cookiebot | fundingchoices | usercentrics (open shadow root)
+    &cover=1   an overlay covers the banner, so a click can't land
+    &dup=1     a hidden duplicate of the accept button comes first in the page
+    &reload=1  accepting reloads the page, as some CMPs do
+    &spa=1     accepting changes the URL in place (history.pushState, then a hash change)
+    &alt=1     Cookiebot only: the older #CybotCookiebotDialogBodyButtonAccept accept button
+  -->
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    var params = new URLSearchParams(location.search);
+    var cmp = params.get('cmp') || 'onetrust';
+    if (cmp === 'onetrust') window.OneTrust = {};
+    if (cmp === 'cookiebot') window.Cookiebot = {};
+    gtag('consent', 'default', {
+      ad_storage: 'denied', analytics_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied',
+      wait_for_update: 500
+    });
+    gtag('config', 'G-FIXTURE');
+    function choose(granted) {
+      var v = granted ? 'granted' : 'denied';
+      gtag('consent', 'update', { ad_storage: v, analytics_storage: v, ad_user_data: v, ad_personalization: v });
+      document.getElementById('banner').hidden = true;
+      if (granted) {
+        fetch('https://region1.google-analytics.com/g/collect?v=2&tid=G-FIXTURE&gcs=G111&en=page_view', { mode: 'no-cors', keepalive: true }).catch(function () {});
+        if (params.get('reload') === '1') location.reload();
+        if (params.get('spa') === '1') {
+          history.pushState({}, '', location.pathname + location.search + '&step=2');
+          location.hash = 'accepted';
+        }
+      }
+    }
+  </script>
+  <!-- Local on purpose (it 404s): GA4 is detected from the loader's id=G- without loading Google's script. -->
+  <script async src="gtag/js?id=G-FIXTURE"></script>
+  <style>#cover { position: fixed; inset: 0; background: rgba(0, 0, 0, .4); }</style>
+</head>
+<body>
+  <h1>ConsentFlow CMP banner fixture</h1>
+  <div id="dup" hidden><button id="onetrust-accept-btn-handler" onclick="throw new Error('hidden duplicate clicked')">Accept</button></div>
+  <div id="banner" hidden></div>
+  <script>
+    var MARKUP = {
+      onetrust: '<button id="onetrust-accept-btn-handler">Accept All Cookies</button>' +
+        '<button id="onetrust-reject-all-handler">Reject All</button>',
+      cookiebot: (params.get('alt') === '1'
+        ? '<button id="CybotCookiebotDialogBodyButtonAccept">OK</button>'
+        : '<button id="CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll">Allow all</button>') +
+        '<button id="CybotCookiebotDialogBodyButtonDecline">Deny</button>',
+      fundingchoices: '<button class="fc-button fc-cta-consent">Consent</button>' +
+        '<button class="fc-button fc-cta-do-not-consent">Do not consent</button>',
+      usercentrics: ''
+    };
+    var banner = document.getElementById('banner');
+    var root = banner;
+    if (cmp === 'usercentrics') {
+      root = banner.attachShadow({ mode: 'open' });
+      root.innerHTML = '<button data-testid="uc-accept-all-button">Accept All</button>' +
+        '<button data-testid="uc-deny-all-button">Deny</button>';
+    } else {
+      banner.innerHTML = MARKUP[cmp];
+    }
+    var buttons = root.querySelectorAll('button');
+    buttons[0].addEventListener('click', function () { choose(true); });
+    buttons[1].addEventListener('click', function () { choose(false); });
+    if (params.get('dup') !== '1') document.getElementById('dup').remove();
+    // Banners load after the page; show it a moment later, as a CMP script would.
+    setTimeout(function () {
+      banner.hidden = false;
+      if (params.get('cover') === '1') {
+        var cover = document.createElement('div');
+        cover.id = 'cover';
+        document.body.appendChild(cover);
+      }
+    }, 300);
+  </script>
+</body>
+</html>
