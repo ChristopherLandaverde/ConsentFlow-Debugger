@@ -57,8 +57,8 @@ from `popup/findings.js`.
 
 | Ask your agent… | Tool | Reads | Writes |
 |---|---|---|---|
-| "Check `http://localhost:8000/popup-states.html?s=broken` and explain the first problem." | `check_url` | The page, loaded in its own headless Chromium: consent commands and requests to known ad and analytics vendors | Nothing |
-| "Click Reject all on the banner at staging.example.com. Does anything still fire?" | `check_url` with `consent: "deny"` | The same, after clicking the reject-all button of OneTrust, Cookiebot, Google Funding Choices or Usercentrics | Nothing on your site; the click happens in that throwaway browser |
+| "Check `http://localhost:8000/popup-states.html?s=broken` and explain the first problem." | `check_url` | The page, loaded in its own headless Chromium: consent commands and requests to known ad and analytics vendors | Nothing itself; the page makes its own requests as for any visitor |
+| "Click Reject all on the banner at staging.example.com. Does anything still fire?" | `check_url` with `consent: "deny"` | The same, after clicking the reject-all button of OneTrust, Cookiebot, Google Funding Choices or Usercentrics | Nothing on your site itself; the click happens in that throwaway browser, and the page and CMP send their own requests as for any visitor |
 | "Why does `consent-default-before-config` matter, and where is it judged?" | `explain_finding` | The finding's copy and the `popup/findings.js` lines that build it | Nothing |
 | "Which tags can send cookieless pings without counting as a violation?" | `list_checks` | The 8 rules and 11 tags in `injected.js` (only GA4, Google Ads and Floodlight can get `review`) | Nothing |
 
