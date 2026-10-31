@@ -14,7 +14,8 @@
 //
 // The runner itself sends nothing anywhere: the browser loads the page being checked, and
 // that page makes whatever requests it makes. Exit codes: 0 VERIFIED or REVIEW, 1 BROKEN,
-// 3 INCOMPLETE (or the requested banner click wasn't possible), 2 usage or navigation error.
+// 3 INCOMPLETE, capture not finished, or the requested banner click not possible,
+// 2 usage error, navigation error or a runner failure (e.g. Chromium missing).
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import vm from "node:vm";
@@ -23,14 +24,14 @@ const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf
 
 export const SCHEMA_VERSION = "1";
 export const DEFAULT_WAIT_MS = 3000;
-const BANNER_TIMEOUT_MS = 5000;
-const READY_TIMEOUT_MS = 10000;
-const NAV_TIMEOUT_MS = 30000;
+// Overridable through options.timeouts (tests shorten them).
+export const DEFAULT_TIMEOUTS = { nav: 30000, ready: 10000, banner: 5000, state: 5000 };
 
 export const EXIT = { ok: 0, broken: 1, usage: 2, incomplete: 3 };
 
-// Documented accept / reject-all buttons of common CMPs. Playwright's CSS engine pierces open
-// shadow roots, which Usercentrics renders into.
+// Known accept / reject-all button selectors of common CMPs. Only checked on the stand-in
+// banners in tests/fixtures/cmp-banner.html, not on the vendors' real banners. Playwright's
+// CSS engine pierces open shadow roots, which Usercentrics renders into.
 export const CMP_BUTTONS = [
   {
     cmp: "OneTrust",
@@ -58,11 +59,13 @@ const USAGE = `Usage: node scripts/consentflow-check.mjs <url> [--consent none|a
 
   --consent  none (default): load the page and touch nothing, so tags that fire before
              consent are caught. accept / deny: click the banner's accept-all or
-             reject-all button (OneTrust, Cookiebot, Google Funding Choices, Usercentrics).
+             reject-all button (known selectors for OneTrust, Cookiebot, Google Funding
+             Choices and Usercentrics).
   --wait     ms to keep capturing after the page loads (and again after a click). Default ${DEFAULT_WAIT_MS}.
   --format   json (default) or text.
 
-Exit codes: 0 VERIFIED or REVIEW, 1 BROKEN, 3 INCOMPLETE or banner not found, 2 usage or navigation error.`;
+Exit codes: 0 VERIFIED or REVIEW, 1 BROKEN, 3 INCOMPLETE, capture not finished or banner
+not clicked, 2 usage error, page not loaded or runner failure.`;
 
 export class UsageError extends Error {}
 
@@ -119,6 +122,21 @@ const plain = (value) => JSON.parse(JSON.stringify(value));
 // ─── Capture ────────────────────────────────────────────────────────────────────────
 export class NavigationError extends Error {}
 
+// Playwright enforces some timeouts inside the page, so a page whose main thread is blocked
+// can stall a wait forever. Every wait on the page is raced against a Node-side timer.
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+async function deadline(promise, ms, fallback) {
+  let timer;
+  const late = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms + 1000);
+  });
+  try {
+    return await Promise.race([Promise.resolve(promise).catch(() => fallback), late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Load the page with the extension's capture script and return the state injected.js
  * reports, as the popup would receive it.
@@ -126,12 +144,17 @@ export class NavigationError extends Error {}
  * @param {object} [options]
  * @param {"none"|"accept"|"deny"} [options.consent]
  * @param {number} [options.wait]
+ * @param {Partial<typeof DEFAULT_TIMEOUTS>} [options.timeouts]
  * @param {(context: import('playwright').BrowserContext) => Promise<void>} [options.route]
  *   install request routes before navigation (tests stub third-party hosts with it)
+ * @returns {Promise<{state: object|null, capture: "complete"|"not_ready"|"no_response",
+ *   finalUrl: string, consentInteraction: string, consentButton: object|null,
+ *   navigatedAfterConsent: boolean|null}>}
  */
 export async function capture(url, options = {}) {
   const consent = options.consent || "none";
   const wait = options.wait ?? DEFAULT_WAIT_MS;
+  const timeouts = { ...DEFAULT_TIMEOUTS, ...options.timeouts };
   const { chromium } = await import("playwright");
   const browser = await chromium.launch();
   try {
@@ -143,66 +166,88 @@ export async function capture(url, options = {}) {
 
     let response;
     try {
-      response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
+      response = await page.goto(url, { waitUntil: "commit", timeout: timeouts.nav });
     } catch (e) {
       throw new NavigationError(`Could not load ${url}: ${e.message.split("\n")[0]}`);
     }
     if (response && response.status() >= 400) {
       throw new NavigationError(`${url} answered HTTP ${response.status()}.`);
     }
-    await page.waitForLoadState("load", { timeout: NAV_TIMEOUT_MS }).catch(() => {});
-    await page
-      .waitForFunction(() => window.__cfDebug && window.__cfDebug.ready, null, { timeout: READY_TIMEOUT_MS })
-      .catch(() => {});
-    await page.waitForTimeout(wait);
+    await deadline(page.waitForLoadState("load", { timeout: timeouts.nav }), timeouts.nav);
+    await deadline(
+      page.waitForFunction(() => window.__cfDebug && window.__cfDebug.ready, null, { timeout: timeouts.ready }),
+      timeouts.ready,
+    );
+    await sleep(wait);
 
-    let interaction = { consentInteraction: "not_requested", consentButton: null };
+    let interaction = { consentInteraction: "not_requested", consentButton: null, navigatedAfterConsent: null };
     if (consent !== "none") {
-      interaction = await clickBanner(page, consent);
-      if (interaction.consentInteraction === "clicked") await page.waitForTimeout(wait);
+      let navigated = false;
+      const onNavigate = (frame) => {
+        if (frame === page.mainFrame()) navigated = true;
+      };
+      interaction = await clickBanner(page, consent, timeouts.banner, () => page.on("framenavigated", onNavigate));
+      if (interaction.consentInteraction === "clicked") {
+        await sleep(wait);
+        page.off("framenavigated", onNavigate);
+        interaction.navigatedAfterConsent = navigated;
+      }
     }
 
-    const state = await readState(page);
-    return { state, finalUrl: page.url(), ...interaction };
+    const state = await readState(page, timeouts.state);
+    const status = !state ? "no_response" : state.ready ? "complete" : "not_ready";
+    return { state, capture: status, finalUrl: page.url(), ...interaction };
   } finally {
-    await browser.close();
+    await deadline(browser.close(), 5000);
   }
 }
 
-async function clickBanner(page, consent) {
+async function clickBanner(page, consent, timeout, beforeClick) {
+  const notClicked = (kind, button = null) => ({ consentInteraction: kind, consentButton: button, navigatedAfterConsent: null });
   const candidates = CMP_BUTTONS.flatMap((c) => c[consent].map((selector) => ({ cmp: c.cmp, selector })));
   const any = candidates.map((c) => c.selector).join(", ");
-  try {
-    await page.waitForSelector(any, { state: "visible", timeout: BANNER_TIMEOUT_MS });
-  } catch {
-    return { consentInteraction: "not_found", consentButton: null };
-  }
+  const shown = await deadline(
+    page.locator(any).filter({ visible: true }).first().waitFor({ state: "attached", timeout }).then(() => true),
+    timeout,
+    false,
+  );
+  if (!shown) return notClicked("not_found");
   for (const c of candidates) {
-    const button = page.locator(c.selector).first();
-    if (await button.isVisible().catch(() => false)) {
-      await button.click({ timeout: BANNER_TIMEOUT_MS });
-      return { consentInteraction: "clicked", consentButton: { cmp: c.cmp, selector: c.selector } };
-    }
+    // A hidden duplicate (a second, unused banner) must not hide a visible button.
+    const button = page.locator(c.selector).filter({ visible: true }).first();
+    if (!(await deadline(button.count(), timeout, 0))) continue;
+    const found = { cmp: c.cmp, selector: c.selector };
+    beforeClick();
+    // Covered by another element, detached or never enabled: report it, don't guess.
+    const clicked = await deadline(button.click({ timeout }).then(() => true), timeout, false);
+    if (!clicked) return notClicked("click_failed", found);
+    return { consentInteraction: "clicked", consentButton: found, navigatedAfterConsent: null };
   }
-  return { consentInteraction: "not_found", consentButton: null };
+  return notClicked("not_found");
 }
 
-// The content.js protocol: post get-state, take the matching full-state reply.
-function readState(page) {
-  return page.evaluate(
-    () =>
-      new Promise((resolve) => {
-        const requestId = "cli_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
-        function onMessage(event) {
-          const d = event.data;
-          if (!d || d.source !== "cf-debug-injected" || d.type !== "full-state" || d.requestId !== requestId) return;
-          window.removeEventListener("message", onMessage);
-          resolve(d.payload);
-        }
-        window.addEventListener("message", onMessage);
-        window.postMessage({ source: "cf-debug-content", type: "get-state", requestId }, "*");
-        setTimeout(() => resolve(null), 3000);
-      }),
+// The content.js protocol: post get-state, take the matching full-state reply. Raced against a
+// Node-side timer, so a page whose main thread is blocked can't hang the run.
+function readState(page, timeout) {
+  return deadline(
+    page.evaluate(
+      (ms) =>
+        new Promise((resolve) => {
+          const requestId = "cli_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+          function onMessage(event) {
+            const d = event.data;
+            if (!d || d.source !== "cf-debug-injected" || d.type !== "full-state" || d.requestId !== requestId) return;
+            window.removeEventListener("message", onMessage);
+            resolve(d.payload);
+          }
+          window.addEventListener("message", onMessage);
+          window.postMessage({ source: "cf-debug-content", type: "get-state", requestId }, "*");
+          setTimeout(() => resolve(null), ms);
+        }),
+      timeout,
+    ),
+    timeout,
+    null,
   );
 }
 
@@ -224,42 +269,53 @@ function requestSummary(hit) {
   };
 }
 
-/** Build the JSON report from captured state with the popup's own findings code. */
+/**
+ * Build the JSON report from captured state with the popup's own findings code. When the
+ * capture didn't finish (no reply, or injected.js never completed its first pass) there is
+ * no verdict: `verdict` is null and `findings` empty, and `capture` says why.
+ */
 export function buildReport(state, meta) {
   const F = findingsEngine();
-  const ready = !!(state && state.ready);
-  const findings = ready ? plain(F.buildFindings(state)) : [];
-  const verdict = ready
-    ? plain(F.computeVerdict(state, F.buildFindings(state)))
-    : { status: "incomplete", label: "– INCOMPLETE", title: "The page never finished loading.", detail: "ConsentFlow's capture did not complete its first pass.", counts: { broken: 0, review: 0, notChecked: 0, verified: 0, total: 0 } };
+  const complete = !!(state && state.ready);
+  const findings = complete ? F.buildFindings(state) : null;
+  const verdict = complete ? plain(F.computeVerdict(state, findings)) : null;
   return {
     schemaVersion: SCHEMA_VERSION,
     tool: "consentflow",
     url: meta.url,
+    finalUrl: meta.finalUrl ?? meta.url,
+    capture: complete ? "complete" : state ? "not_ready" : "no_response",
     consentMode: meta.consentMode,
     consentInteraction: meta.consentInteraction,
-    consentButton: meta.consentButton,
-    verdict: {
+    consentButton: meta.consentButton ?? null,
+    navigatedAfterConsent: meta.navigatedAfterConsent ?? null,
+    verdict: verdict && {
       status: verdict.status,
       label: verdict.label,
       title: verdict.title,
       detail: verdict.detail,
       counts: verdict.counts,
     },
-    findings: findings.map((f) => Object.fromEntries(FINDING_FIELDS.map((k) => [k, f[k] ?? null]))),
+    findings: complete ? plain(findings).map((f) => Object.fromEntries(FINDING_FIELDS.map((k) => [k, f[k] ?? null]))) : [],
     requests: ((state && state.networkHits) || []).map(requestSummary),
   };
 }
 
+// The requested scenario not being run (capture unfinished, banner not clicked) wins over
+// the verdict: a BROKEN from a run that didn't do what was asked still exits 3.
 export function exitCodeFor(report) {
+  if (report.capture !== "complete" || !report.verdict) return EXIT.incomplete;
+  if (["not_found", "click_failed"].includes(report.consentInteraction)) return EXIT.incomplete;
   if (report.verdict.status === "broken") return EXIT.broken;
-  if (report.consentInteraction === "not_found") return EXIT.incomplete;
   if (report.verdict.status === "incomplete") return EXIT.incomplete;
   return EXIT.ok;
 }
 
 export function formatText(report) {
-  const lines = [`${report.verdict.label}  ${report.verdict.title}`, report.verdict.detail, `${report.url} · consent: ${report.consentMode}` +
+  const head = report.verdict
+    ? [`${report.verdict.label}  ${report.verdict.title}`, report.verdict.detail]
+    : [`No verdict: capture ${report.capture}.`, "ConsentFlow's capture did not finish its first pass on this page."];
+  const lines = [...head, `${report.finalUrl} · consent: ${report.consentMode}` +
     (report.consentMode === "none" ? "" : ` (${report.consentInteraction}${report.consentButton ? `: ${report.consentButton.cmp}` : ""})`), ""];
   for (const f of report.findings) {
     lines.push(`[${f.status}] ${f.title}`);
@@ -278,13 +334,15 @@ export async function check(url, options = {}) {
   const result = await capture(url, options);
   return buildReport(result.state, {
     url,
+    finalUrl: result.finalUrl,
     consentMode: consent,
     consentInteraction: result.consentInteraction,
     consentButton: result.consentButton,
+    navigatedAfterConsent: result.navigatedAfterConsent,
   });
 }
 
-export async function main(argv, { stdout = process.stdout, stderr = process.stderr, route } = {}) {
+export async function main(argv, { stdout = process.stdout, stderr = process.stderr, route, timeouts } = {}) {
   let opts;
   try {
     opts = parseArgs(argv);
@@ -295,9 +353,10 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
   }
   let report;
   try {
-    report = await check(opts.url, { consent: opts.consent, wait: opts.wait, route });
+    report = await check(opts.url, { consent: opts.consent, wait: opts.wait, route, timeouts });
   } catch (e) {
-    stderr.write(`consentflow: ${e.message}\n`);
+    // First line only: Playwright appends its call log to error messages.
+    stderr.write(`consentflow: ${String((e && e.message) || e).split("\n")[0]}\n`);
     return EXIT.usage;
   }
   stdout.write((opts.format === "text" ? formatText(report) : JSON.stringify(report, null, 2)) + "\n");

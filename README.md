@@ -105,7 +105,8 @@ node scripts/consentflow-check.mjs "http://localhost:8000/popup-states.html?s=br
   | jq '{schemaVersion, tool, consentMode, verdict: .verdict.label, title: .verdict.title, first: .findings[0], requests: (.requests | length)}'
 ```
 
-Output from that run (exit code 1):
+Output from that run (exit code 1). The `+ms` timings are measured on each load, so they
+vary from run to run:
 
 ```json
 {
@@ -135,8 +136,11 @@ Output from that run (exit code 1):
 }
 ```
 
-The full report is `{ schemaVersion, tool, url, consentMode, consentInteraction,
-consentButton, verdict, findings, requests }`. Each finding has `id`, `status`, `title`,
+The full report is `{ schemaVersion, tool, url, finalUrl, capture, consentMode,
+consentInteraction, consentButton, navigatedAfterConsent, verdict, findings, requests }`.
+`capture` is `complete` when ConsentFlow finished its first pass on the page; if it didn't
+(`not_ready`, or `no_response` when the page stopped answering), `verdict` is `null` and
+`findings` is empty, because there is nothing to judge. Each finding has `id`, `status`, `title`,
 `observed`, `consequence`, `fix`, `verify` and `evidence`; each request has when it was sent,
 its vendor, host, path, the tag it is attributed to, `gcs` / `gcd`, and the consent on the
 page at that moment. `--format text` prints the same verdict as lines instead.
@@ -144,15 +148,19 @@ page at that moment. `--format text` prints the same verdict as lines instead.
 | Option | |
 |---|---|
 | `--consent none` (default) | Load the page and touch nothing. This is the mode that catches tags firing before consent. |
-| `--consent accept` / `deny` | Click the accept-all or reject-all button of OneTrust, Cookiebot, Google Funding Choices or Usercentrics, by their documented selectors. With none of those on the page it reports `"consentInteraction": "not_found"` and clicks nothing. |
+| `--consent accept` / `deny` | Click the accept-all or reject-all button of OneTrust, Cookiebot, Google Funding Choices or Usercentrics, using known button selectors. Each is tested only on a stand-in banner (`tests/fixtures/cmp-banner.html`), not on the vendor's real one. With none of those buttons on the page it reports `"consentInteraction": "not_found"` and clicks nothing; a button it can't click (covered by another element, say) is `"click_failed"`. If the page navigates or reloads after the click, `navigatedAfterConsent` is `true` and the capture covers the new page load. |
 | `--wait <ms>` | How long to keep capturing after the page loads, and again after a click. Default 3000. |
 
-Exit codes: `0` VERIFIED or REVIEW, `1` BROKEN, `3` INCOMPLETE or the requested banner button
-wasn't found, `2` bad arguments or a page that couldn't be loaded.
+Exit codes: `0` VERIFIED or REVIEW; `1` BROKEN; `3` INCOMPLETE, a capture that didn't
+finish, or a requested banner click that didn't happen (`not_found` or `click_failed`, even
+when the page is also BROKEN, since the scenario you asked for wasn't run); `2` bad arguments,
+a page that couldn't be loaded or answered HTTP 400 or above, or the runner itself failing
+(for example, Chromium not installed).
 
 What it doesn't do: it checks one page load from wherever you run it, so visitor regions are
-not simulated (a CMP that shows its banner only in the EU may not show it to a run from elsewhere); only the
-four CMPs above can be clicked; capture starts slightly earlier than in the extension, whose
+not simulated (a CMP that shows its banner only in the EU may not show it to a run from
+elsewhere); only the four CMPs above can be clicked, and their selectors have not been checked
+against the real banners; capture starts slightly earlier than in the extension, whose
 script loads asynchronously; and the [known limits](#known-limits) below apply as they do in
 the extension. The runner sends nothing anywhere itself: the browser loads the page you
 name, and that page makes its own requests as it would for any visitor.

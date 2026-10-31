@@ -24,6 +24,9 @@ before(async () => {
   server = createServer((req, res) => {
     const path = new URL(req.url, "http://x").pathname.replace(/^\/+/, "");
     const file = FIXTURES + path;
+    // popup-states.html?s=slow writes <script src="/slow.js">: never answered, so
+    // DOMContentLoaded never fires and injected.js never finishes its first pass.
+    if (path === "slow.js") return;
     if (!/^[\w-]+\.html$/.test(path) || !existsSync(file)) {
       res.writeHead(404).end();
       return;
@@ -34,7 +37,10 @@ before(async () => {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   origin = `http://127.0.0.1:${server.address().port}`;
 });
-after(() => server.close());
+after(() => {
+  server.closeAllConnections();
+  server.close();
+});
 
 // Third-party hosts are stubbed: only the local fixture server is really reached.
 const offline = async (context) => {
@@ -113,9 +119,12 @@ describe("JSON schema", () => {
       "schemaVersion",
       "tool",
       "url",
+      "finalUrl",
+      "capture",
       "consentMode",
       "consentInteraction",
       "consentButton",
+      "navigatedAfterConsent",
       "verdict",
       "findings",
       "requests",
@@ -126,6 +135,9 @@ describe("JSON schema", () => {
     assert.equal(report.consentMode, "none");
     assert.equal(report.consentInteraction, "not_requested");
     assert.equal(report.consentButton, null);
+    assert.equal(report.finalUrl, report.url);
+    assert.equal(report.capture, "complete");
+    assert.equal(report.navigatedAfterConsent, null);
 
     assert.deepEqual(Object.keys(report.verdict), ["status", "label", "title", "detail", "counts"]);
     assert.ok(["broken", "review", "incomplete", "verified"].includes(report.verdict.status));
@@ -216,10 +228,95 @@ describe("--consent", () => {
   });
 
   test("with no known CMP button on the page it reports not_found and exits 3, without guessing", async () => {
-    const report = await run("popup-states.html?s=verified", { consent: "accept" });
+    const report = await run("popup-states.html?s=verified", { consent: "accept", timeouts: { banner: 1000 } });
     assert.equal(report.consentInteraction, "not_found");
     assert.equal(report.consentButton, null);
+    assert.equal(report.navigatedAfterConsent, null);
     assert.equal(exitCodeFor(report), 3);
+  });
+
+  test("not_found exits 3 even when the page is BROKEN: the requested scenario didn't run", async () => {
+    const report = await run("popup-states.html?s=broken", { consent: "deny", timeouts: { banner: 1000 } });
+    assert.equal(report.consentInteraction, "not_found");
+    assert.equal(report.verdict.status, "broken");
+    assert.equal(exitCodeFor(report), 3);
+  });
+
+  for (const [cmp, name, accept, deny] of [
+    ["cookiebot", "Cookiebot", "#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll", "#CybotCookiebotDialogBodyButtonDecline"],
+    ["fundingchoices", "Google Funding Choices", "button.fc-cta-consent", "button.fc-cta-do-not-consent"],
+    ["usercentrics", "Usercentrics", '[data-testid="uc-accept-all-button"]', '[data-testid="uc-deny-all-button"]'],
+  ]) {
+    test(`clicks the ${name} stand-in's accept and deny buttons`, async () => {
+      const accepted = await run(`cmp-banner.html?cmp=${cmp}`, { consent: "accept" });
+      assert.deepEqual(accepted.consentButton, { cmp: name, selector: accept });
+      assert.equal(accepted.requests.length, 1);
+      assert.equal(accepted.requests[0].consentAtRequest.analytics_storage, "granted");
+      const denied = await run(`cmp-banner.html?cmp=${cmp}`, { consent: "deny" });
+      assert.deepEqual(denied.consentButton, { cmp: name, selector: deny });
+      assert.equal(denied.findings.find((f) => f.id === "consent-update-received").status, "verified");
+    });
+  }
+
+  test("a hidden duplicate of the button doesn't hide the visible one", async () => {
+    const report = await run("cmp-banner.html?dup=1", { consent: "accept" });
+    assert.equal(report.consentInteraction, "clicked");
+    assert.equal(report.requests.length, 1);
+  });
+
+  test("a covered button is reported as click_failed (exit 3), not a runner error", async () => {
+    const report = await run("cmp-banner.html?cover=1", { consent: "accept", timeouts: { banner: 1000 } });
+    assert.equal(report.consentInteraction, "click_failed");
+    assert.deepEqual(report.consentButton, { cmp: "OneTrust", selector: "#onetrust-accept-btn-handler" });
+    assert.equal(report.navigatedAfterConsent, null);
+    assert.equal(exitCodeFor(report), 3);
+  });
+
+  test("a page that reloads after the click is flagged, with its final URL", async () => {
+    const report = await run("cmp-banner.html?reload=1", { consent: "accept" });
+    assert.equal(report.consentInteraction, "clicked");
+    assert.equal(report.navigatedAfterConsent, true);
+    assert.equal(report.finalUrl, `${origin}/cmp-banner.html?reload=1`);
+    const stayed = await run("cmp-banner.html", { consent: "accept" });
+    assert.equal(stayed.navigatedAfterConsent, false);
+  });
+});
+
+describe("capture that never finishes", () => {
+  test("a page that never reaches DOMContentLoaded gives no verdict: capture not_ready, exit 3", async () => {
+    const report = await run("popup-states.html?s=slow", { wait: 0, timeouts: { nav: 1500, ready: 1000 } });
+    assert.equal(report.capture, "not_ready");
+    assert.equal(report.verdict, null);
+    assert.deepEqual(report.findings, []);
+    assert.equal(exitCodeFor(report), 3);
+  });
+
+  test("a page whose main thread is blocked can't hang the run: capture no_response, exit 3", async () => {
+    const url = `${origin}/busy.html`;
+    const busy = async (context) => {
+      await offline(context);
+      await context.route(url, (route) =>
+        route.fulfill({ contentType: "text/html", body: "<script>setTimeout(function () { for (;;) {} }, 50);</script>" }),
+      );
+    };
+    const started = Date.now();
+    const report = await check(url, { wait: 0, route: busy, timeouts: { nav: 1500, ready: 1000, state: 1000 } });
+    assert.ok(Date.now() - started < 30000);
+    assert.equal(report.capture, "no_response");
+    assert.equal(report.verdict, null);
+    assert.equal(exitCodeFor(report), 3);
+  });
+
+  test("text output says there is no verdict", async () => {
+    const stdout = { text: "", write: (t) => (stdout.text += t) };
+    const code = await main([`${origin}/popup-states.html?s=slow`, "--format", "text", "--wait", "0"], {
+      stdout,
+      stderr: { write() {} },
+      route: offline,
+      timeouts: { nav: 1500, ready: 1000 },
+    });
+    assert.equal(code, 3);
+    assert.match(stdout.text, /^No verdict: capture not_ready\./);
   });
 });
 
