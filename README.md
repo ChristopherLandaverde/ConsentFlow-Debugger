@@ -5,22 +5,29 @@
 <h1 align="center">ConsentFlow Debugger</h1>
 
 <p align="center">
-  <strong>Find the tags that fire before consent on any live page, and get the fix.</strong>
+  <strong>Tags fire before consent on live pages. Find them and get the fix from the extension, the CLI or your AI agent.</strong>
 </p>
 
 <p align="center">
-  8 Consent Mode rules · 10 tags judged request by request · 10 consent platforms (CMPs) recognised · nothing leaves your browser
+  8 Consent Mode rules · 10 tags judged request by request · MCP server for Claude, Cursor and any MCP client · the extension sends nothing anywhere
 </p>
 
 <p align="center">
   <a href="https://github.com/ChristopherLandaverde/ConsentFlow-Debugger/actions/workflows/ci.yml"><img src="https://github.com/ChristopherLandaverde/ConsentFlow-Debugger/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="#agentic"><img src="https://img.shields.io/badge/agentic-L1%C2%B7L2%C2%B7L3-036461" alt="agentic: L1 · L2 · L3"></a>
   <a href="manifest.json"><img src="https://img.shields.io/github/manifest-json/v/ChristopherLandaverde/ConsentFlow-Debugger?color=036461&label=version" alt="Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/ChristopherLandaverde/ConsentFlow-Debugger?color=036461" alt="License: MIT"></a>
 </p>
 
 <p align="center">
-  <a href="#quick-start">Quick start</a> · <a href="#what-you-get">What you get</a> · <a href="#known-limits">Known limits</a> · <a href="#privacy-and-permissions">Privacy</a> · <a href="https://consentflow-psi.vercel.app">Landing page</a>
+  <a href="#quick-start">Quick start</a> · <a href="#agentic">For agents</a> · <a href="#what-you-get">What you get</a> · <a href="#known-limits">Known limits</a> · <a href="#privacy-and-permissions">Privacy</a> · <a href="https://consentflow-psi.vercel.app">Landing page</a>
 </p>
+
+ConsentFlow Debugger is a free, open-source Chrome extension for analytics engineers, QA
+testers and consultants. It checks Google Consent Mode on the live page in one click and gives
+the fix for each problem. Your AI agent can run the same checks through a local MCP server:
+check a URL, explain a finding, list the rules. Every tool is read-only; fixing the tags or
+the CMP stays with you.
 
 A Consent Mode setup can look right in GTM preview and still be wrong on the live page: the
 consent default lands a few hundred milliseconds after `config`, a pixel fires before the
@@ -30,15 +37,42 @@ order, consent defaults won't work"
 ([source](https://developers.google.com/tag-platform/security/guides/consent)). The cost is
 requests sent for visitors who said no, and consent signals that Google's
 [conversion modelling](https://support.google.com/google-ads/answer/10000067) relies on
-being wrong.
-
-ConsentFlow Debugger is a free, open-source Chrome extension that shows you this on the page
-itself, in one click, with the fix for each problem.
+being wrong. ConsentFlow shows you this on the page itself, with the timings and requests as
+evidence.
 
 <p align="center">
   <img src="docs/media/fix-demo.gif" width="880" alt="Four captioned frames from real Chromium with the unpacked extension loaded. 1: the bundled broken sample page, whose source runs gtag config at 60 ms and the consent default at 390 ms; the ConsentFlow popup, opened from the toolbar, shows BROKEN, 2 consent problems, and the finding Google tag configured before the consent default: config at +57 ms, consent default at +388 ms, a 332 ms gap, with the fix and how to verify it. 2: the fix, before and after source side by side: the consent default moved above config. 3: the correctly wired sample page; the popup shows VERIFIED, consent is wired correctly, all 9 checks passed. 4: the side panel opened with Open full trace, Timeline tab: consent default at +58 ms, Google tag config at +118 ms.">
   <br><sub>A Consent Mode bug caught, fixed and confirmed, on the two sample pages bundled in <code>tests/fixtures/</code>. The fixed sample also differs in more than the fix (a OneTrust stub, a consent update, no Meta Pixel), so frame 3 is the same checks on a correctly wired page.</sub>
 </p>
+
+## Agentic
+
+<p align="center">
+  <img src="docs/media/agentic-stack.svg" width="880" alt="ConsentFlow Debugger's agentic stack, four layers. 1, engine (the base layer): injected.js detection and the popup/findings.js verdict model, 8 Consent Mode rules, 10 vendor tags plus GTM. 2, tools, read-only (L1 machine-readable, L3 live read, fixture-verified): the CLI node scripts/consentflow-check.mjs with --consent none, accept or deny, and the MCP tools check_url, explain_finding and list_checks. 3, your agent (L2 agent-callable): Claude, Cursor or any MCP client, which picks the tool and explains the result but never computes a verdict. 4, you approve: nothing writes; findings are evidence for you to act on (L4 not built).">
+</p>
+
+The extension's engine also runs headless, so an agent can check a page the way you would with
+the popup. The agent picks the tool and explains the result; the verdict and every number come
+from `popup/findings.js`.
+
+| Ask your agent… | Tool | Reads | Writes |
+|---|---|---|---|
+| "Check `http://localhost:8000/popup-states.html?s=broken` and explain the first problem." | `check_url` | The page, loaded in its own headless Chromium: consent commands and requests to known ad and analytics vendors | Nothing |
+| "Click Reject all on the banner at staging.example.com. Does anything still fire?" | `check_url` with `consent: "deny"` | The same, after clicking the reject-all button of OneTrust, Cookiebot, Google Funding Choices or Usercentrics | Nothing on your site; the click happens in that throwaway browser |
+| "Why does `consent-default-before-config` matter, and where is it judged?" | `explain_finding` | The finding's copy and the `popup/findings.js` lines that build it | Nothing |
+| "Which tags can send cookieless pings without counting as a violation?" | `list_checks` | The 8 rules and 11 tags in `injected.js` (only GA4, Google Ads and Floodlight can get `review`) | Nothing |
+
+Agentic levels: L1 machine-readable · L2 agent-callable · L3 live read · L4 proposes changes
+for you to approve. ConsentFlow: L1 (JSON report with `schemaVersion` and exit codes) · L2 (MCP
+server) · L3 (fixture-verified: tested on the bundled sample pages and stand-in CMP banners, not
+yet on a public site or a vendor's real banner). It has no L4: nothing writes.
+
+Planned: an L3 scenario matrix (several pages and consent states in one run) and a recorded run
+on a real public site, which drops the fixture-verified label.
+
+Details: [Use it from an agent / CLI](#use-it-from-an-agent--cli) (the JSON report, options and
+exit codes) · [MCP server](#mcp-server-ask-your-agent) (setup for Claude Code, Claude Desktop
+and Cursor, errors, and what goes where).
 
 ## Who it's for
 

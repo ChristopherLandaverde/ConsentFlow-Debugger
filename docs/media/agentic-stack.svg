@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="540" viewBox="0 0 880 540" role="img" aria-labelledby="t d">
+  <title id="t">ConsentFlow Debugger agentic stack</title>
+  <desc id="d">Four stacked layers. Layer 1, engine (the base layer): injected.js detection and the popup/findings.js verdict model, 8 Consent Mode rules and 11 tags (10 vendor tags plus GTM). Layer 2, tools (L1 machine-readable, L3 live read, fixture-verified): the consentflow-check.mjs CLI and the MCP tools check_url, explain_finding and list_checks, all read-only. Layer 3, your agent (L2 agent-callable): Claude, Cursor or any MCP client. Layer 4, you approve: nothing writes; findings are evidence for you to act on (L4 not built).</desc>
+  <style>
+    .sans { font-family: 'DM Sans', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; }
+    .mono { font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  </style>
+
+  <!-- Paper tile: solid so it reads on GitHub light and dark -->
+  <rect x="0" y="0" width="880" height="540" rx="18" fill="#F3F0E6"/>
+  <rect x="0.5" y="0.5" width="879" height="539" rx="17.5" fill="none" stroke="#10231F" stroke-opacity="0.22"/>
+
+  <!-- Header -->
+  <text x="32" y="44" class="mono" font-size="13" font-weight="600" letter-spacing="1.2" fill="#426B5D">CONSENTFLOW DEBUGGER · AGENTIC STACK</text>
+  <text x="848" y="44" class="mono" font-size="13" text-anchor="end" fill="#426B5D">read top-down: who asks → what runs</text>
+
+  <!-- Spine connecting the layers -->
+  <line x1="44" y1="82" x2="44" y2="500" stroke="#036461" stroke-width="2" stroke-dasharray="3 5"/>
+
+  <!-- Layer 4: You approve -->
+  <g>
+    <rect x="24" y="66" width="832" height="98" rx="10" fill="#F3F0E6" stroke="#10231F" stroke-opacity="0.45" stroke-dasharray="6 4"/>
+    <circle cx="44" cy="92" r="6" fill="#F3F0E6" stroke="#036461" stroke-width="2"/>
+    <text x="64" y="97" class="mono" font-size="12" font-weight="600" letter-spacing="1" fill="#426B5D">4 · YOU APPROVE</text>
+    <text x="64" y="126" class="sans" font-size="19" font-weight="700" fill="#10231F">Nothing writes</text>
+    <text x="64" y="150" class="sans" font-size="15" fill="#10231F">Findings are evidence for you to act on: fix the tags or CMP, then re-run.</text>
+    <rect x="640" y="104" width="196" height="30" rx="6" fill="none" stroke="#426B5D" stroke-width="1.5" stroke-dasharray="4 3"/>
+    <text x="738" y="124" class="mono" font-size="12.5" text-anchor="middle" fill="#426B5D">L4 not built</text>
+  </g>
+
+  <!-- Layer 3: Your agent -->
+  <g>
+    <rect x="24" y="176" width="832" height="98" rx="10" fill="#EBE8DE"/>
+    <circle cx="44" cy="202" r="6" fill="#036461"/>
+    <text x="64" y="207" class="mono" font-size="12" font-weight="600" letter-spacing="1" fill="#426B5D">3 · YOUR AGENT</text>
+    <text x="64" y="236" class="sans" font-size="19" font-weight="700" fill="#10231F">Claude, Cursor, any MCP client</text>
+    <text x="64" y="260" class="sans" font-size="15" fill="#10231F">Picks the tool and explains the result. It never computes a verdict.</text>
+    <rect x="640" y="214" width="196" height="30" rx="6" fill="#036461"/>
+    <text x="738" y="234" class="mono" font-size="12.5" font-weight="600" text-anchor="middle" fill="#F3F0E6">L2 agent-callable</text>
+  </g>
+
+  <!-- Layer 2: Tools -->
+  <g>
+    <rect x="24" y="286" width="832" height="104" rx="10" fill="#EBE8DE"/>
+    <circle cx="44" cy="312" r="6" fill="#036461"/>
+    <text x="64" y="317" class="mono" font-size="12" font-weight="600" letter-spacing="1" fill="#426B5D">2 · TOOLS (READ-ONLY)</text>
+    <text x="64" y="345" class="mono" font-size="12" fill="#10231F"><tspan fill="#426B5D">CLI:</tspan> node scripts/consentflow-check.mjs &lt;url&gt; --consent none|accept|deny</text>
+    <text x="64" y="372" class="mono" font-size="12.5" fill="#10231F"><tspan fill="#426B5D">MCP:</tspan> <tspan font-weight="600" fill="#036461">check_url</tspan> · <tspan font-weight="600" fill="#036461">explain_finding</tspan> · <tspan font-weight="600" fill="#036461">list_checks</tspan></text>
+    <rect x="640" y="302" width="196" height="30" rx="6" fill="#036461"/>
+    <text x="738" y="322" class="mono" font-size="12.5" font-weight="600" text-anchor="middle" fill="#F3F0E6">L1 machine-readable</text>
+    <rect x="640" y="342" width="196" height="38" rx="6" fill="#036461"/>
+    <text x="738" y="358" class="mono" font-size="12.5" font-weight="600" text-anchor="middle" fill="#F3F0E6">L3 live read</text>
+    <text x="738" y="373" class="mono" font-size="11" text-anchor="middle" fill="#F3F0E6">fixture-verified</text>
+  </g>
+
+  <!-- Layer 1: Engine -->
+  <g>
+    <rect x="24" y="402" width="832" height="110" rx="10" fill="#10231F"/>
+    <circle cx="44" cy="428" r="6" fill="#F3F0E6"/>
+    <text x="64" y="433" class="mono" font-size="12" font-weight="600" letter-spacing="1" fill="#C1C3BA">1 · ENGINE (OWNS EVERY VERDICT)</text>
+    <text x="64" y="463" class="mono" font-size="14" font-weight="600" fill="#F3F0E6">injected.js + popup/findings.js</text>
+    <text x="64" y="490" class="sans" font-size="15" fill="#F3F0E6">Detection and verdict model · 8 Consent Mode rules · 10 vendor tags + GTM</text>
+    <rect x="640" y="440" width="196" height="30" rx="6" fill="#F3F0E6"/>
+    <text x="738" y="460" class="mono" font-size="12.5" font-weight="600" text-anchor="middle" fill="#10231F">base layer</text>
+  </g>
+</svg>
