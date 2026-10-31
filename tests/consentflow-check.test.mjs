@@ -8,7 +8,7 @@ import { createReadStream, existsSync } from "node:fs";
 import { createServer } from "node:http";
 import { after, before, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildReport, capture, check, exitCodeFor, main } from "../scripts/consentflow-check.mjs";
+import { buildReport, capture, check, exitCodeFor, formatText, main } from "../scripts/consentflow-check.mjs";
 import { loadFindings } from "./helpers/findings.mjs";
 import { loadPopup } from "./helpers/popup-dom.mjs";
 import { states } from "./helpers/states.mjs";
@@ -280,6 +280,22 @@ describe("--consent", () => {
     const stayed = await run("cmp-banner.html", { consent: "accept" });
     assert.equal(stayed.navigatedAfterConsent, false);
   });
+
+  test("a same-document URL change after the click (pushState, hash) is not a new page load", async () => {
+    const report = await run("cmp-banner.html?spa=1", { consent: "accept" });
+    assert.equal(report.consentInteraction, "clicked");
+    assert.equal(report.finalUrl, `${origin}/cmp-banner.html?spa=1&step=2#accepted`);
+    assert.equal(report.navigatedAfterConsent, false);
+    // Same document, so the capture still holds the update and the hit after it.
+    assert.equal(report.requests.length, 1);
+    assert.equal(report.findings.find((f) => f.id === "consent-update-received").status, "verified");
+  });
+
+  test("clicks Cookiebot's older accept button too", async () => {
+    const report = await run("cmp-banner.html?cmp=cookiebot&alt=1", { consent: "accept" });
+    assert.deepEqual(report.consentButton, { cmp: "Cookiebot", selector: "#CybotCookiebotDialogBodyButtonAccept" });
+    assert.equal(report.requests.length, 1);
+  });
 });
 
 describe("capture that never finishes", () => {
@@ -303,6 +319,7 @@ describe("capture that never finishes", () => {
     const report = await check(url, { wait: 0, route: busy, timeouts: { nav: 1500, ready: 1000, state: 1000 } });
     assert.ok(Date.now() - started < 30000);
     assert.equal(report.capture, "no_response");
+    assert.match(formatText(report), /^No verdict: capture no_response\.\nThe page stopped answering/);
     assert.equal(report.verdict, null);
     assert.equal(exitCodeFor(report), 3);
   });
@@ -317,6 +334,7 @@ describe("capture that never finishes", () => {
     });
     assert.equal(code, 3);
     assert.match(stdout.text, /^No verdict: capture not_ready\./);
+    assert.match(stdout.text, /did not finish its first pass/);
   });
 });
 

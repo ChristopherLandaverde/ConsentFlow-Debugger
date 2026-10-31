@@ -164,6 +164,7 @@ export async function capture(url, options = {}) {
     await context.addInitScript({ content: `if (window === window.top) {\n${read("injected.js")}\n}` });
     const page = await context.newPage();
 
+    const navStarted = Date.now();
     let response;
     try {
       response = await page.goto(url, { waitUntil: "commit", timeout: timeouts.nav });
@@ -173,7 +174,9 @@ export async function capture(url, options = {}) {
     if (response && response.status() >= 400) {
       throw new NavigationError(`${url} answered HTTP ${response.status()}.`);
     }
-    await deadline(page.waitForLoadState("load", { timeout: timeouts.nav }), timeouts.nav);
+    // goto and the load event share one navigation budget.
+    const loadBudget = Math.max(0, timeouts.nav - (Date.now() - navStarted));
+    await deadline(page.waitForLoadState("load", { timeout: loadBudget || 1 }), loadBudget);
     await deadline(
       page.waitForFunction(() => window.__cfDebug && window.__cfDebug.ready, null, { timeout: timeouts.ready }),
       timeouts.ready,
@@ -182,16 +185,24 @@ export async function capture(url, options = {}) {
 
     let interaction = { consentInteraction: "not_requested", consentButton: null, navigatedAfterConsent: null };
     if (consent !== "none") {
+      // A new document only: the main frame's DOMContentLoaded fires for a navigation or
+      // reload, not for history.pushState or a hash change (framenavigated covers those too).
       let navigated = false;
-      const onNavigate = (frame) => {
-        if (frame === page.mainFrame()) navigated = true;
+      const onNewDocument = () => {
+        navigated = true;
       };
-      interaction = await clickBanner(page, consent, timeouts.banner, () => page.on("framenavigated", onNavigate));
+      const notClicked = { consentInteraction: "click_failed", consentButton: null, navigatedAfterConsent: null };
+      // The whole step is bounded, even if the page stops answering partway through.
+      interaction = await deadline(
+        clickBanner(page, consent, timeouts.banner, () => page.on("domcontentloaded", onNewDocument)),
+        2 * timeouts.banner,
+        notClicked,
+      );
       if (interaction.consentInteraction === "clicked") {
         await sleep(wait);
-        page.off("framenavigated", onNavigate);
         interaction.navigatedAfterConsent = navigated;
       }
+      page.off("domcontentloaded", onNewDocument);
     }
 
     const state = await readState(page, timeouts.state);
@@ -314,7 +325,12 @@ export function exitCodeFor(report) {
 export function formatText(report) {
   const head = report.verdict
     ? [`${report.verdict.label}  ${report.verdict.title}`, report.verdict.detail]
-    : [`No verdict: capture ${report.capture}.`, "ConsentFlow's capture did not finish its first pass on this page."];
+    : [
+        `No verdict: capture ${report.capture}.`,
+        report.capture === "no_response"
+          ? "The page stopped answering (its main thread may be blocked), so ConsentFlow's state couldn't be read."
+          : "ConsentFlow's capture did not finish its first pass, which runs 500 ms after DOMContentLoaded.",
+      ];
   const lines = [...head, `${report.finalUrl} · consent: ${report.consentMode}` +
     (report.consentMode === "none" ? "" : ` (${report.consentInteraction}${report.consentButton ? `: ${report.consentButton.cmp}` : ""})`), ""];
   for (const f of report.findings) {
@@ -364,5 +380,7 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exitCode = await main(process.argv.slice(2));
+  const code = await main(process.argv.slice(2));
+  // Exit once the output is flushed, so a browser that didn't close can't keep the CLI alive.
+  process.stdout.write("", () => process.exit(code));
 }

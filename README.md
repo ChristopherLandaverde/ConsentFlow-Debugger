@@ -157,6 +157,12 @@ when the page is also BROKEN, since the scenario you asked for wasn't run); `2` 
 a page that couldn't be loaded or answered HTTP 400 or above, or the runner itself failing
 (for example, Chromium not installed).
 
+Run time: a normal page takes a few seconds plus `--wait` (twice `--wait` after a click).
+Every step has a time limit, so with the defaults a run that hits all of them ends within about
+56 s for `--consent none` and 70 s for `accept` / `deny`, plus browser start-up: 31 s to load
+the page, 11 s for ConsentFlow's first pass, the 3 s wait, 6 s to read the state and 5 s to close
+the browser, and for a click up to 11 s more for the banner and another 3 s wait.
+
 What it doesn't do: it checks one page load from wherever you run it, so visitor regions are
 not simulated (a CMP that shows its banner only in the EU may not show it to a run from
 elsewhere); only the four CMPs above can be clicked, and their selectors have not been checked

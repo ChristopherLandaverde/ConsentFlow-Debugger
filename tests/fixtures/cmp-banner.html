@@ -14,6 +14,8 @@
     &cover=1   an overlay covers the banner, so a click can't land
     &dup=1     a hidden duplicate of the accept button comes first in the page
     &reload=1  accepting reloads the page, as some CMPs do
+    &spa=1     accepting changes the URL in place (history.pushState, then a hash change)
+    &alt=1     Cookiebot only: the older #CybotCookiebotDialogBodyButtonAccept accept button
   -->
   <script>
     window.dataLayer = window.dataLayer || [];
@@ -34,6 +36,10 @@
       if (granted) {
         fetch('https://region1.google-analytics.com/g/collect?v=2&tid=G-FIXTURE&gcs=G111&en=page_view', { mode: 'no-cors', keepalive: true }).catch(function () {});
         if (params.get('reload') === '1') location.reload();
+        if (params.get('spa') === '1') {
+          history.pushState({}, '', location.pathname + location.search + '&step=2');
+          location.hash = 'accepted';
+        }
       }
     }
   </script>
@@ -49,7 +55,9 @@
     var MARKUP = {
       onetrust: '<button id="onetrust-accept-btn-handler">Accept All Cookies</button>' +
         '<button id="onetrust-reject-all-handler">Reject All</button>',
-      cookiebot: '<button id="CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll">Allow all</button>' +
+      cookiebot: (params.get('alt') === '1'
+        ? '<button id="CybotCookiebotDialogBodyButtonAccept">OK</button>'
+        : '<button id="CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll">Allow all</button>') +
         '<button id="CybotCookiebotDialogBodyButtonDecline">Deny</button>',
       fundingchoices: '<button class="fc-button fc-cta-consent">Consent</button>' +
         '<button class="fc-button fc-cta-do-not-consent">Do not consent</button>',
