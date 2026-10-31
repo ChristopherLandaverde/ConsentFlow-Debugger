@@ -96,15 +96,20 @@ export function parseArgs(argv) {
     else opts.url = arg;
   }
   if (!opts.url) throw new UsageError("A URL is required.");
+  opts.url = normalizeUrl(opts.url);
+  return opts;
+}
+
+/** Parse a URL to check; only http and https are allowed (UsageError otherwise). */
+export function normalizeUrl(raw) {
   let parsed;
   try {
-    parsed = new URL(opts.url);
+    parsed = new URL(raw);
   } catch {
-    throw new UsageError(`Not a valid URL: ${opts.url}`);
+    throw new UsageError(`Not a valid URL: ${raw}`);
   }
   if (!["http:", "https:"].includes(parsed.protocol)) throw new UsageError("Only http and https URLs can be checked.");
-  opts.url = parsed.href;
-  return opts;
+  return parsed.href;
 }
 
 // ─── The popup's findings and verdict code (popup/findings.js), unchanged ─────────────
@@ -358,6 +363,14 @@ export async function check(url, options = {}) {
   });
 }
 
+/**
+ * Check one URL the way the CLI does: the URL is validated and normalized first (only http
+ * and https; UsageError otherwise), then checked. Used by the MCP server (L2).
+ */
+export async function checkUrl(url, options = {}) {
+  return check(normalizeUrl(url), options);
+}
+
 export async function main(argv, { stdout = process.stdout, stderr = process.stderr, route, timeouts } = {}) {
   let opts;
   try {
@@ -369,7 +382,7 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
   }
   let report;
   try {
-    report = await check(opts.url, { consent: opts.consent, wait: opts.wait, route, timeouts });
+    report = await checkUrl(opts.url, { consent: opts.consent, wait: opts.wait, route, timeouts });
   } catch (e) {
     // First line only: Playwright appends its call log to error messages.
     stderr.write(`consentflow: ${String((e && e.message) || e).split("\n")[0]}\n`);

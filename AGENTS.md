@@ -17,8 +17,9 @@ and their guides are legacy and not part of the extension.
 
 ## Commands
 
-Node.js 22. The extension has no dependencies; the only dev dependency is `playwright`, for
-the headless runner's tests (its Chromium: `npx playwright install chromium`).
+Node.js 22. The extension has no dependencies. Dev dependencies: `playwright`, for the
+headless runner and its tests (its Chromium: `npx playwright install chromium`), and
+`@modelcontextprotocol/sdk` and `zod` for the MCP server. Pin exact versions.
 
 ```bash
 npm ci --ignore-scripts
@@ -33,6 +34,14 @@ plus `npx playwright install --with-deps chromium` and `npm audit --audit-level=
 Playwright Chromium with `injected.js` added by `addInitScript`, state read through the same
 `get-state` message `content.js` uses, verdict from `popup/findings.js`. Keep it reusing those
 files unchanged; it must never send captured data anywhere.
+
+`scripts/consentflow-mcp.mjs` is the stdio MCP server (L2) over that runner: read-only tools
+`check_url`, `explain_finding`, `list_checks` (`scripts/mcp/`). `check_url` returns the runner's
+report unchanged; `list_checks` and `explain_finding` read the rule and tag lists from
+`injected.js` and copy from `popup/findings.js` (`scripts/mcp/catalog.mjs`), so there is no
+second copy of the rules. The entry point routes console and stray stdout writes to stderr
+before anything else loads; stdout is JSON-RPC only, and `tests/consentflow-mcp.test.mjs`
+checks it on a real process. Never add a write tool without a `needs-decision` issue.
 
 ## Loading the extension
 
